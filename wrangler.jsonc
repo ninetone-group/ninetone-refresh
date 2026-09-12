@@ -10,13 +10,33 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "ninetone-site",
+  // PINNED to Ninetone's own Cloudflare account (Patrik.frisk@ninetone.com,
+  // Mikael is Administrator) since 2026-09-12 — every binding below lives
+  // there. The original deployment on micke.ohlen@gmail.com's account
+  // (0d392e5c…, Worker `ninetone-site`, KV 9a5e09f3… etc.) is retired and no
+  // longer deployed to; its translation cache was copied across. Pinning
+  // means `wrangler deploy` can never land on another account the login can
+  // see.
+  "account_id": "39f8beab0b95e4c3df1242f03744b8f1",
   "compatibility_date": "2026-06-01",
   // nodejs_compat also populates process.env from vars/secrets — the env
   // fallback in src/lib/filemaker.ts (and shopify/youtube) relies on it.
   "compatibility_flags": ["nodejs_compat"],
-  // Adapter-provided unified entrypoint (Astro 6 / adapter v13 convention) —
-  // handles both `astro dev` and production. Do NOT point at dist output.
-  "main": "@astrojs/cloudflare/entrypoints/server",
+  // Custom entrypoint: re-exports the adapter's `fetch` VERBATIM and adds the
+  // publication `scheduled`/`queue` handlers plus the coordinator Durable
+  // Object beside it (src/worker-entry.ts). The adapter's own module exports
+  // only `{ fetch }`, so there is nowhere else to put them.
+  //
+  // This is a VITE build input, not a wrangler path: @cloudflare/vite-plugin
+  // resolves it as `virtual:cloudflare/user-entry` and emits
+  // `export * from <entry>; export default mod.default ?? {}`, which is why a
+  // .ts source works, why the adapter's `virtual:astro-cloudflare:config`
+  // import still resolves, and why the named DO export survives. At deploy
+  // time `.wrangler/deploy/config.json` redirects wrangler to the GENERATED
+  // dist/server/wrangler.json, whose `main` is `entry.mjs`.
+  //
+  // Still do NOT point this at dist output.
+  "main": "src/worker-entry.ts",
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS"
@@ -26,22 +46,74 @@
       // Cache epoch for the tiered edge cache (src/middleware.ts) — bumped by
       // the Publish button (src/pages/api/publish.ts).
       "binding": "CACHE_STATE",
-      "id": "9a5e09f3e19240c192104bb7de0f72a1"
+      "id": "1772c36b9dc24447b58e0625859dc056"
     },
     {
       // Astro sessions store — the adapter auto-enables the KV session
       // driver and declares this binding, so it must resolve to a real
       // namespace even though the site doesn't use Astro.session yet.
       "binding": "SESSION",
-      "id": "95e1b100fcb945e2aecbe0dc2e090e12"
+      "id": "ac08e2053a9d4c47b27d15ff7d9c126f"
     },
     {
       // Contact-form submissions (src/pages/api/contact.ts) — source of
       // truth, written before email is attempted. 90-day TTL set per-key.
       "binding": "CONTACT_SUBMISSIONS",
-      "id": "8724541e66e647a29022860aa49aca2f"
+      "id": "e753756178d44ba892ce3abcd63ae374"
+    },
+    {
+      // Discovery state, immutable source snapshots and job completion facts.
+      "binding": "PUBLICATION_STATE",
+      "id": "2f01939e483f4340889e0203cabd108a"
+    },
+    {
+      // Immutable, validated bilingual release bundles.
+      "binding": "PUBLICATION_RELEASES",
+      "id": "a2b0c621ea034ecd86582cb553127619"
     }
   ],
+  // ---------------------------------------------------------------------
+  // Publication flow (translate-before-publish).
+  //
+  // Resources use fixed dashboard names. PUBLICATION_SERVING remains absent,
+  // so this configuration can only prepare shadow releases until rollout is
+  // explicitly enabled.
+  "queues": {
+    "producers": [
+      { "binding": "TRANSLATION_JOBS", "queue": "ninetone-translation-jobs" }
+    ],
+    "consumers": [
+      {
+        "queue": "ninetone-translation-jobs",
+        "max_batch_size": 10,
+        "max_retries": 3,
+        "dead_letter_queue": "ninetone-translation-jobs-dlq"
+      }
+    ]
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "PUBLICATION_COORDINATOR",
+        "class_name": "NinetonePublicationCoordinator"
+      }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["NinetonePublicationCoordinator"] }
+  ],
+  // Cron goes on THIS Worker, not a second one. Each tick discovers FM edits;
+  // it does not change visitor serving while PUBLICATION_SERVING is absent.
+  "triggers": { "crons": ["* * * * *"] },
+  //
+  // PUBLICATION_SERVING is deliberately ABSENT from "vars". publicationMode()
+  // returns "shadow" unless it is exactly "on", so preparation runs and
+  // nothing is served from a release until it is set explicitly.
+  //
+  // PUBLICATION_TICK="off" (a var, settable from the dashboard without a
+  // redeploy) stops the cron tick entirely — the only way to pause the
+  // every-minute FM polling short of removing the trigger above.
+  // ---------------------------------------------------------------------
   "ratelimits": [
     {
       "name": "PUBLISH_RATE_LIMITER",
@@ -76,7 +148,11 @@
     // Non-secret runtime config. FM_HOST/FM_DB have code defaults; set here
     // to be explicit. PUBLIC_NOINDEX stays true until launch.
     "FM_HOST": "files.ninetone.com",
-    "FM_DB": "Ninetone Group AB"
+    "FM_DB": "Ninetone Group AB",
+    // Publication cron PAUSED (2026-09-12): the tick polled all eight FM
+    // layouts every minute for a subsystem that is not serving anyone yet.
+    // Remove this line (or set anything but "off") to resume discovery.
+    "PUBLICATION_TICK": "off"
   },
   "observability": {
     "enabled": true

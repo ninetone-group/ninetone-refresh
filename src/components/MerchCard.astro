@@ -1,14 +1,22 @@
 ---
 import type { ShopifyProduct } from "../lib/shopify";
 import { productUrl, productPrice } from "../lib/shopify";
+import { sharedT } from "../lib/t";
 
 interface Props {
   product: ShopifyProduct;
   lang?: "en" | "sv";
 }
 
-const { product, lang = "en" } = Astro.props as Props;
-const cta = lang === "sv" ? "Köp" : "Buy";
+const { product } = Astro.props as Props;
+
+// t() bound to this request (docs/i18n-phase-2-brief.md section 4). sharedT()
+// (src/lib/t.ts) memoizes "Köp" across every MerchCard in a grid, so a
+// 10-product merch section costs one translate() call for the CTA, not ten.
+const t = sharedT(Astro.locals);
+// Swedish kept as source — same hardcoded-pair substitution as
+// Header/Footer/NewsCard (see Header.astro's comment for the full reasoning).
+const cta = await t("Köp");
 const img = product.image ?? product.images[0] ?? null;
 ---
 
@@ -23,6 +31,8 @@ const img = product.image ?? product.images[0] ?? null;
       <img
         src={img.src}
         alt={img.alt ?? product.title}
+        width={img.width}
+        height={img.height}
         class="fm-img h-full w-full object-cover transition-transform duration-700 ease-out group-hover:scale-[1.04]"
         loading="lazy"
         onload="this.classList.add('is-loaded'); this.closest('.fm-img-frame')?.classList.add('is-ready')"

@@ -4,24 +4,47 @@ import SplitPortalHero from "../../components/SplitPortalHero.astro";
 import WebPostsSection from "../../components/WebPostsSection.astro";
 import LatestNewsSection from "../../components/LatestNewsSection.astro";
 import { getWebPostSection } from "../../lib/ninetone";
+import { sharedT } from "../../lib/t";
 
 const webPosts = await getWebPostSection("Ninetone Management");
+
+// t() bound to this request (docs/i18n-phase-2-brief.md section 4).
+// "Ninetone Management" is a proper noun — not translated, per rule 3.
+const t = sharedT(Astro.locals);
+const description = await t(
+  "Backoffice for public people. Ninetone Management builds structure and strategy for Sweden's creators, influencers and public figures.",
+);
+const clientsLabel = await t("Clients");
+const clientsBlurb = await t("A roster of Sweden's most extraordinary creators and influencers.");
+const theTeamLabel = await t("The team");
+const theTeamBlurb = await t("Day-to-day partners — the people building careers alongside our clients.");
 ---
 
-<Base title="Ninetone Management" theme="management">
+<Base
+  title="Ninetone Management"
+  theme="management"
+  description={description}
+>
+  {/* Page-level H1. Visually hidden because this archetype's identity is
+      carried by the portal tiles and the kicker, and DESIGN.md fixes that
+      treatment — but the page still needs exactly one heading that names it,
+      and it must belong to the PAGE, not to whichever tile happens to render
+      first inside a shared component. */}
+  <h1 class="sr-only">Ninetone Management</h1>
+
   <SplitPortalHero
     theme="management"
     kicker="Ninetone Management"
     left={{
       href: "/management/clients",
-      label: "Clients",
-      blurb: "A roster of Sweden's most extraordinary creators and influencers.",
+      label: clientsLabel,
+      blurb: clientsBlurb,
       bgImage: "/images/clientsBanner-management.png",
     }}
     right={{
       href: "/team",
-      label: "The team",
-      blurb: "Day-to-day partners — the people building careers alongside our clients.",
+      label: theTeamLabel,
+      blurb: theTeamBlurb,
       bgImage: "/images/meetTheTeamBanner.png",
     }}
   />

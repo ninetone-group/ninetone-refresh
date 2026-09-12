@@ -11,10 +11,13 @@
  *   - Pages with empty <title>
  *   - Pages with empty <h1> (heuristic — a few legitimate template pages
  *     might trip this; surface for review, don't fail the build)
+ *   - Pages with zero or more than one <h1> — every page must have exactly
+ *     one. Fails the build (a regression here is an SEO/a11y bug, not a
+ *     stylistic nit).
  *
  * Writes dist/_audit.json (machine-readable) and prints a human summary.
- * FM URL leaks fail the build. Other findings remain advisory so a legitimate
- * template exception does not block deployment.
+ * FM URL leaks and wrong-h1-count fail the build. Other findings remain
+ * advisory so a legitimate template exception does not block deployment.
  */
 
 import { readdir, readFile, writeFile } from "node:fs/promises";
@@ -25,6 +28,7 @@ const FM_LEAK_RE = /https?:\/\/files\.ninetone\.com\/Streaming_SSL\/[^\s"'<>]+/g
 const EMPTY_IMG_RE = /<img[^>]*\bsrc=""[^>]*>/g;
 const TITLE_RE = /<title>([^<]*)<\/title>/i;
 const H1_RE = /<h1[^>]*>([\s\S]*?)<\/h1>/i;
+const H1_ALL_RE = /<h1[^>]*>([\s\S]*?)<\/h1>/gi;
 
 async function walk(dir, out = []) {
   let entries;
@@ -79,6 +83,33 @@ async function main() {
       if (h1 != null && !stripTags(h1)) {
         issues.push({ kind: "empty-h1", file: rel });
       }
+
+      // Astro emits a tiny <meta http-equiv="refresh"> shim for each entry in
+      // astro.config.mjs's `redirects` on the static target (GH Pages has no
+      // server-side redirects). Those are not pages and correctly have no
+      // <h1> — exempt them rather than weakening the check for real pages.
+      //
+      // Matched on SHAPE, not on the string appearing anywhere in the file: an
+      // earlier content-only test (`/http-equiv=["']refresh["']/`) failed OPEN,
+      // because FM bio or guide markdown that merely mentions that attribute
+      // reaches the page through set:html and would have silently exempted a
+      // real 0-<h1> page from a build-failing check. A genuine shim is tiny,
+      // has the meta in <head>, and has no <main>.
+      // (Astro's shim omits the literal <head> tag, so key on size + absence of
+      // page chrome instead: a real page always has a <main>.)
+      const isRedirectShim =
+        content.length < 2048 &&
+        !/<main[\s>]/i.test(content) &&
+        /<meta[^>]+http-equiv=["']refresh["']/i.test(content);
+      const h1Matches = isRedirectShim ? [] : [...content.matchAll(H1_ALL_RE)];
+      if (isRedirectShim) {
+        // Intentionally headless — skip.
+      } else if (h1Matches.length === 0) {
+        issues.push({ kind: "wrong-h1-count", file: rel, detail: "0 <h1>" });
+      } else if (h1Matches.length > 1) {
+        const texts = h1Matches.map((m) => stripTags(m[1])).join(" | ");
+        issues.push({ kind: "wrong-h1-count", file: rel, detail: `${h1Matches.length} <h1>: ${texts}` });
+      }
     }
   }
 
@@ -112,7 +143,7 @@ async function main() {
     }
   }
   process.stdout.write(lines.join("\n") + "\n");
-  if (byKind.has("fm-url-leak")) process.exitCode = 1;
+  if (byKind.has("fm-url-leak") || byKind.has("wrong-h1-count")) process.exitCode = 1;
 }
 
 main().catch((err) => {

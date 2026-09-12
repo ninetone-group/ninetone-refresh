@@ -1,4 +1,6 @@
 ---
+import { sharedT } from "../lib/t";
+
 interface Metric {
   /** Big number — kept as string so we can use "120+" or "8.4M". */
   value: string;
@@ -17,11 +19,19 @@ interface Props {
 }
 
 const {
-  kicker = "By the numbers",
-  heading = "Quietly moving Sweden — and beyond.",
+  kicker: kickerProp,
+  heading: headingProp,
   metrics,
   variant = "ink",
 } = Astro.props as Props;
+
+// t() bound to this request (docs/i18n-phase-2-brief.md section 4). Only the
+// component's OWN default copy goes through t() here — `metrics` values
+// (m.label / m.note / m.value) are caller-supplied FM-derived or page data,
+// not this component's strings.
+const t = sharedT(Astro.locals);
+const kicker = kickerProp ?? (await t("By the numbers"));
+const heading = headingProp ?? (await t("Quietly moving Sweden — and beyond."));
 
 const wrapClass = variant === "ink" ? "bg-ninetone-ink text-ninetone-paper" : "bg-ninetone-paper text-ninetone-ink border-y border-ninetone-rule";
 const subTextClass = variant === "ink" ? "text-ninetone-paper/60" : "text-ninetone-ink/55";

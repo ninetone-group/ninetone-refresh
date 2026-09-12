@@ -1,0 +1,109 @@
+{
+  "capture": {
+    "date": "2026-09-12",
+    "target": "https://ninetone-site.micke-ohlen.workers.dev",
+    "method": "bounded public GETs plus local headless Chromium CDP capture",
+    "constraints": [
+      "No forms, query strings, cache purge, warming, deployment, or writes",
+      "No cookies or request headers persisted",
+      "Desktop headless Chromium without CPU or network throttling"
+    ]
+  },
+  "curlCompressed": [
+    {
+      "path": "/",
+      "status": 200,
+      "ttfbMs": 688,
+      "totalMs": 689,
+      "transferBytes": 13650,
+      "headers": { "x-cache": "miss", "content-encoding": "gzip" }
+    },
+    {
+      "path": "/en",
+      "status": 200,
+      "ttfbMs": 767,
+      "totalMs": 768,
+      "transferBytes": 13495,
+      "headers": { "x-cache": "miss", "content-encoding": "gzip" }
+    },
+    {
+      "path": "/records/artists/previous",
+      "status": 200,
+      "ttfbMs": 4462,
+      "totalMs": 4467,
+      "transferBytes": 55030,
+      "decodedHtmlBytes": 439513,
+      "headers": {
+        "date": "Sat, 12 Sep 2026 07:54:15 GMT",
+        "x-cache": "miss",
+        "x-cache-ttl": "21600",
+        "content-encoding": "gzip"
+      }
+    },
+    {
+      "path": "/records/artists/previous",
+      "status": 200,
+      "ttfbMs": 146,
+      "totalMs": 151,
+      "transferBytes": 55030,
+      "decodedHtmlBytes": 439513,
+      "bodyEqualToPriorMiss": true,
+      "headers": {
+        "date": "Sat, 12 Sep 2026 07:56:25 GMT",
+        "x-cache": "hit",
+        "x-cache-ttl": "21600",
+        "cf-cache-status": "HIT",
+        "age": "130",
+        "cache-control": "public, max-age=60, s-maxage=21600, stale-while-revalidate=21600",
+        "content-encoding": "gzip"
+      }
+    }
+  ],
+  "browserHitTrace": [
+    {
+      "path": "/",
+      "headers": { "x-cache": "hit", "cf-cache-status": "HIT", "content-encoding": "zstd" },
+      "domNodes": 778,
+      "links": 102,
+      "images": 33,
+      "lcp": { "element": "H1", "startTimeMs": 496, "url": null },
+      "loadingFailures": 0
+    },
+    {
+      "path": "/en",
+      "headers": { "x-cache": "hit", "cf-cache-status": "HIT", "content-encoding": "zstd" },
+      "domNodes": 778,
+      "links": 102,
+      "images": 33,
+      "lcp": { "element": "H1", "startTimeMs": 156, "url": null },
+      "loadingFailures": 0
+    },
+    {
+      "path": "/records/artists/previous",
+      "headers": { "x-cache": "hit", "cf-cache-status": "HIT", "content-encoding": "zstd" },
+      "domNodes": 3506,
+      "links": 551,
+      "images": 33,
+      "lcp": { "element": "P", "startTimeMs": 184, "url": null },
+      "loadingFailures": 0
+    }
+  ],
+  "freshHomepageResources": {
+    "totalTransferBytes": 1776177,
+    "hoverOnlyPortalBackgrounds": [
+      { "url": "/images/recordsBanner.png", "decodedBodyBytes": 268647, "startToEndMs": [350, 463] },
+      { "url": "/images/managementBanner.png", "decodedBodyBytes": 717369, "startToEndMs": [350, 476] },
+      { "url": "/images/nationBanner.png", "decodedBodyBytes": 424742, "startToEndMs": [350, 512] }
+    ],
+    "preloadedNewsreaderFonts": [
+      { "url": "/fonts/newsreader-roman.woff2", "decodedBodyBytes": 132000 },
+      { "url": "/fonts/newsreader-italic.woff2", "decodedBodyBytes": 146872 }
+    ]
+  },
+  "assetRouteProbe": {
+    "path": "/en/images/LogoDark.svg",
+    "status": 404,
+    "controlPath": "/images/LogoDark.svg",
+    "controlStatus": 200
+  }
+}

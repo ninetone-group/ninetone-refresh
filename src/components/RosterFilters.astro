@@ -1,6 +1,7 @@
 ---
 import type { SectionTheme } from "../lib/sections";
 import { sectionAccent } from "../lib/sections";
+import { sharedT } from "../lib/t";
 
 interface Props {
   /** All distinct tag/genre values that should appear as filter chips. */
@@ -25,24 +26,39 @@ const {
 
 const accent = sectionAccent[theme];
 const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
+
+// t() bound to this request (docs/i18n-phase-2-brief.md section 4). The
+// client <script> below does its own counting ("N of TOTAL") — that template
+// literal is bridged via data-i18n-of below, since it can't call t().
+const t = sharedT(Astro.locals);
+const filterLabel = await t("Filter");
+const artistsCountLabel = await t("artists");
+const searchPlaceholder = await t("Search by name…");
+const gridLabel = await t("Grid");
+const indexLabel = await t("Index");
+const allLabel = await t("All");
+const filterByTagAriaLabel = await t("Filter by tag");
+const filterByLetterAriaLabel = await t("Filter by first letter");
+const ofLabel = await t("of");
 ---
 
 <div
   class="mb-12 flex flex-col gap-5 border-b border-ninetone-rule pb-6"
   data-roster-filters
   data-accent={accent.hex}
+  data-i18n-of={ofLabel}
 >
   <div class="flex flex-wrap items-center justify-between gap-4">
     <div class="flex items-center gap-3">
-      <span class="kicker text-ninetone-ink/55">Filter</span>
-      <span data-roster-count class="text-xs text-ninetone-ink/55">{total} artists</span>
+      <span class="kicker text-ninetone-ink/55">{filterLabel}</span>
+      <span data-roster-count class="text-xs text-ninetone-ink/55">{total} {artistsCountLabel}</span>
     </div>
 
     <div class="flex items-center gap-3">
       <label class="relative">
         <input
           type="search"
-          placeholder="Search by name…"
+          placeholder={searchPlaceholder}
           data-roster-search
           class="w-48 border-b border-ninetone-ink/20 bg-transparent py-1.5 text-sm placeholder-ninetone-ink/40 focus:border-ninetone-ink focus:outline-none md:w-64"
         />
@@ -54,45 +70,45 @@ const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
             data-layout="grid"
             class="bg-ninetone-ink px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-ninetone-paper"
             aria-pressed="true"
-          >Grid</button>
+          >{gridLabel}</button>
           <button
             type="button"
             data-layout="index"
             class="px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-ninetone-ink/60"
             aria-pressed="false"
-          >Index</button>
+          >{indexLabel}</button>
         </div>
       )}
     </div>
   </div>
 
   {tags.length > 0 && (
-    <div class="flex flex-wrap items-center gap-2" role="group" aria-label="Filter by tag">
+    <div class="flex flex-wrap items-center gap-2" role="group" aria-label={filterByTagAriaLabel}>
       <button
         type="button"
         data-roster-tag=""
         class={`border px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] transition-colors ${accent.border} ${accent.bg} text-ninetone-paper`}
         aria-pressed="true"
-      >All</button>
-      {tags.map((t) => (
+      >{allLabel}</button>
+      {tags.map((tag) => (
         <button
           type="button"
-          data-roster-tag={t}
+          data-roster-tag={tag}
           class="border border-ninetone-ink/15 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] text-ninetone-ink/65 transition-colors hover:border-ninetone-ink hover:text-ninetone-ink"
           aria-pressed="false"
-        >{t}</button>
+        >{tag}</button>
       ))}
     </div>
   )}
 
   {showAlphabet && (
-    <div class="flex flex-wrap items-center gap-1 pt-1" role="group" aria-label="Filter by first letter">
+    <div class="flex flex-wrap items-center gap-1 pt-1" role="group" aria-label={filterByLetterAriaLabel}>
       <button
         type="button"
         data-roster-letter=""
         class={`px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.12em] ${accent.text}`}
         aria-pressed="true"
-      >All</button>
+      >{allLabel}</button>
       {letters.map((l) => (
         <button
           type="button"
@@ -114,6 +130,10 @@ const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
     const indexRoot = (filtersEl.parentElement?.querySelector<HTMLElement>("[data-roster-index]") ?? null) as HTMLElement | null;
     const countEl = filtersEl.querySelector<HTMLElement>("[data-roster-count]");
     const searchEl = filtersEl.querySelector<HTMLInputElement>("[data-roster-search]");
+    // Bridge pattern (docs/i18n-phase-2-brief.md section 4, note 4): "of" is
+    // resolved server-side via t() and threaded through data-i18n-of, since
+    // this script runs client-side with no Astro.locals to call t() with.
+    const ofLabel = filtersEl.dataset.i18nOf || "of";
     if (!root) return;
 
     const items = Array.from(root.querySelectorAll<HTMLElement>("[data-roster-item]"));
@@ -135,7 +155,7 @@ const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
         el.style.display = show ? "" : "none";
         if (show) visible++;
       }
-      if (countEl) countEl.textContent = `${visible} of ${total}`;
+      if (countEl) countEl.textContent = `${visible} ${ofLabel} ${total}`;
     }
 
     function setActive(group: string, value: string) {

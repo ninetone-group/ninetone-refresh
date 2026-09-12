@@ -38,6 +38,8 @@ Cloudflare caches the response of `GET /artist/chan-fuze` at every edge node for
 
 When the edge cache misses, the Worker runs. Before hitting FM, it checks an in-isolate cache keyed by query shape. FM API responses are cached at this layer too. Multiple URLs that need the same underlying FM record (e.g. roster list + individual artist page) share one FM call.
 
+The in-isolate cache is per isolate, and workerd recycles isolates constantly, so as built this layer sits behind a second one: [src/lib/fm-kv.ts](../src/lib/fm-kv.ts) is a KV read-through for FM finds with a 300s TTL, keyed by the same Publish epoch as the edge cache. Any isolate can reuse a find another isolate performed in the last five minutes. A Publish bumps the epoch and forces a live read, so the freshness contract above is unchanged; 300s is the shortest page tier, so nothing is served staler than its own tier already allows. Translations get the same treatment one level up — one bundle per route (`trb:` keys) read in a single KV round trip instead of one read per string.
+
 ### 3. Image proxy — same as today
 
 Already documented in [DEPLOY.md](../DEPLOY.md). Stays as-is; just moves to a custom subdomain at cutover so edge caching engages. See [project_deploy_architecture memory](#) and the existing [worker-fm-proxy/](../worker-fm-proxy/) code.

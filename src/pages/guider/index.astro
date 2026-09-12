@@ -1,0 +1,85 @@
+---
+import Base from "../../layouts/Base.astro";
+import NewsCard from "../../components/NewsCard.astro";
+import { getWebPosts } from "../../lib/ninetone";
+import { guidesFromCategory } from "../../lib/guides";
+import { pageJsonLdOrigin } from "../../lib/site";
+import { collectionPage } from "../../lib/schema";
+import { sectionAccent } from "../../lib/sections";
+
+// Guides aren't tied to a Records/Management/Nation division — "group" is
+// the neutral/company-wide accent (ink). Always sourced from sectionAccent
+// (DESIGN.md rule 2), never a hardcoded bg-ninetone-* literal.
+const accent = sectionAccent.group;
+
+// Guider is an editorial category, not FM-required content — Create nothing
+// in FM (brief §7). getWebPosts() takes an arbitrary category string, so
+// querying "Guider" needs no type change to WebPostSection in
+// src/lib/ninetone.ts. If the category doesn't exist yet, getWebPosts()
+// resolves to [] and guidesFromCategory(undefined) resolves to [].
+//
+// Rule 12 governs the LIST SECTION beneath the header (the card grid), not
+// the page's own identity — mirrors src/pages/ninetone-nation/booking.astro
+// exactly: the editorial header (kicker + h1 + tagline + accent rule) always
+// renders; only the populated-only grid beneath is conditional. `/guider` is
+// a real static route (src/lib/routes.ts) promoted in the sitemap and
+// llms.txt, so it must never ship as a content-free <main></main> — that
+// would be advertising a URL with nothing behind it.
+const sections = await getWebPosts("Guider");
+const guides = guidesFromCategory(sections[0]);
+
+const origin = pageJsonLdOrigin(Astro.request);
+const jsonLd =
+  guides.length > 0
+    ? [
+        collectionPage(origin, {
+          name: "Guider",
+          path: "/guider",
+          items: guides.map((g) => ({ name: g.title, path: `/guider/${g.slug}` })),
+        }),
+      ]
+    : [];
+---
+
+<Base
+  title="Guider"
+  lang="sv"
+  jsonLd={jsonLd}
+  description="Guider och praktiska resurser från Ninetone — om bokning, artistsamarbeten och musikbranschen."
+>
+  <section class="bg-ninetone-paper">
+    <div class="mx-auto max-w-7xl px-6 pb-12 pt-16 md:pb-16 md:pt-24">
+      <div class="grid gap-10 md:grid-cols-12 md:gap-16">
+        <div class="md:col-span-8">
+          <span class="kicker text-ninetone-ink/55">Ninetone — Guider</span>
+          <h1 class="mt-6 font-display text-[clamp(2.75rem,7vw,6rem)] leading-[0.95] tracking-[-0.035em]">
+            Guider och genvägar.
+          </h1>
+        </div>
+        <p class="md:col-span-4 md:pt-4 text-base leading-relaxed text-ninetone-ink/70 md:text-lg">
+          Praktiska guider om bokning, samarbeten och branschen — skrivna av teamet i Sundsvall.
+        </p>
+      </div>
+      <div class={`mt-12 h-px w-full ${accent.bg} opacity-80`} aria-hidden></div>
+    </div>
+
+    {guides.length > 0 && (
+      <div class="mx-auto max-w-7xl px-6 pb-24">
+        <div class="grid gap-x-8 gap-y-12 md:grid-cols-3 lg:grid-cols-4">
+          {guides.map((g) => (
+            <NewsCard
+              title={g.title}
+              slug={g.slug}
+              image={g.image}
+              excerpt={g.message}
+              date={g.date}
+              lang="sv"
+              size="sm"
+              basePath="/guider"
+            />
+          ))}
+        </div>
+      </div>
+    )}
+  </section>
+</Base>

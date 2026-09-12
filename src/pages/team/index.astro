@@ -2,14 +2,30 @@
 import Base from "../../layouts/Base.astro";
 import { getTeam, getWebPostSection } from "../../lib/ninetone";
 import { renderBio } from "../../lib/markdown";
-import { url } from "../../lib/url";
+import { urlFor } from "../../lib/url";
+import { fmText, sharedT } from "../../lib/t";
+
+// Locale-bound link builder (i18n Phase 2): every internal href on an
+// English page must keep the /en prefix, or one click drops the visitor
+// back to Swedish. Shadows the plain url() import for this component.
+const url = urlFor(Astro.locals);
+
 
 // Core content — failures render the error page (never edge-cached) instead
 // of a silently-empty team grid. Transients are absorbed by lib/cache.ts.
 let team = await getTeam();
 const webPosts = await getWebPostSection("Ninetone Group Team");
 const introBlock = webPosts?.blocks?.[0];
-const ledeHtml = introBlock?.message ? renderBio(introBlock.message) : "";
+
+// FM CONTENT (decision 8). NOTE THE DIRECTION: the Team section's FM copy is
+// authored in ENGLISH, unlike most of the site — so here the SWEDISH page is
+// the one that needs translating, and /en/ renders the source unchanged.
+// Decision 4 makes the pipeline bidirectional precisely for this, and the
+// warm script already cached both directions; this page just never read
+// them, so /team showed English copy under Swedish chrome.
+const fm = fmText(Astro.locals);
+const ledeHtml = introBlock?.message ? renderBio(await fm(introBlock.message, "markdown")) : "";
+const sectionTitle = await fm(String(webPosts?.title ?? ""), "title");
 
 // Display order: CEO first, then Stefan, then everyone else with a photo
 // (preserving FM sortOrder), then everyone without a photo at the end.
@@ -31,16 +47,30 @@ team = [...team].sort((a, b) => {
   if (sa !== sb) return sa.localeCompare(sb);
   return String(a.userNameCalc ?? "").localeCompare(String(b.userNameCalc ?? ""));
 });
+
+// t() bound to this request (docs/i18n-phase-2-brief.md section 4).
+// `webPosts?.title` is FM-derived content, not this page's own chrome.
+const t = sharedT(Astro.locals);
+const pageTitle = await t("Team");
+const description = await t(
+  "The people behind the work — meet the A&R, management and booking team at Ninetone Group.",
+);
+const teamKicker = await t("Ninetone — Team");
+const fallbackHeading = await t("The people behind the work.");
+
 ---
 
-<Base title="Team">
+<Base
+  title={pageTitle}
+  description={description}
+>
   <section class="bg-ninetone-paper">
     <div class="mx-auto max-w-7xl px-6 pb-12 pt-16 md:pt-24">
       <div class="grid gap-10 md:grid-cols-12 md:gap-16">
         <div class="md:col-span-8">
-          <span class="kicker text-ninetone-ink/55">Ninetone — Team</span>
+          <span class="kicker text-ninetone-ink/55">{teamKicker}</span>
           <h1 class="mt-6 font-display text-[clamp(2.75rem,7vw,6rem)] leading-[0.95] tracking-[-0.035em]">
-            {webPosts?.title || "The people behind the work."}
+            {sectionTitle || fallbackHeading}
           </h1>
         </div>
         {ledeHtml && (
@@ -70,6 +100,8 @@ team = [...team].sort((a, b) => {
                   <img
                     src={photo}
                     alt={name}
+                    width="200"
+                    height="200"
                     class="fm-img h-full w-full object-cover grayscale transition-all duration-700 ease-out group-hover:scale-[1.04] group-hover:grayscale-0"
                     loading="lazy"
                     onload="this.classList.add('is-loaded'); this.closest('.fm-img-frame')?.classList.add('is-ready')"

@@ -2,6 +2,7 @@
 import { renderBio } from "../lib/markdown";
 import type { WebPostCategory } from "../lib/ninetone";
 import { displayTitle } from "../lib/display-title";
+import { fmText, sharedT } from "../lib/t";
 
 interface Props {
   data: WebPostCategory | null;
@@ -11,7 +12,14 @@ interface Props {
 
 const { data, heading } = Astro.props as Props;
 
-if (!data || data.blocks.length === 0) return Astro.redirect("");
+// Render nothing when there's no content. NOTE: this must be a template
+// guard, not `return Astro.redirect("")` — that only short-circuits safely
+// from a top-level page's frontmatter, before the response starts streaming.
+// From a child component, Astro.redirect() still returns a Response object,
+// which the parent page's already-streaming renderer then tries to write as
+// an HTML chunk — throwing `ResponseSentError` at flush and leaving the
+// visitor with an empty body / 500. See docs/seo-phase-1b-brief.md P0 item 3.
+const hasContent = !!data && data.blocks.length > 0;
 
 // Subjects sometimes arrive HTML-wrapped (e.g. "<h2>Foo</h2>"); strip any
 // outer tag so we can render them as a consistent <h2> ourselves.
@@ -19,33 +27,53 @@ function stripOuterTag(s: string): string {
   return s.replace(/^\s*<([a-z0-9]+)[^>]*>([\s\S]*?)<\/\1>\s*$/i, "$2").trim();
 }
 
-const blocks = data.blocks.map((b) => ({
-  subject: displayTitle(stripOuterTag(b.subject)),
-  messageHtml: renderBio(b.message),
-}));
+// FM CONTENT (decision 8). scripts/translate-warm.mjs explicitly warms
+// `block.subject` and `block.message`, so those translations are sitting in
+// KV — they were simply never read here. The previous comment claimed they
+// were "translated elsewhere via translate()", which was not true of any
+// call site: nothing translated them at all, so every WebPosts section
+// rendered Swedish on /en/.
+//
+// Subject as a title, message as MARKDOWN before renderBio (decision 8's
+// ordering, so links and line breaks survive), both on the `fast` tier to
+// match the keys the warm script wrote.
+const fm = fmText(Astro.locals);
+const blocks = hasContent
+  ? await Promise.all(
+      data!.blocks.map(async (b) => ({
+        subject: displayTitle(stripOuterTag(await fm(b.subject, "title"))),
+        messageHtml: renderBio(await fm(b.message, "markdown")),
+      })),
+    )
+  : [];
 
-const pageTitle = displayTitle(heading ?? data.title);
+const pageTitle = hasContent ? displayTitle(await fm(heading ?? data!.title, "title")) : "";
+
+const t = sharedT(Astro.locals);
+const aboutKicker = await t("About");
 ---
 
-<section class="bg-ninetone-paper py-20">
-  <div class="mx-auto grid max-w-7xl gap-10 px-6 md:grid-cols-12 md:gap-16">
-    <div class="md:col-span-4 md:sticky md:top-28 md:self-start">
-      {pageTitle && (
-        <>
-          <span class="kicker text-ninetone-ink/55">About</span>
-          <h2 class="mt-3 font-display text-4xl leading-[1.05] tracking-tight md:text-5xl">{pageTitle}</h2>
-        </>
-      )}
+{hasContent && (
+  <section class="bg-ninetone-paper py-20">
+    <div class="mx-auto grid max-w-7xl gap-10 px-6 md:grid-cols-12 md:gap-16">
+      <div class="md:col-span-4 md:sticky md:top-28 md:self-start">
+        {pageTitle && (
+          <>
+            <span class="kicker text-ninetone-ink/55">{aboutKicker}</span>
+            <h2 class="mt-3 font-display text-4xl leading-[1.05] tracking-tight md:text-5xl">{pageTitle}</h2>
+          </>
+        )}
+      </div>
+      <div class="md:col-span-8 space-y-12">
+        {blocks.map((b) => (
+          <div>
+            {b.subject && (
+              <h3 class="font-display text-2xl leading-tight tracking-tight md:text-3xl">{b.subject}</h3>
+            )}
+            <div class="prose mt-4 max-w-2xl" set:html={b.messageHtml}></div>
+          </div>
+        ))}
+      </div>
     </div>
-    <div class="md:col-span-8 space-y-12">
-      {blocks.map((b) => (
-        <div>
-          {b.subject && (
-            <h3 class="font-display text-2xl leading-tight tracking-tight md:text-3xl">{b.subject}</h3>
-          )}
-          <div class="prose mt-4 max-w-2xl" set:html={b.messageHtml}></div>
-        </div>
-      ))}
-    </div>
-  </div>
-</section>
+  </section>
+)}

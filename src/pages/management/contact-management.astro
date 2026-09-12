@@ -1,30 +1,67 @@
 ---
 import Base from "../../layouts/Base.astro";
 import ContactForm from "../../components/ContactForm.astro";
+import { pageJsonLdOrigin } from "../../lib/site";
+import { contactPage } from "../../lib/schema";
+import { sharedT } from "../../lib/t";
+
+const jsonLd = contactPage(pageJsonLdOrigin(Astro.request), "/management/contact-management");
+
+// t() bound to this request (docs/i18n-phase-2-brief.md section 4).
+const t = sharedT(Astro.locals);
+const pageTitle = await t("Get in touch");
+const description = await t(
+  "Building a serious career? Let's talk. Reach Ninetone Management with your channels and where you want to go next.",
+);
+const kicker = await t("Management — Enquiry");
+const heading = await t("We succeed together.");
+const tagline = await t("Building a serious career? Let's talk.");
+const blurb = await t(
+  "Tell us what you're working on. Send the channels you're proud of and where you'd like to be in eighteen months.",
+);
+const metricLabelsSource = ["Active clients", "Brand partners / mo", "Combined reach", "Address — Sundsvall"];
+const [activeClientsLabel, brandPartnersLabel, combinedReachLabel, addressLabel] = await Promise.all(
+  metricLabelsSource.map((s) => t(s)),
+);
+const formTitle = await t("Tell us about you.");
+const formBlurb = await t("Drop links to the social channels and projects you want us to see.");
+const submitLabel = await t("Send enquiry");
+const nameLabel = await t("Name");
+const yourNamePlaceholder = await t("Your name");
+const emailLabel = await t("Email");
+const channelsLinksLabel = await t("Channels / links");
+const channelsPlaceholder = await t("TikTok, Instagram, YouTube, portfolio… one per line");
+const aboutYouLabel = await t("About you");
+const aboutYouPlaceholder = await t("A few lines on what you're building and where you want it to go");
 ---
 
-<Base title="Get in touch" theme="management">
+<Base
+  title={pageTitle}
+  theme="management"
+  jsonLd={jsonLd}
+  description={description}
+>
   <ContactForm
     theme="management"
     division="management"
-    kicker="Management — Enquiry"
-    heading="We succeed together."
-    tagline="Building a serious career? Let's talk."
-    blurb="Tell us what you're working on. Send the channels you're proud of and where you'd like to be in eighteen months."
+    kicker={kicker}
+    heading={heading}
+    tagline={tagline}
+    blurb={blurb}
     metrics={[
-      { value: "38", label: "Active clients" },
-      { value: "12+", label: "Brand partners / mo" },
-      { value: "4M", label: "Combined reach" },
-      { value: "1", label: "Address — Sundsvall" },
+      { value: "38", label: activeClientsLabel },
+      { value: "12+", label: brandPartnersLabel },
+      { value: "4M", label: combinedReachLabel },
+      { value: "1", label: addressLabel },
     ]}
-    formTitle="Tell us about you."
-    formBlurb="Drop links to the social channels and projects you want us to see."
-    submitLabel="Send enquiry"
+    formTitle={formTitle}
+    formBlurb={formBlurb}
+    submitLabel={submitLabel}
     fields={[
-      { type: "text", name: "name", label: "Name", placeholder: "Your name", required: true },
-      { type: "email", name: "email", label: "Email", placeholder: "you@email.com", required: true },
-      { type: "textarea", name: "links", label: "Channels / links", placeholder: "TikTok, Instagram, YouTube, portfolio… one per line", rows: 4, required: true },
-      { type: "textarea", name: "about", label: "About you", placeholder: "A few lines on what you're building and where you want it to go", rows: 4 },
+      { type: "text", name: "name", label: nameLabel, placeholder: yourNamePlaceholder, required: true },
+      { type: "email", name: "email", label: emailLabel, placeholder: "you@email.com", required: true },
+      { type: "textarea", name: "links", label: channelsLinksLabel, placeholder: channelsPlaceholder, rows: 4, required: true },
+      { type: "textarea", name: "about", label: aboutYouLabel, placeholder: aboutYouPlaceholder, rows: 4 },
     ]}
   />
 </Base>

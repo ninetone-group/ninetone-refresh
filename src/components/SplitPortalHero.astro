@@ -1,7 +1,15 @@
 ---
 import type { SectionTheme } from "../lib/sections";
 import { sectionAccent } from "../lib/sections";
-import { url } from "../lib/url";
+import { hoverArtBackground } from "../lib/hover-art";
+import { urlFor } from "../lib/url";
+import { sharedT } from "../lib/t";
+
+// Locale-bound link builder (i18n Phase 2): every internal href on an
+// English page must keep the /en prefix, or one click drops the visitor
+// back to Swedish. Shadows the plain url() import for this component.
+const url = urlFor(Astro.locals);
+
 
 interface Side {
   href: string;
@@ -20,6 +28,13 @@ interface Props {
 
 const { left, right, theme = "records", kicker } = Astro.props;
 const accent = sectionAccent[theme];
+
+// t() bound to this request (docs/i18n-phase-2-brief.md section 4). "Ninetone"
+// is a proper noun (brand name) — NOT translated even as the kicker fallback,
+// per rule 3. Only "Enter" is this component's own chrome string.
+const t = sharedT(Astro.locals);
+const enterLabel = await t("Enter");
+
 ---
 
 <section class="border-y border-ninetone-rule bg-ninetone-paper">
@@ -32,7 +47,7 @@ const accent = sectionAccent[theme];
         {side.bgImage && (
           <div
             class="absolute inset-0 bg-cover bg-center opacity-0 mix-blend-multiply transition-opacity duration-700 ease-out group-hover:opacity-50"
-            style={`background-image: url(${url(side.bgImage)});`}
+            style={`background-image: ${hoverArtBackground(side.bgImage, url)};`}
             aria-hidden
           ></div>
         )}
@@ -51,7 +66,7 @@ const accent = sectionAccent[theme];
               </p>
             )}
             <span class="mt-6 inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-ninetone-ink transition-colors duration-150 ease-out group-hover:text-ninetone-paper">
-              Enter <span aria-hidden>→</span>
+              {enterLabel} <span aria-hidden>→</span>
             </span>
           </div>
         </div>

@@ -123,7 +123,7 @@ function parseFmDate(s: string): number {
 function releaseCoverUrl(slug: string, album: string): string {
   const PROXY_BASE = (
     import.meta.env.FM_IMAGE_PROXY_BASE ??
-    "https://ninetone-fm-image-proxy.micke-ohlen.workers.dev"
+    "https://ninetone-fm-image-proxy.ninetone.workers.dev"
   ).replace(/\/$/, "");
   return `${PROXY_BASE}/release/${encodeURIComponent(slug)}/by-album/${encodeURIComponent(album)}`;
 }
@@ -197,6 +197,21 @@ export type WebPostBlock = {
   image?: string;
   date?: string;
   ytLinks: string[];
+  /**
+   * FM's portal-row id — stable identity for this block.
+   *
+   * Unlike the block's other fields this is NOT prefixed `webPost::`; FM puts
+   * it at the row's top level, so `pickStr` cannot reach it. Verified against
+   * the live Data API: 31 blocks across the 6 sections carry 31 distinct ids,
+   * so it is genuine identity rather than a positional accident.
+   *
+   * Added for the publication flow (src/lib/publication/fm-source.ts), which
+   * needs a block id that survives an edit — deriving identity from the
+   * subject, the way src/lib/guides.ts must, means renaming a block reads as
+   * a delete plus an unrelated create. Optional and unused by rendering, so
+   * nothing about the current pages changes.
+   */
+  recordId?: string;
 };
 
 export type WebPostCategory = {
@@ -252,6 +267,9 @@ export async function getWebPosts(category: string = "*"): Promise<WebPostCatego
         ytLinks: ["ytLinkA", "ytLinkB", "ytLinkC", "ytLinkD"]
           .map((k) => pickStr(row, k))
           .filter(Boolean),
+        // Top-level on the portal row, not `webPost::`-prefixed — see the
+        // WebPostBlock.recordId comment.
+        recordId: row.recordId == null ? undefined : String(row.recordId),
       }))
       .filter((b) => b.subject || b.message);
 

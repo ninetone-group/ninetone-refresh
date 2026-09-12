@@ -5,53 +5,85 @@
 // can reopen the banner. Wires Google Consent Mode v2, Meta Pixel
 // (fbq consent), TikTok Pixel (ttq consent), Clarity gating on
 // analytics consent.
-import { url } from "../lib/url";
+import { urlFor } from "../lib/url";
+import { sharedT } from "../lib/t";
+
+// Locale-bound link builder (i18n Phase 2): every internal href on an
+// English page must keep the /en prefix, or one click drops the visitor
+// back to Swedish. Shadows the plain url() import for this component.
+const url = urlFor(Astro.locals);
+
+
+// t() bound to this request (docs/i18n-phase-2-brief.md section 4). Swedish
+// kept as source — same choice as Footer/Header (decision 1: sv is the
+// default/root locale). This banner's own <script> below never touches text
+// content (only class/attribute toggling), so no client-side bridge is
+// needed here — every string is resolved server-side and printed directly.
+const t = sharedT(Astro.locals);
+const cookiesKicker = await t("Cookies");
+const weUseCookiesTitle = await t("Vi använder cookies");
+const cookieDescBody = await t(
+  "för att webbplatsen ska fungera, för att förstå hur besökare använder den och för att mäta marknadsföring.",
+);
+const readMoreLabel = await t("Läs mer");
+const customizeLabel = await t("Anpassa");
+const rejectLabel = await t("Neka");
+const acceptLabel = await t("Acceptera");
+const necessaryTitle = await t("Nödvändiga");
+const necessaryBody = await t("Krävs för att webbplatsen ska fungera. Kan inte stängas av.");
+const analyticsTitle = await t("Statistik och analys");
+const analyticsBody = await t("Google Analytics och Microsoft Clarity hjälper oss förstå hur besökare använder webbplatsen.");
+const marketingTitle = await t("Marknadsföring");
+const marketingBody = await t("Meta Pixel och TikTok Pixel används för att mäta och rikta annonsering.");
+const backLabel = await t("Tillbaka");
+const saveChoiceLabel = await t("Spara val");
+
 ---
 <div id="cookie-consent" class="cookie-consent" hidden role="dialog" aria-labelledby="cookie-consent-title" aria-describedby="cookie-consent-desc">
   <div class="cookie-consent__inner">
     <div class="cookie-consent__copy">
-      <span class="kicker text-ninetone-ink/55">Cookies</span>
+      <span class="kicker text-ninetone-ink/55">{cookiesKicker}</span>
       <p id="cookie-consent-desc" class="cookie-consent__text">
-        <strong id="cookie-consent-title" class="cookie-consent__title">Vi använder cookies</strong>
-        för att webbplatsen ska fungera, för att förstå hur besökare använder den och för att mäta marknadsföring.
-        <a href={url("/integritet")}>Läs mer</a>.
+        <strong id="cookie-consent-title" class="cookie-consent__title">{weUseCookiesTitle}</strong>
+        {cookieDescBody}
+        <a href={url("/integritet")}>{readMoreLabel}</a>.
       </p>
     </div>
 
     <div class="cookie-consent__actions" data-view="simple">
-      <button type="button" class="cookie-consent__btn cookie-consent__btn--link" data-consent="customize">Anpassa</button>
-      <button type="button" class="cookie-consent__btn cookie-consent__btn--secondary" data-consent="reject">Neka</button>
-      <button type="button" class="cookie-consent__btn cookie-consent__btn--primary" data-consent="accept">Acceptera</button>
+      <button type="button" class="cookie-consent__btn cookie-consent__btn--link" data-consent="customize">{customizeLabel}</button>
+      <button type="button" class="cookie-consent__btn cookie-consent__btn--secondary" data-consent="reject">{rejectLabel}</button>
+      <button type="button" class="cookie-consent__btn cookie-consent__btn--primary" data-consent="accept">{acceptLabel}</button>
     </div>
 
     <div class="cookie-consent__options" data-view="customize" hidden>
       <fieldset class="cookie-consent__option">
         <label class="cookie-consent__option-label">
           <input type="checkbox" checked disabled />
-          <span class="cookie-consent__option-title">Nödvändiga</span>
+          <span class="cookie-consent__option-title">{necessaryTitle}</span>
         </label>
-        <p class="cookie-consent__option-text">Krävs för att webbplatsen ska fungera. Kan inte stängas av.</p>
+        <p class="cookie-consent__option-text">{necessaryBody}</p>
       </fieldset>
 
       <fieldset class="cookie-consent__option">
         <label class="cookie-consent__option-label">
           <input type="checkbox" id="consent-analytics" />
-          <span class="cookie-consent__option-title">Statistik och analys</span>
+          <span class="cookie-consent__option-title">{analyticsTitle}</span>
         </label>
-        <p class="cookie-consent__option-text">Google Analytics och Microsoft Clarity hjälper oss förstå hur besökare använder webbplatsen.</p>
+        <p class="cookie-consent__option-text">{analyticsBody}</p>
       </fieldset>
 
       <fieldset class="cookie-consent__option">
         <label class="cookie-consent__option-label">
           <input type="checkbox" id="consent-marketing" />
-          <span class="cookie-consent__option-title">Marknadsföring</span>
+          <span class="cookie-consent__option-title">{marketingTitle}</span>
         </label>
-        <p class="cookie-consent__option-text">Meta Pixel och TikTok Pixel används för att mäta och rikta annonsering.</p>
+        <p class="cookie-consent__option-text">{marketingBody}</p>
       </fieldset>
 
       <div class="cookie-consent__actions cookie-consent__actions--customize">
-        <button type="button" class="cookie-consent__btn cookie-consent__btn--secondary" data-consent="back">Tillbaka</button>
-        <button type="button" class="cookie-consent__btn cookie-consent__btn--primary" data-consent="save">Spara val</button>
+        <button type="button" class="cookie-consent__btn cookie-consent__btn--secondary" data-consent="back">{backLabel}</button>
+        <button type="button" class="cookie-consent__btn cookie-consent__btn--primary" data-consent="save">{saveChoiceLabel}</button>
       </div>
     </div>
   </div>

@@ -1,0 +1,23 @@
+---
+/**
+ * Renders one <script type="application/ld+json"> tag per object passed in.
+ *
+ * Data-only: this component performs no fetches and applies no styling. Pass
+ * it whatever plain objects src/lib/schema.ts's builders returned. Escaping
+ * is centralized in schema.ts's toEscapedJsonLd() (unit-tested in
+ * test/schema.test.mjs) so the same logic protects both this component and
+ * any other JSON-LD-emitting call site.
+ */
+import { toEscapedJsonLd } from "../lib/schema";
+
+interface Props {
+  data: Record<string, unknown> | Record<string, unknown>[];
+}
+
+const { data } = Astro.props;
+const entries = Array.isArray(data) ? data : [data];
+---
+
+{entries.map((entry) => (
+  <script type="application/ld+json" is:inline set:html={toEscapedJsonLd(entry)} />
+))}

@@ -1,0 +1,119 @@
+---
+import Base from "../../layouts/Base.astro";
+import { getWebPosts } from "../../lib/ninetone";
+import { guidesFromCategory, findGuideBySlug, parseFaqFromMarkdown } from "../../lib/guides";
+import { renderBio } from "../../lib/markdown";
+import { urlFor } from "../../lib/url";
+import { pageJsonLdOrigin } from "../../lib/site";
+import { breadcrumbs, article, faqPage, markdownToPlainText, fmDateToIso } from "../../lib/schema";
+import { notFound } from "../../lib/not-found";
+import { formatDate } from "../../lib/dates";
+
+// Locale-bound link builder (i18n Phase 2): every internal href on an
+// English page must keep the /en prefix, or one click drops the visitor
+// back to Swedish. Shadows the plain url() import for this component.
+const url = urlFor(Astro.locals);
+
+
+// Mirrors src/pages/news/[slug].astro's dual-resolution pattern exactly:
+// static build (gh) resolves every path via getStaticPaths; the live server
+// (cf) resolves at request time from the same underlying fetch. If the
+// "Guider" WebPosts category doesn't exist (or has no usable blocks),
+// guidesFromCategory() resolves to [] here too, so getStaticPaths returns []
+// and NO /guider/[slug] routes are generated at all — no error, no empty
+// shell, exactly the brief's "expected absence" behavior (rule 12).
+export async function getStaticPaths() {
+  const sections = await getWebPosts("Guider");
+  const guides = guidesFromCategory(sections[0]);
+  return guides.map((g) => ({
+    params: { slug: g.slug },
+    props: { guide: g },
+  }));
+}
+
+let guide = (Astro.props as { guide?: ReturnType<typeof guidesFromCategory>[number] }).guide;
+if (!guide) {
+  const sections = await getWebPosts("Guider");
+  guide = findGuideBySlug(sections[0], String(Astro.params.slug ?? ""));
+  if (!guide) return notFound(() => Astro.rewrite("/404"));
+}
+
+const title = guide.title;
+const slug = guide.slug;
+const date = guide.date ?? "";
+const image = guide.image;
+const messageHtml = renderBio(guide.message);
+
+const origin = pageJsonLdOrigin(Astro.request);
+const isoDate = fmDateToIso(date);
+
+// Locale-aware dateline (docs/i18n-phase-2-brief.md "Dates" item). This page
+// hardcodes `lang="sv"` on <Base> above (guides are Swedish-only content,
+// not yet wired into section 4's t()/locals.lang chrome), so the display
+// date is fixed to "sv" too rather than read from Astro.locals.lang — that
+// keeps this page internally consistent instead of mixing an English date
+// into an otherwise all-Swedish render. Pure Intl formatting, not a
+// translation — does not go through t()/sharedT() (this page has none).
+const displayDate = formatDate(date, "sv");
+
+// FAQ block: parse "## Vanliga frågor" / "## FAQ" out of the guide's own
+// markdown body (brief §7) — H3 question + following paragraph. Absent in
+// most guides; when present, both the visible FAQ block below and the
+// faqPage JSON-LD are built from the exact same parsed items so they can
+// never drift from each other.
+const faqItems = parseFaqFromMarkdown(guide.message);
+
+const jsonLd = [
+  breadcrumbs(origin, [
+    { name: "Guider", path: "/guider" },
+    { name: title, path: `/guider/${slug}` },
+  ]),
+  article(origin, {
+    path: `/guider/${slug}`,
+    headline: title,
+    datePublished: isoDate,
+    image,
+    articleBody: markdownToPlainText(guide.message),
+  }),
+  ...(faqItems.length > 0 ? [faqPage(faqItems)] : []),
+];
+
+---
+
+<Base title={title} lang="sv" description={markdownToPlainText(guide.message, 155)} ogImage={image} ogType="article" jsonLd={jsonLd}>
+  <article class="bg-ninetone-paper">
+    <header class="mx-auto max-w-4xl px-6 pt-16 md:pt-24">
+      <p class="mb-6">
+        <a href={url("/guider")} class="kicker text-ninetone-ink/60 hover:text-ninetone-ink">← Guider</a>
+      </p>
+
+      {date && (
+        <div class="mb-6 flex items-center gap-3 text-[0.6875rem] uppercase tracking-[0.16em] text-ninetone-ink/55">
+          <time datetime={isoDate}>{displayDate}</time>
+        </div>
+      )}
+
+      <h1 class="font-display text-[clamp(2.25rem,5.5vw,4.5rem)] leading-[1] tracking-[-0.03em]">{title}</h1>
+
+      {date && (
+        <p class="kicker mt-6 text-ninetone-ink/55">
+          Publicerad {isoDate ? <time datetime={isoDate}>{displayDate}</time> : displayDate}
+        </p>
+      )}
+    </header>
+
+    {image && (
+      <div class="mx-auto mt-12 max-w-5xl px-6">
+        <img src={image} alt={title} class="aspect-[16/10] w-full object-cover" fetchpriority="high" />
+      </div>
+    )}
+
+    <div class="mx-auto max-w-2xl px-6 pb-16 pt-12">
+      <div class="prose lede max-w-none" set:html={messageHtml}></div>
+
+      <div class="mt-16 border-t border-ninetone-rule pt-8">
+        <a href={url("/guider")} class="kicker text-ninetone-ink/60 hover:text-ninetone-ink">← Alla guider</a>
+      </div>
+    </div>
+  </article>
+</Base>

@@ -1,26 +1,98 @@
 ---
 import type { SectionTheme } from "../lib/sections";
 import { sectionAccent, sectionCta } from "../lib/sections";
-import { url } from "../lib/url";
+import { url as basePathOnly, urlFor } from "../lib/url";
+import { hasEnglishVersion, switchHref } from "../lib/i18n";
+import type { Lang } from "../lib/translate";
+import { sharedT } from "../lib/t";
+
+// Locale-bound link builder (i18n Phase 2): every internal href on an
+// English page must keep the /en prefix, or one click drops the visitor
+// back to Swedish. Shadows the plain url() import for this component.
+const url = urlFor(Astro.locals);
+
 
 interface Props {
   theme?: SectionTheme;
-  lang?: "en" | "sv";
+  lang?: Lang;
 }
 
-const { theme = "group", lang = "en" } = Astro.props;
+// Default "sv", not "en" (matches Base.astro's corrected fallback — see the
+// long comment there): Base.astro always passes an explicit `lang` now, so
+// in practice this default only matters for a hypothetical future caller
+// that renders Header standalone without going through Base. Swedish is the
+// site's actual default locale (decision 1), so a caller-less default
+// should match that rather than silently reintroducing the old English-only
+// mislabel this section otherwise fixes.
+const { theme = "group", lang = "sv" } = Astro.props;
 const accent = sectionAccent[theme];
 const cta = sectionCta[theme];
-const ctaLabel = lang === "sv" ? cta.sv : cta.en;
 
-const navItems = [
-  { href: "/", labelEn: "Home", labelSv: "Hem", match: ["/"] },
-  { href: "/records", labelEn: "Records", labelSv: "Records", match: ["/records"] },
-  { href: "/management", labelEn: "Management", labelSv: "Management", match: ["/management"] },
-  { href: "/ninetone-nation", labelEn: "Nation", labelSv: "Nation", match: ["/ninetone-nation"] },
-  { href: "/news", labelEn: "News", labelSv: "Nyheter", match: ["/news"] },
-  { href: "/team", labelEn: "Team", labelSv: "Team", match: ["/team"] },
+// t() bound to this request (docs/i18n-phase-2-brief.md section 4). Reads
+// Astro.locals directly rather than taking a `t` prop — see src/lib/t.ts's
+// doc comment for why (Astro.locals is shared across every component in one
+// render, so this needs no prop threaded through Base → Header). sharedT()
+// (not createT() directly) is load-bearing here specifically: Header,
+// Footer and CommandPalette are ALL mounted as siblings in Base.astro on
+// every single page, and only sharedT() gives them one combined 25-call
+// budget for the render instead of 25 each.
+const t = sharedT(Astro.locals);
+
+// sectionCta's `sv`/`en` pair PREDATES section 4 and is the kind of
+// hardcoded chrome pair decision 5 asks to fold into t() (brief §"Do NOT
+// translate" / constraint 3: "if they ARE hardcoded pairs, converting them
+// to t() is IN scope ... pick ONE source language"). Picked Swedish as the
+// kept source string for every such pair converted in this pass — see the
+// PR description for the full reasoning; short version: decision 1 makes sv
+// the default/root locale, so keeping sv as source means the 546-page
+// static gh build (which never has a live translation call — see
+// src/lib/t.ts / translate.ts's no-scheduler-no-API-key degrade path) needs
+// NO translation at all to render correctly, since sv IS what's already on
+// the page today.
+const ctaLabel = await t(cta.sv);
+
+// gh/static target: `/en/` does not exist at all (decision 2 — it's a
+// CF-only feature, the middleware that would ever rewrite/detect it is
+// entirely HAS_RUNTIME-gated in src/middleware.ts). Rendering a switch that
+// links to a URL nothing serves would be a dead link on every one of the
+// 546 static preview pages, so the switch is gated the same way every other
+// runtime-only affordance in this codebase is (see ContactForm.astro,
+// YouTubeFeed.astro): `import.meta.env.PUBLIC_HAS_RUNTIME`.
+const hasRuntime =
+  import.meta.env.PUBLIC_HAS_RUNTIME === true || import.meta.env.PUBLIC_HAS_RUNTIME === "true";
+
+// Nav labels: same hardcoded-pair substitution as ctaLabel above — Swedish
+// kept as the one source string per item, English produced by t(). Two
+// items ("Records", "Management") were already identical in both languages
+// in the original pairs; those still route through t() for consistency
+// (a no-op translation, cheap and correct either way) rather than being
+// special-cased out, so this list has exactly one shape to reason about.
+const navItemsSource = [
+  { href: "/", label: "Hem", match: ["/"] },
+  { href: "/records", label: "Records", match: ["/records"] },
+  { href: "/management", label: "Management", match: ["/management"] },
+  { href: "/ninetone-nation", label: "Nation", match: ["/ninetone-nation"] },
+  { href: "/news", label: "Nyheter", match: ["/news"] },
+  { href: "/team", label: "Team", match: ["/team"] },
 ];
+// t() is async (translate.ts), so every nav label is resolved here in
+// frontmatter — via Promise.all, not inside the template's .map() — before
+// the template ever runs. See src/lib/translate.ts's createT() doc comment:
+// "t(source)" must be awaited, which a template expression / non-async
+// .map() callback cannot do.
+const navItems = await Promise.all(
+  navItemsSource.map(async (item) => ({ ...item, label: await t(item.label) })),
+);
+
+// Chrome strings that don't depend on `theme`/nav data — resolved once,
+// up front, same async-in-frontmatter rule as navItems above. sharedT()'s
+// memoization (src/lib/t.ts) means "Sök" appearing twice below (button
+// aria-label + visible label) costs one translate() call, not two.
+const searchLabel = await t("Sök");
+const openMenuLabel = await t("Öppna meny");
+const menuLabel = await t("Meny");
+const closeMenuLabel = await t("Stäng meny");
+const mobileNavLabel = await t("Mobilnavigering");
 
 // Strip the configured base so matches work under `/ninetone-refresh-preview`.
 const basePrefix = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
@@ -30,6 +102,37 @@ const pathname = basePrefix && rawPath.startsWith(basePrefix)
   : rawPath;
 const isActive = (matches: string[]) =>
   matches.some((m) => (m === "/" ? pathname === "/" : pathname === m || pathname.startsWith(`${m}/`)));
+
+// Language switch target (section 3 deliverable). `pathname` above is
+// already base-stripped — on the cf target `base` is "/" so that's a no-op
+// and `pathname === Astro.url.pathname`, which is ALSO already
+// locale-stripped by src/middleware.ts's rewrite before this component
+// ever runs (see src/lib/i18n.ts's `switchHref` doc comment for the full
+// reasoning on why the current URL alone can't tell us the current locale
+// post-rewrite, and why `lang` — sourced from `locals.lang` via Base.astro
+// — is what makes this correct rather than the pathname itself). Passing
+// this same `pathname` through `switchHref` costs nothing extra: on gh
+// there's no rewrite and no "/en" to strip, so `switchHref` is just
+// `localizedPath(pathname, otherLang(lang))` there too.
+// THE ONE LINK THAT MUST NOT BE LOCALE-BOUND.
+//
+// switchHref() already returns the OTHER locale's path — "/records" when the
+// visitor is on /en/records, "/en/records" when they're on /records. Passing
+// that through the locale-bound url() above re-applied the CURRENT locale on
+// top, so on an English page "/records" became "/en/records" and the switch
+// pointed at the page you were already on: clicking SV never left English.
+// basePathOnly() applies the gh sub-path base and nothing else, which is
+// exactly what a fully-formed cross-locale path needs.
+const otherHref = basePathOnly(switchHref(pathname, lang));
+
+// Swedish-only pages offer no switch (SEO audit P1 / translations audit P2).
+// /integritet and /guider/* pin lang="sv", so the "EN" control would send a
+// visitor to a URL that renders Swedish anyway — a promise the page cannot
+// keep. Same hasEnglishVersion() rule the hreflang builder and the sitemap
+// use, so what the page advertises and what it offers cannot disagree.
+const showLanguageSwitch = hasEnglishVersion(pathname);
+const otherLangCode = lang === "sv" ? "en" : "sv";
+
 ---
 
 <header
@@ -59,7 +162,7 @@ const isActive = (matches: string[]) =>
                 class={`relative inline-flex min-h-11 items-center px-3 py-2 font-medium transition-colors hover:text-ninetone-ink ${active ? accent.text : "text-ninetone-ink/65"}`}
                 aria-current={active ? "page" : undefined}
               >
-                {lang === "sv" ? item.labelSv : item.labelEn}
+                {item.label}
                 {active && (
                   <span
                     class={`absolute inset-x-3 -bottom-0.5 h-px ${accent.bg}`}
@@ -78,13 +181,13 @@ const isActive = (matches: string[]) =>
         type="button"
         id="search-toggle"
         class="inline-flex h-11 items-center gap-2 rounded-none border border-ninetone-ink/15 px-3 text-sm text-ninetone-ink/70 transition-colors hover:border-ninetone-ink hover:text-ninetone-ink"
-        aria-label={lang === "sv" ? "Sök" : "Search"}
+        aria-label={searchLabel}
       >
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4">
           <circle cx="11" cy="11" r="7"></circle>
           <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
         </svg>
-        <span class="hidden text-xs font-medium tracking-wide md:inline">{lang === "sv" ? "Sök" : "Search"}</span>
+        <span class="hidden text-xs font-medium tracking-wide md:inline">{searchLabel}</span>
         <kbd class="hidden rounded border border-ninetone-ink/15 px-1 py-px font-sans text-[0.625rem] font-medium text-ninetone-ink/50 md:inline">⌘K</kbd>
       </button>
 
@@ -96,19 +199,23 @@ const isActive = (matches: string[]) =>
         <span aria-hidden>→</span>
       </a>
 
-      <a
-        href={lang === "en" ? Astro.url.pathname.replace(/^\/en/, "/sv") : Astro.url.pathname.replace(/^\/sv/, "/en")}
-        class="hidden md:inline-flex min-h-11 min-w-11 items-center justify-center px-2 text-xs font-semibold text-ninetone-ink/65 hover:text-ninetone-ink"
-        aria-label={lang === "en" ? "Switch to Swedish" : "Switch to English"}
-      >
-        {lang === "en" ? "SV" : "EN"}
-      </a>
+      {hasRuntime && showLanguageSwitch && (
+        <a
+          href={otherHref}
+          hreflang={otherLangCode}
+          lang={otherLangCode}
+          class="hidden md:inline-flex min-h-11 min-w-11 items-center justify-center px-2 text-xs font-semibold text-ninetone-ink/65 hover:text-ninetone-ink"
+          aria-label={lang === "en" ? "Switch to Swedish" : "Switch to English"}
+        >
+          {lang === "en" ? "SV" : "EN"}
+        </a>
+      )}
 
       <button
         type="button"
         id="mobile-nav-toggle"
         class="inline-flex h-11 w-11 items-center justify-center border border-ninetone-ink/15 text-ninetone-ink transition-colors hover:border-ninetone-ink lg:hidden"
-        aria-label={lang === "sv" ? "Öppna meny" : "Open menu"}
+        aria-label={openMenuLabel}
         aria-controls="mobile-nav-panel"
         aria-expanded="false"
       >
@@ -129,15 +236,15 @@ const isActive = (matches: string[]) =>
   class="fixed inset-0 z-[60] hidden flex-col bg-ninetone-paper text-ninetone-ink lg:hidden"
   role="dialog"
   aria-modal="true"
-  aria-label={lang === "sv" ? "Meny" : "Menu"}
+  aria-label={menuLabel}
 >
   <div class="flex items-center justify-between border-b border-ninetone-rule px-6 py-4">
-    <span class="kicker text-ninetone-ink/55">{lang === "sv" ? "Meny" : "Menu"}</span>
+    <span class="kicker text-ninetone-ink/55">{menuLabel}</span>
     <button
       type="button"
       id="mobile-nav-close"
       class="inline-flex h-11 w-11 items-center justify-center border border-ninetone-ink/15 text-ninetone-ink transition-colors hover:border-ninetone-ink"
-      aria-label={lang === "sv" ? "Stäng meny" : "Close menu"}
+      aria-label={closeMenuLabel}
     >
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" class="h-5 w-5" aria-hidden="true">
         <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -146,7 +253,7 @@ const isActive = (matches: string[]) =>
     </button>
   </div>
 
-  <nav class="flex-1 overflow-y-auto px-6 py-10" aria-label={lang === "sv" ? "Mobilnavigering" : "Mobile navigation"}>
+  <nav class="flex-1 overflow-y-auto px-6 py-10" aria-label={mobileNavLabel}>
     <ul class="flex flex-col gap-1">
       {navItems.map((item) => {
         const active = isActive(item.match);
@@ -157,7 +264,7 @@ const isActive = (matches: string[]) =>
               class={`group flex items-baseline justify-between gap-4 border-b border-ninetone-rule py-5 font-display text-3xl font-medium leading-tight tracking-tight transition-colors hover:text-ninetone-ink ${active ? accent.text : "text-ninetone-ink"}`}
               aria-current={active ? "page" : undefined}
             >
-              <span>{lang === "sv" ? item.labelSv : item.labelEn}</span>
+              <span>{item.label}</span>
               <span class="text-base text-ninetone-ink/40 transition-transform duration-200 group-hover:translate-x-1" aria-hidden>→</span>
             </a>
           </li>
@@ -173,12 +280,16 @@ const isActive = (matches: string[]) =>
         {ctaLabel}
         <span aria-hidden>→</span>
       </a>
-      <a
-        href={lang === "en" ? Astro.url.pathname.replace(/^\/en/, "/sv") : Astro.url.pathname.replace(/^\/sv/, "/en")}
-        class="kicker self-start text-ninetone-ink/55 hover:text-ninetone-ink"
-      >
-        {lang === "en" ? "Svenska →" : "English →"}
-      </a>
+      {hasRuntime && showLanguageSwitch && (
+        <a
+          href={otherHref}
+          hreflang={otherLangCode}
+          lang={otherLangCode}
+          class="kicker self-start text-ninetone-ink/55 hover:text-ninetone-ink"
+        >
+          {lang === "en" ? "Svenska →" : "English →"}
+        </a>
+      )}
     </div>
   </nav>
 </div>

@@ -2,6 +2,7 @@
 import Base from "../../layouts/Base.astro";
 import NewsCard from "../../components/NewsCard.astro";
 import { getNews } from "../../lib/ninetone";
+import { fmText, sharedT } from "../../lib/t";
 
 const hasNewsVideo = (p: Record<string, unknown>): boolean =>
   ["ytLinkA", "ytLinkB", "ytLinkC", "ytLinkD"].some((k) => {
@@ -11,25 +12,65 @@ const hasNewsVideo = (p: Record<string, unknown>): boolean =>
 
 // Core content — failures render the error page (never edge-cached) instead
 // of a silently-empty feed. Transients are absorbed by lib/cache.ts.
-const posts = await getNews();
+const postsRaw = await getNews();
+
+// FM CONTENT (decision 8 / Definition of done). getNews() returns Swedish
+// prose; on /en/ the titles and excerpts have to be English too, or the page
+// is English chrome wrapped around Swedish articles — which is what shipped
+// before this was wired up.
+//
+// Translated ONCE here in frontmatter rather than at each of the six
+// <NewsCard> call sites below: t()/fmText() are async, and resolving them in
+// the template would mean awaiting inside .map(), which Astro cannot do.
+// fmText() memoizes per request, so the lead post appearing in more than one
+// slot costs one call, and every card answers to the page's single budget.
+//
+// "title" kind for headlines, "plain" for excerpts. Both go through the
+// `fast` tier, matching how scripts/translate-warm.mjs warmed them — the tier
+// is part of the cache key, so using `quality` here would miss every warmed
+// entry and re-translate the whole feed at a visitor's expense.
+const fm = fmText(Astro.locals);
+const posts = await Promise.all(
+  postsRaw.map(async (p) => ({
+    ...p,
+    Title: await fm(String(p.Title ?? ""), "title"),
+    shortMessage: await fm(String(p.shortMessage ?? p.Message ?? "")),
+  })),
+);
 
 const [lead, ...rest] = posts;
 const featured = rest.slice(0, 2);
 const grid = rest.slice(2);
+
+// t() bound to this request (docs/i18n-phase-2-brief.md section 4).
+const t = sharedT(Astro.locals);
+const pageTitle = await t("News");
+const description = await t(
+  "Releases, signings, tours, and the occasional unguarded thought, from the house in Sundsvall, with a foot in Stockholm.",
+);
+const newsKicker = await t("Ninetone — News");
+const heading = await t("Notes from the floor.");
+const tagline = await t(
+  "Releases, signings, tours, and the occasional unguarded thought. From the house in Sundsvall, with a foot in Stockholm.",
+);
+const archiveKicker = await t("Archive");
 ---
 
-<Base title="News">
+<Base
+  title={pageTitle}
+  description={description}
+>
   <section class="bg-ninetone-paper">
     <div class="mx-auto max-w-7xl px-6 pb-12 pt-16 md:pb-16 md:pt-24">
       <div class="grid gap-10 md:grid-cols-12 md:gap-16">
         <div class="md:col-span-8">
-          <span class="kicker text-ninetone-red">Ninetone — News</span>
+          <span class="kicker text-ninetone-red">{newsKicker}</span>
           <h1 class="mt-6 font-display text-[clamp(2.75rem,7vw,6rem)] leading-[0.95] tracking-[-0.035em]">
-            Notes from the floor.
+            {heading}
           </h1>
         </div>
         <p class="md:col-span-4 md:pt-4 text-base leading-relaxed text-ninetone-ink/70 md:text-lg">
-          Releases, signings, tours, and the occasional unguarded thought. From the house in Sundsvall, with a foot in Stockholm.
+          {tagline}
         </p>
       </div>
       <div class="mt-12 h-px w-full bg-ninetone-red opacity-80" aria-hidden></div>
@@ -41,7 +82,7 @@ const grid = rest.slice(2);
           title={String(lead.Title ?? "")}
           slug={String(lead.slug ?? "")}
           image={lead.image_webp ? String(lead.image_webp) : undefined}
-          excerpt={String(lead.shortMessage ?? lead.Message ?? "")}
+          excerpt={String(lead.shortMessage ?? "")}
           date={String(lead.Date ?? "")}
           author={String(lead["Created By"] ?? "")}
           category={String(lead.category ?? "")}
@@ -59,7 +100,7 @@ const grid = rest.slice(2);
               title={String(p.Title ?? "")}
               slug={String(p.slug ?? "")}
               image={p.image_webp ? String(p.image_webp) : undefined}
-              excerpt={String(p.shortMessage ?? p.Message ?? "")}
+              excerpt={String(p.shortMessage ?? "")}
               date={String(p.Date ?? "")}
               author={String(p["Created By"] ?? "")}
               category={String(p.category ?? "")}
@@ -74,7 +115,7 @@ const grid = rest.slice(2);
     {grid.length > 0 && (
       <div class="mx-auto max-w-7xl px-6 pb-24">
         <div class="mb-8 border-t border-ninetone-rule pt-6">
-          <span class="kicker text-ninetone-ink/55">Archive</span>
+          <span class="kicker text-ninetone-ink/55">{archiveKicker}</span>
         </div>
         <div class="grid gap-x-8 gap-y-12 md:grid-cols-3 lg:grid-cols-4">
           {grid.map((p) => (
@@ -82,7 +123,7 @@ const grid = rest.slice(2);
               title={String(p.Title ?? "")}
               slug={String(p.slug ?? "")}
               image={p.image_webp ? String(p.image_webp) : undefined}
-              excerpt={String(p.shortMessage ?? p.Message ?? "")}
+              excerpt={String(p.shortMessage ?? "")}
               date={String(p.Date ?? "")}
               category={String(p.category ?? "")}
               hasVideo={hasNewsVideo(p)}

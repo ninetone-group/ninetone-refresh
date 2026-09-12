@@ -1,12 +1,54 @@
 ---
+import { sharedT } from "../lib/t";
+
 interface Props {
   lang?: "en" | "sv";
 }
-const { lang = "en" } = Astro.props as Props;
+
+// t() bound to this request (docs/i18n-phase-2-brief.md section 4). This
+// covers only the SERVER-RENDERED markup below (the dialog shell) — the
+// <script> block further down runs entirely client-side after hydration and
+// CANNOT call t(): it's async and needs Astro.locals, neither of which
+// exists in the browser. See the "NOT translatable via t()" comment at the
+// top of that <script> for the specific strings this leaves untouched
+// (SECTION_LABELS, "No results for...", the empty-state fallback) and why.
+const t = sharedT(Astro.locals);
+// Swedish kept as source for the three former lang===ternary pairs, same
+// convention as Header/Footer/NewsCard/MerchCard.
+const searchLabel = await t("Sök");
+const searchPlaceholder = await t("Sök artister, klienter, nyheter, team…");
+const startTypingLabel = await t("Börja skriva för att söka.");
+// "Navigate" / "Open" / "Powered by Fuse.js" were NOT a lang===ternary pair
+// before this change — they were hardcoded English literals with no Swedish
+// variant anywhere in the file, so per decision 5 ("source strings stay in
+// the code in whichever language they are written today") English is kept
+// as the source here, unlike the sv-sourced strings above.
+const navigateLabel = await t("Navigate");
+const openLabel = await t("Open");
+const poweredByLabel = await t("Powered by Fuse.js");
+
+// Client-script strings, resolved SERVER-side and handed over as data
+// attributes (translations audit P2). The palette's script runs in the
+// browser, where there is no Astro.locals and no t() — so these were
+// hardcoded English and every Swedish visitor saw English group headers and
+// empty-state copy on a component mounted from the base layout, i.e. on
+// every page. Same data-attribute bridge SectionIntro/ContactForm already
+// use. Swedish is kept as the source string, matching the rest of the file.
+const sectionLabels = JSON.stringify({
+  records: await t("Records"),
+  previous: await t("Tidigare"),
+  management: await t("Management"),
+  nation: await t("Nation"),
+  team: await t("Team"),
+  news: await t("Nyheter"),
+});
+const noResultsLabel = await t("Inga träffar för");
 ---
 
 <div
   id="cmdk"
+  data-i18n-sections={sectionLabels}
+  data-i18n-no-results={noResultsLabel}
   class="pointer-events-none fixed inset-0 z-50 flex items-start justify-center pt-[18vh] opacity-0 transition-opacity duration-150"
   aria-hidden="true"
 >
@@ -17,7 +59,7 @@ const { lang = "en" } = Astro.props as Props;
     class="relative z-10 mx-4 w-full max-w-2xl translate-y-2 border border-ninetone-rule bg-ninetone-paper shadow-2xl transition-transform duration-150"
     role="dialog"
     aria-modal="true"
-    aria-label={lang === "sv" ? "Sök" : "Search"}
+    aria-label={searchLabel}
   >
     <div class="flex items-center gap-3 border-b border-ninetone-rule px-5 py-4">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5 text-ninetone-ink/55">
@@ -27,7 +69,7 @@ const { lang = "en" } = Astro.props as Props;
       <input
         id="cmdk-input"
         type="search"
-        placeholder={lang === "sv" ? "Sök artister, klienter, nyheter, team…" : "Search artists, clients, news, team…"}
+        placeholder={searchPlaceholder}
         class="w-full border-0 bg-transparent font-display text-2xl text-ninetone-ink placeholder-ninetone-ink/35 focus:outline-none"
         autocomplete="off"
       />
@@ -36,22 +78,44 @@ const { lang = "en" } = Astro.props as Props;
 
     <div id="cmdk-body" class="max-h-[60vh] overflow-y-auto px-2 py-3">
       <div id="cmdk-empty" class="px-4 py-10 text-center text-sm text-ninetone-ink/55">
-        {lang === "sv" ? "Börja skriva för att söka." : "Start typing to search."}
+        {startTypingLabel}
       </div>
       <div id="cmdk-results"></div>
     </div>
 
     <div class="flex items-center justify-between gap-3 border-t border-ninetone-rule px-5 py-3 text-[0.6875rem] uppercase tracking-[0.16em] text-ninetone-ink/55">
       <div class="flex items-center gap-3">
-        <span><kbd class="rounded border border-ninetone-ink/15 px-1.5 py-0.5 font-sans">↑↓</kbd> Navigate</span>
-        <span><kbd class="rounded border border-ninetone-ink/15 px-1.5 py-0.5 font-sans">↵</kbd> Open</span>
+        <span><kbd class="rounded border border-ninetone-ink/15 px-1.5 py-0.5 font-sans">↑↓</kbd> {navigateLabel}</span>
+        <span><kbd class="rounded border border-ninetone-ink/15 px-1.5 py-0.5 font-sans">↵</kbd> {openLabel}</span>
       </div>
-      <span>Powered by Fuse.js</span>
+      <span>{poweredByLabel}</span>
     </div>
   </div>
 </div>
 
 <script>
+  // NOT WIRED TO t() — AND CANNOT BE, AS WRITTEN (docs/i18n-phase-2-brief.md
+  // section 4). Everything in this <script> block runs CLIENT-SIDE, after
+  // hydration, in the visitor's browser: `t()` (src/lib/translate.ts) is an
+  // async function that reads `Astro.locals` (the Worker's per-request
+  // execution context — API key, KV binding, waitUntil scheduler) — none of
+  // which exists in a browser tab. There is no `Astro.locals` to read and no
+  // server round-trip happening here at all.
+  //
+  // Left untranslated in this pass: SECTION_LABELS below (the six section
+  // names shown in each results group header), the "No results for ..."
+  // string in render(), and the `input.placeholder ||
+  // "Start typing to search."` fallback in the same function (dead code
+  // today — the placeholder is always non-empty, since Astro.astro sets it
+  // server-side via `searchPlaceholder` above — but written defensively).
+  //
+  // Fixing this for real needs a small data bridge (e.g. the frontmatter
+  // above resolving these same strings via t() and passing them into the
+  // script through a `data-*` attribute or an inline JSON island the script
+  // reads on init) — that is a real, scoped follow-up, not something to
+  // reach for inside a single file conversion pass. Flagged here rather than
+  // silently left as an untranslated gap; see the PR description's
+  // "could not follow as written" list.
   import Fuse from "fuse.js";
 
   type SearchSection = "records" | "previous" | "management" | "nation" | "team" | "news";
@@ -64,14 +128,23 @@ const { lang = "en" } = Astro.props as Props;
     image?: string;
   };
 
-  const SECTION_LABELS: Record<SearchSection, string> = {
-    records: "Records",
-    previous: "Previous",
-    management: "Management",
-    nation: "Nation",
-    team: "Team",
-    news: "News",
-  };
+  // Server-resolved (see the data attributes on #cmdk). The inline object is
+  // the fallback if the attribute is missing or malformed — the palette must
+  // still label its groups rather than render blanks.
+  const SECTION_LABELS: Record<SearchSection, string> = (() => {
+    const fallback: Record<SearchSection, string> = {
+      records: "Records",
+      previous: "Previous",
+      management: "Management",
+      nation: "Nation",
+      team: "Team",
+      news: "News",
+    };
+    try {
+      const raw = document.getElementById("cmdk")?.getAttribute("data-i18n-sections");
+      return raw ? { ...fallback, ...JSON.parse(raw) } : fallback;
+    } catch { return fallback; }
+  })();
 
   const SECTION_ORDER: SearchSection[] = ["records", "management", "nation", "previous", "team", "news"];
 
@@ -123,9 +196,35 @@ const { lang = "en" } = Astro.props as Props;
   function safeInternalUrl(value: string): string {
     try {
       const parsed = new URL(value, window.location.origin);
-      return parsed.origin === window.location.origin ? parsed.pathname + parsed.search + parsed.hash : "#";
+      const internal = parsed.origin === window.location.origin ? parsed.pathname + parsed.search + parsed.hash : "#";
+      return localizeInternal(internal);
     } catch { return "#"; }
   }
+
+  // LOCALE-PRESERVING (translations audit P1). /search-index.json is one
+  // shared, locale-neutral document — its hrefs are bare Swedish paths. Both
+  // search surfaces wrote those straight into result anchors, so an English
+  // visitor who picked a result was silently dropped back to Swedish. This is
+  // the same defect class as the nav links, but it bypassed the urlFor()
+  // sweep entirely because these links are built in the browser.
+  //
+  // The locale is read from the page the visitor is ALREADY on rather than
+  // threaded through as data: it is the one signal guaranteed correct here,
+  // it needs no change to the shared index (which stays a single cacheable
+  // document rather than one per locale), and it degrades to Swedish exactly
+  // as before if the path shape ever changes.
+  function currentLocalePrefix(): string {
+    return /^\/en(\/|$)/.test(window.location.pathname) ? "/en" : "";
+  }
+
+  function localizeInternal(path: string): string {
+    if (!path || path === "#" || path.startsWith("#")) return path;
+    const prefix = currentLocalePrefix();
+    if (!prefix) return path;
+    // Never double-prefix, and never touch a path that is already localized.
+    return /^\/en(\/|$)/.test(path) ? path : prefix + path;
+  }
+
 
   function safeImageUrl(value: string): string {
     try {
@@ -161,7 +260,7 @@ const { lang = "en" } = Astro.props as Props;
       resultsEl.innerHTML = "";
       emptyState.classList.remove("hidden");
       emptyState.textContent = input.value
-        ? `No results for "${input.value}"`
+        ? `${root.getAttribute("data-i18n-no-results") || "No results for"} "${input.value}"`
         : (input.placeholder || "Start typing to search.");
       return;
     }

@@ -1,6 +1,13 @@
 ---
 import type { Promo } from "../lib/ninetone";
-import { url } from "../lib/url";
+import { urlFor } from "../lib/url";
+import { sharedT } from "../lib/t";
+
+// Locale-bound link builder (i18n Phase 2): every internal href on an
+// English page must keep the /en prefix, or one click drops the visitor
+// back to Swedish. Shadows the plain url() import for this component.
+const url = urlFor(Astro.locals);
+
 
 interface Props {
   promo: Promo | null;
@@ -9,6 +16,12 @@ interface Props {
 const { promo } = Astro.props as Props;
 
 const stableId = promo ? promo.label + "·" + promo.message : "";
+
+// t() bound to this request (docs/i18n-phase-2-brief.md section 4).
+// `promo.label`/`promo.message` are FM-derived content, not chrome.
+const t = sharedT(Astro.locals);
+const dismissLabel = await t("Dismiss");
+
 ---
 
 {promo && (
@@ -38,7 +51,7 @@ const stableId = promo ? promo.label + "·" + promo.message : "";
       type="button"
       id="promo-dismiss"
       class="shrink-0 rounded-none p-1 text-ninetone-paper/60 hover:text-ninetone-paper"
-      aria-label="Dismiss"
+      aria-label={dismissLabel}
     >
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4">
         <line x1="18" y1="6" x2="6" y2="18"></line>

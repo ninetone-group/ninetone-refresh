@@ -36,6 +36,18 @@ test("shared cache bypasses request variants that may be private or attacker-con
   assert.equal(shouldBypassCache(new Request("https://ninetone.com/news"), "/news", ""), false);
 });
 
+test("the 404 route bypasses the shared cache — see docs/seo-phase-1b-brief.md P0 item 1", () => {
+  // Astro.rewrite("/404") re-invokes this entire middleware a second, nested
+  // time for the rewritten pathname. Without this bypass, that inner pass's
+  // own cache read/clone/store cycle raced the outer pass reading the same
+  // response stream, which is what produced the intermittent zero-byte 404
+  // bodies (Cause B in the brief). This must stay true regardless of query
+  // string or trailing slash.
+  assert.equal(shouldBypassCache(new Request("https://ninetone.com/404"), "/404", ""), true);
+  assert.equal(shouldBypassCache(new Request("https://ninetone.com/404/"), "/404/", ""), true);
+  assert.equal(shouldBypassCache(new Request("https://ninetone.com/404?x=1"), "/404", "?x=1"), true);
+});
+
 test("edge cache keys separate request origins", () => {
   assert.notEqual(
     edgeCacheKey("https://ninetone.com", "/news", "v1", "build"),

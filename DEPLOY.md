@@ -1,6 +1,6 @@
 # Deploy guide — preview environment
 
-**Live preview:** https://mixxmastermike123.github.io/ninetone-refresh-preview/
+**Live preview:** https://ninetone-group.github.io/ninetone-refresh/
 
 Stack:
 - **Build + host:** GitHub Actions builds; GitHub Pages serves the static `dist/`
@@ -30,7 +30,7 @@ The Cloudflare Pages project (if it still exists) can be deleted.
 
 Build steps:
 1. Checkout
-2. `actions/setup-node` Node 22.12.0 (cache: npm)
+2. `actions/setup-node` Node 22.19.0 (cache: npm)
 3. `npm ci`
 4. `npm run build` with all `FM_*` and `SHOPIFY_*` env vars from repo secrets
 5. `touch dist/.nojekyll` (so Pages doesn't strip `_astro/`)
@@ -42,10 +42,10 @@ Concurrency is `group: pages, cancel-in-progress: false` — new runs cancel que
 
 ## Required repo secrets
 
-Already set on `MixxMasterMike123/ninetone-refresh-preview`. To rotate:
+Already set on `ninetone-group/ninetone-refresh`. To rotate:
 
 ```bash
-gh secret set <NAME> --body "<value>" --repo MixxMasterMike123/ninetone-refresh-preview
+gh secret set <NAME> --body "<value>" --repo ninetone-group/ninetone-refresh
 ```
 
 Required:
@@ -139,7 +139,7 @@ GitHub fires Actions workflows when you POST to its `dispatches` endpoint with t
 > Could you add one script step to the publish/save workflow?
 >
 > Step: **Insert from URL**
-> URL: `https://api.github.com/repos/MixxMasterMike123/ninetone-refresh-preview/dispatches`
+> URL: `https://api.github.com/repos/ninetone-group/ninetone-refresh/dispatches`
 > Method: POST
 > Headers:
 > ```
@@ -156,7 +156,7 @@ GitHub fires Actions workflows when you POST to its `dispatches` endpoint with t
 
 ### Generating the token
 
-GitHub fine-grained PAT scoped to **only** the `ninetone-refresh-preview` repo with **Contents: Read** + **Metadata: Read** + **Actions: Write** permissions. Set expiry to 1 year, store it in the FM admin's password manager. To rotate: regenerate, send the new value, the FM admin updates the script step.
+GitHub fine-grained PAT scoped to **only** the `ninetone-refresh` repo with **Contents: Read** + **Metadata: Read** + **Actions: Write** permissions. Set expiry to 1 year, store it in the FM admin's password manager. To rotate: regenerate, send the new value, the FM admin updates the script step.
 
 Generate at: https://github.com/settings/personal-access-tokens
 
@@ -168,7 +168,7 @@ Generate at: https://github.com/settings/personal-access-tokens
 
 Deferred until needed. When ready, the path is:
 
-1. **Set up Cloudflare DNS for the project** — point a subdomain like `preview.ninetone.com` at GitHub Pages via CNAME `mixxmastermike123.github.io`. Add the custom domain in the GH Pages settings. Drop the `base` from `astro.config.mjs` (now serving from `/`).
+1. **Set up Cloudflare DNS for the project** — point a subdomain like `preview.ninetone.com` at GitHub Pages via CNAME `ninetone-group.github.io`. Add the custom domain in the GH Pages settings. Drop the `base` from `astro.config.mjs` (now serving from `/`).
 2. **Cloudflare → Zero Trust → Access → Applications → Add → Self-hosted.** Domain: `preview.ninetone.com`. Identity provider: One-time PIN (or Google). Policy: allowlist your email(s). Done.
 
 Until this is in place, the site is publicly reachable but **noindexed at three layers**:
@@ -183,7 +183,7 @@ So nothing gets indexed by Google, but anyone with the URL can view. Treat the U
 ## Verify noindex is working
 
 ```bash
-URL="https://mixxmastermike123.github.io/ninetone-refresh-preview/"
+URL="https://ninetone-group.github.io/ninetone-refresh/"
 
 curl -s "$URL" | grep -i 'name="robots"'
 # expect: <meta name="robots" content="noindex, nofollow, noarchive, nosnippet, noimageindex">
@@ -205,7 +205,7 @@ Two questions to answer when you're ready:
 
 Same checklist for any production host:
 
-1. **`astro.config.mjs`:** drop `base: "/ninetone-refresh-preview"`; set `site: "https://www.ninetone.com"`.
+1. **`astro.config.mjs`:** drop `base: "/ninetone-refresh"`; set `site: "https://www.ninetone.com"`.
 2. **Workflow:** flip `PUBLIC_NOINDEX: 'false'` in `.github/workflows/deploy.yml`.
 3. **`public/robots.txt`:** delete (or replace with a real one referencing the real sitemap).
 4. **`public/_headers`:** delete the `X-Robots-Tag` block (or keep on a host that honors `_headers` — see below).
@@ -221,7 +221,7 @@ GH Pages supports custom domains for free. The flow:
 1. In the repo: **Settings → Pages → Custom domain** → enter `www.ninetone.com` → Save. Check "Enforce HTTPS" once DNS is verified (a few minutes after step 2).
 2. At your DNS provider (currently wherever `ninetone.com` lives — Cloudflare, GoDaddy, etc.), set a **CNAME** record:
    ```
-   www → mixxmastermike123.github.io
+   www → ninetone-group.github.io
    ```
    For the apex (`ninetone.com` without the `www`), use **A records** pointing to GitHub's IPs (185.199.108.153, 185.199.109.153, 185.199.110.153, 185.199.111.153) — GitHub publishes these.
 3. Wait for DNS propagation (~minutes). GH Pages auto-provisions a Let's Encrypt cert.
@@ -288,17 +288,38 @@ The repo now has **two build targets** from one codebase (astro.config.mjs):
 | | `npm run build` (gh) | `npm run build:cf` (cf) |
 |---|---|---|
 | Output | static, 540+ pages | `output: "server"`, rendered per request |
-| Host | GH Pages under `/ninetone-refresh-preview/` | Worker `ninetone-site` + Static Assets |
+| Host | GH Pages under `/ninetone-refresh/` | Worker `ninetone-site` + Static Assets |
 | Content | frozen at build | **live from FM**, tiered edge cache |
-| Node | ≥22.12 (unchanged) | ≥22.15 (use `nvm use 24`; adapter needs `module.registerHooks`) |
+| Node | ≥22.19 (`package.json` engines floor) | ≥22.19; the adapter needs `module.registerHooks` |
 
 How live data works (see src/middleware.ts + src/lib/cache.ts):
 1. Edge cache per route with tiered TTLs — homepage 5 min, news 15 min, detail 1 h, rosters 6 h, team 24 h. Cache keys embed a **version epoch** from KV.
 2. On miss, the page renders from FM through a 60s in-isolate data cache with in-flight dedup and stale-on-error (an FM hiccup serves last-known-good instead of a 500).
 3. **Publish button** (`/admin/publish`, password = `PUBLISH_PASSWORD` secret) bumps the KV epoch → whole site is fresh within ~a minute. Editors never trigger deploys; deploys are for code only.
 4. Edge caching is live on `*.workers.dev` too (verified: `x-cache: hit` in ~20ms). Cache keys embed the KV epoch (content invalidation via Publish) AND a per-build id — so every deploy automatically starts a fresh cache generation and old-code pages are never served after a release.
+5. Cold renders read FM through a KV read-through (src/lib/fm-kv.ts, 300s, keyed by the same Publish epoch) and translations as one bundle per route (`trb:` keys), so a recycled isolate does not pay FM or per-string KV in full. `node scripts/perf-cold-probe.mjs` fetches staging routes with a cache-busting query and prints the `Server-Timing` split (`trbundle`, `trnkv`, `fmkv`, `fmnet`) — read-only, no purge, no writes, no model calls.
 
 Local prod-like run: `npm run preview:cf` (wrangler dev on the built output; secrets from `.dev.vars`, gitignored).
+
+**CI does not deploy the Worker.** `.github/workflows/deploy.yml` builds and publishes the
+GH Pages preview only. The Worker ships from a developer machine, always as one command:
+`npm run deploy:cf` (= `npm run build:cf && wrangler deploy`).
+
+### Publication cron — paused
+
+`wrangler.jsonc` declares a one-minute cron trigger for the translate-before-publish
+discovery tick, but `vars.PUBLICATION_TICK` is set to `"off"`, which stops the tick
+entirely. The subsystem is shadow-only (`PUBLICATION_SERVING` is absent), so nothing
+visitor-facing depends on it and the polling bought nothing. `PUBLICATION_TICK` is a var,
+not a secret, so it can be flipped in the Cloudflare dashboard without a redeploy. To
+resume discovery, remove the line or set it to anything but `"off"`.
+
+The subsystem still owns real bindings that a deploy provisions, paused or not: the
+`PUBLICATION_COORDINATOR` Durable Object (`NinetonePublicationCoordinator`, sqlite
+migration `v1`), the `ninetone-translation-jobs` queue plus its DLQ, and the
+`PUBLICATION_STATE` / `PUBLICATION_RELEASES` KV namespaces. Deploying to a fresh account
+means creating all of them — another reason `dist/` staleness matters, since the deploy
+config wrangler actually reads is the generated one.
 
 ### Accounts + config redirect — read before deploying
 
@@ -310,13 +331,18 @@ Two gotchas discovered on first deploy (2026-07-02):
    image proxy with its config pinned: `npx wrangler deploy -c wrangler.toml`.
    (At the repo root the redirect is what you want: plain `npx wrangler deploy`
    deploys the site.)
-2. **Two Cloudflare accounts on this machine.** Everything Ninetone
-   (ninetone-fm-image-proxy, the Pages preview) lives on the
-   **micke.ohlen@gmail.com account** (`0d392e5c…`). Wrangler caches the account
-   per project in `node_modules/.cache/wrangler/wrangler-account.json`. Make
-   sure `npx wrangler whoami` shows the gmail account before deploying; if the
-   OAuth token is for another account, `npx wrangler login` first and delete a
-   stale account cache file if wrangler targets the wrong id.
+2. **Three Cloudflare accounts on this login** (the stadsauktions account,
+   micke.ohlen@gmail.com's account `0d392e5c…`, and Ninetone's own account
+   `39f8beab…` where Mikael is Administrator). **Since 2026-09-12 everything
+   Ninetone deploys to Ninetone's account**: `ninetone-site` at
+   `ninetone-site.ninetone.workers.dev`, `ninetone-fm-image-proxy` at
+   `ninetone-fm-image-proxy.ninetone.workers.dev`, five KV namespaces, the
+   coordinator DO, the queue + DLQ. Both Worker configs pin `account_id` to
+   it, so a deploy can never land elsewhere; wrangler's per-project cache in
+   `node_modules/.cache/wrangler/wrangler-account.json` no longer matters.
+   The original copies on the gmail account are retired and not deployed to.
+   `wrangler login` must be authorised for Ninetone's account (the OAuth
+   consent screen lets you pick accounts — pick all of them).
 
 ### Staging deploy (workers.dev)
 
@@ -328,14 +354,17 @@ rm -f node_modules/.cache/wrangler/wrangler-account.json  # drop stale account p
 cd worker-fm-proxy && npx wrangler deploy -c wrangler.toml && cd ..
 
 # 2. KV namespaces must live on the same account — recreate if they were made
-#    elsewhere, then update the two ids in wrangler.jsonc:
+#    elsewhere, then update each id in wrangler.jsonc:
 npx wrangler kv namespace create CACHE_STATE
 npx wrangler kv namespace create SESSION
+npx wrangler kv namespace create CONTACT_SUBMISSIONS
+npx wrangler kv namespace create PUBLICATION_STATE
+npx wrangler kv namespace create PUBLICATION_RELEASES
 
 # 3. the site:
-nvm use 24                             # adapter needs Node ≥22.15
-npm run build:cf
-npx wrangler deploy                    # root redirect → dist/server/wrangler.json
+nvm use 22                             # ≥22.19; adapter needs module.registerHooks
+npm run deploy:cf                      # build + deploy as ONE command
+                                       # root redirect → dist/server/wrangler.json
 
 # 4. one-time secrets (values from .env), pinned to the site worker:
 npx wrangler secret put FM_USER --name ninetone-site

@@ -7,10 +7,25 @@ import RosterFilters from "../../components/RosterFilters.astro";
 import RosterIndex from "../../components/RosterIndex.astro";
 import { getArtists, getWebPostSection } from "../../lib/ninetone";
 import { displayTitle } from "../../lib/display-title";
+import { fmText, sharedT } from "../../lib/t";
+// FM CONTENT (decision 8): the card blurbs are FM prose, warmed by
+// scripts/translate-warm.mjs and previously rendered raw — so these listings
+// stayed Swedish on /en/. Resolved here in frontmatter because fm() is async
+// and the cards render inside .map().
+const fm = fmText(Astro.locals);
+
 
 // Core content — failures render the error page (never edge-cached) instead
 // of a silently-empty roster. Transients are absorbed by lib/cache.ts.
-const artists = await getArtists();
+const artistsRaw = await getArtists();
+// Pre-translate the blurbs here: fm() is async and the cards render inside a
+// template .map(), which cannot await (Astro compiler error).
+const artists = await Promise.all(
+  artistsRaw.map(async (a) => ({
+    ...a,
+    artistPresentationShort: await fm(String(a.artistPresentationShort ?? "")),
+  })),
+);
 const introBody = String((artists[0] as Record<string, unknown> | undefined)?.readMore ?? "");
 const webPosts = await getWebPostSection("Ninetone Records");
 
@@ -24,11 +39,22 @@ const sortedTags = Array.from(tagCounts.entries())
   .sort((a, b) => b[1] - a[1])
   .slice(0, 12)
   .map(([t]) => t);
+
+// t() bound to this request (docs/i18n-phase-2-brief.md section 4).
+const t = sharedT(Astro.locals);
+const artistsTitle = await t("Artists");
+const description = await t(
+  "The Ninetone Records roster — active artists shaping the sound of Sweden right now, from song to universe.",
+);
 ---
 
-<Base title="Artists" theme="records">
+<Base
+  title={artistsTitle}
+  theme="records"
+  description={description}
+>
   <SectionIntro
-    title="Artists"
+    title={artistsTitle}
     tagline={displayTitle(webPosts?.title)}
     readMore={introBody}
     theme="records"
@@ -67,6 +93,8 @@ const sortedTags = Array.from(tagCounts.entries())
                 slug={String(a.SLUG ?? "")}
                 blurb={String(a.artistPresentationShort ?? "")}
                 image={a.artistPicture_small ? String(a.artistPicture_small) : undefined}
+                imageWidth={500}
+                imageHeight={500}
                 tags={tags}
                 highlight={String(a.highLight_music ?? "") === "true"}
                 socials={{
@@ -85,7 +113,7 @@ const sortedTags = Array.from(tagCounts.entries())
         })}
       </div>
 
-      <RosterIndex artists={artists} hrefBase="/records/artists" />
+      <RosterIndex artists={artists} hrefBase="/records/artists" blurbsTranslated />
     </div>
   </section>
 </Base>

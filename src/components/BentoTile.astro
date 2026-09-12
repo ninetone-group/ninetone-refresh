@@ -1,7 +1,13 @@
 ---
 import type { SectionTheme } from "../lib/sections";
 import { sectionAccent } from "../lib/sections";
-import { url } from "../lib/url";
+import { urlFor } from "../lib/url";
+
+// Locale-bound link builder (i18n Phase 2): every internal href on an
+// English page must keep the /en prefix, or one click drops the visitor
+// back to Swedish. Shadows the plain url() import for this component.
+const url = urlFor(Astro.locals);
+
 
 interface Props {
   /** Optional href — turns the whole tile into an anchor. */
@@ -10,6 +16,13 @@ interface Props {
   size?: "feature" | "xwide" | "wide" | "tall" | "default";
   /** Optional background image — covers the whole tile. */
   image?: string;
+  /** Real intrinsic pixel dimensions of `image` (CLS hint only — the image is
+   * `absolute inset-0 h-full w-full object-cover`, so these never affect the
+   * tile's own size, which is driven by `size`'s min-height + grid span).
+   * Omit for a source with no fixed size (e.g. FM news `image_webp`, whose
+   * width varies per upload) rather than invent a number. */
+  imageWidth?: number;
+  imageHeight?: number;
   /** Visual treatment. "ink" = dark, "paper" = warm off-white, "image" = full-bleed image with optional overlay. */
   variant?: "ink" | "paper" | "warm" | "image" | "accent";
   /** Section accent (drives the underline mark + accent color). Default: group. */
@@ -24,12 +37,18 @@ interface Props {
   cta?: string;
   /** Open in new tab. */
   external?: boolean;
+  /** Opt-in LCP priority for this tile's image — sets fetchpriority="high"
+   *  and skips lazy-loading. Only the single true above-the-fold hero tile
+   *  on a page should pass this; every other tile stays lazy by default. */
+  priority?: boolean;
 }
 
 const {
   href,
   size = "default",
   image,
+  imageWidth,
+  imageHeight,
   variant = "paper",
   theme = "group",
   kicker,
@@ -37,6 +56,7 @@ const {
   blurb,
   cta,
   external = false,
+  priority = false,
 } = Astro.props as Props;
 
 const accent = sectionAccent[theme];
@@ -66,6 +86,7 @@ const Tag = href ? "a" : "div";
 const linkProps = href
   ? { href: external ? href : url(href), ...(external ? { target: "_blank", rel: "noopener" } : {}) }
   : {};
+
 ---
 
 <Tag
@@ -81,8 +102,11 @@ const linkProps = href
     <img
       src={image}
       alt=""
+      width={imageWidth}
+      height={imageHeight}
       class="fm-img absolute inset-0 -z-10 h-full w-full object-cover transition-transform duration-700 ease-out group-hover:scale-[1.04]"
-      loading="lazy"
+      loading={priority ? undefined : "lazy"}
+      fetchpriority={priority ? "high" : undefined}
       onload="this.classList.add('is-loaded')"
     />
   )}

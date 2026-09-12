@@ -1,5 +1,13 @@
 ---
-import { url } from "../lib/url";
+import { url as plainUrl, urlFor as bindUrlToLocale } from "../lib/url";
+import { sharedT } from "../lib/t";
+
+// Locale-bound link builder (i18n Phase 2): every internal href on an
+// English page must keep the /en prefix, or one click drops the visitor
+// back to Swedish. Shadows the plain url() import for this component.
+// Aliased import (this file already has its own `urlFor` for page numbers).
+const url = bindUrlToLocale(Astro.locals);
+
 
 interface Props {
   currentPage: number;
@@ -9,7 +17,14 @@ interface Props {
 
 const { currentPage, lastPage, baseUrl } = Astro.props as Props;
 
-if (lastPage <= 1) return Astro.redirect("");
+// Render nothing on a single-page list. NOTE: this must be a template guard,
+// not `return Astro.redirect("")` — that only short-circuits safely from a
+// top-level page's frontmatter, before the response starts streaming. From a
+// child component, Astro.redirect() still returns a Response object, which
+// the parent page's already-streaming renderer then tries to write as an
+// HTML chunk — throwing `ResponseSentError` at flush and leaving the visitor
+// with an empty body / 500. See docs/seo-phase-1b-brief.md P0 item 3.
+const hasPages = lastPage > 1;
 
 // Page 1 is the bare baseUrl; subsequent pages are /baseUrl/2, /baseUrl/3, etc.
 function urlFor(p: number): string {
@@ -30,41 +45,50 @@ function buildPageList(current: number, last: number): (number | "…")[] {
   return out;
 }
 
-const pages = buildPageList(currentPage, lastPage);
-const prevUrl = currentPage > 1 ? urlFor(currentPage - 1) : null;
-const nextUrl = currentPage < lastPage ? urlFor(currentPage + 1) : null;
+const pages = hasPages ? buildPageList(currentPage, lastPage) : [];
+const prevUrl = hasPages && currentPage > 1 ? urlFor(currentPage - 1) : null;
+const nextUrl = hasPages && currentPage < lastPage ? urlFor(currentPage + 1) : null;
+
+// t() bound to this request (docs/i18n-phase-2-brief.md section 4).
+const t = sharedT(Astro.locals);
+const paginationAriaLabel = await t("Pagination");
+const prevLabel = await t("← Prev");
+const nextLabel = await t("Next →");
+
 ---
 
-<nav class="mt-16 flex items-center justify-center gap-2 text-sm" aria-label="Pagination">
-  {prevUrl ? (
-    <a href={prevUrl} class="border border-ninetone-ink/20 px-3 py-1.5 text-ninetone-ink hover:border-ninetone-ink hover:bg-ninetone-ink hover:text-ninetone-paper" rel="prev">
-      ← Prev
-    </a>
-  ) : (
-    <span class="border border-ninetone-ink/10 px-3 py-1.5 text-ninetone-ink/30">← Prev</span>
-  )}
-
-  <ul class="flex items-center gap-1">
-    {pages.map((p) =>
-      p === "…" ? (
-        <li class="px-2 text-ninetone-ink/40">…</li>
-      ) : p === currentPage ? (
-        <li class="bg-ninetone-ink px-3 py-1.5 font-semibold text-ninetone-paper">{p}</li>
-      ) : (
-        <li>
-          <a href={urlFor(p)} class="block border border-ninetone-ink/15 px-3 py-1.5 text-ninetone-ink hover:border-ninetone-ink">
-            {p}
-          </a>
-        </li>
-      ),
+{hasPages && (
+  <nav class="mt-16 flex items-center justify-center gap-2 text-sm" aria-label={paginationAriaLabel}>
+    {prevUrl ? (
+      <a href={prevUrl} class="border border-ninetone-ink/20 px-3 py-1.5 text-ninetone-ink hover:border-ninetone-ink hover:bg-ninetone-ink hover:text-ninetone-paper" rel="prev">
+        {prevLabel}
+      </a>
+    ) : (
+      <span class="border border-ninetone-ink/10 px-3 py-1.5 text-ninetone-ink/30">{prevLabel}</span>
     )}
-  </ul>
 
-  {nextUrl ? (
-    <a href={nextUrl} class="border border-ninetone-ink/20 px-3 py-1.5 text-ninetone-ink hover:border-ninetone-ink hover:bg-ninetone-ink hover:text-ninetone-paper" rel="next">
-      Next →
-    </a>
-  ) : (
-    <span class="border border-ninetone-ink/10 px-3 py-1.5 text-ninetone-ink/30">Next →</span>
-  )}
-</nav>
+    <ul class="flex items-center gap-1">
+      {pages.map((p) =>
+        p === "…" ? (
+          <li class="px-2 text-ninetone-ink/40">…</li>
+        ) : p === currentPage ? (
+          <li class="bg-ninetone-ink px-3 py-1.5 font-semibold text-ninetone-paper">{p}</li>
+        ) : (
+          <li>
+            <a href={urlFor(p)} class="block border border-ninetone-ink/15 px-3 py-1.5 text-ninetone-ink hover:border-ninetone-ink">
+              {p}
+            </a>
+          </li>
+        ),
+      )}
+    </ul>
+
+    {nextUrl ? (
+      <a href={nextUrl} class="border border-ninetone-ink/20 px-3 py-1.5 text-ninetone-ink hover:border-ninetone-ink hover:bg-ninetone-ink hover:text-ninetone-paper" rel="next">
+        {nextLabel}
+      </a>
+    ) : (
+      <span class="border border-ninetone-ink/10 px-3 py-1.5 text-ninetone-ink/30">{nextLabel}</span>
+    )}
+  </nav>
+)}

@@ -1,17 +1,65 @@
 ---
 import Base from "../layouts/Base.astro";
-import { url } from "../lib/url";
+import { urlFor } from "../lib/url";
+import { sharedT } from "../lib/t";
+
+// Locale-bound link builder (i18n Phase 2): every internal href on an
+// English page must keep the /en prefix, or one click drops the visitor
+// back to Swedish. Shadows the plain url() import for this component.
+const url = urlFor(Astro.locals);
+
+
+// t() bound to this request (docs/i18n-phase-2-brief.md section 4). The
+// <script> below runs client-side after hydration and cannot call t()
+// itself (async, needs Astro.locals) — every string it needs is resolved
+// here and threaded through as data-i18n-* attributes on #search-root
+// (the bridge pattern from SectionIntro.astro / note 4), rather than left
+// hardcoded in English as CommandPalette.astro's SECTION_LABELS currently is.
+const t = sharedT(Astro.locals);
+const pageTitle = await t("Search");
+const searchKicker = await t("Search");
+const findAnythingHeading = await t("Find anything.");
+const cmdkHintPrefix = await t("Press");
+const cmdkHintSuffix = await t("from anywhere on the site to open the command palette.");
+const searchPlaceholder = await t("Search artists, news, team…");
+const searchButtonLabel = await t("Search");
+const typeAQueryLabel = await t("Type a query and press search.");
+const searchingLabel = await t("Searching…");
+const noResultsForLabel = await t("No results for");
+const resultLabel = await t("result");
+const resultsLabel = await t("results");
+const forLabel = await t("for");
+const sectionLabelsSource: Record<string, string> = {
+  records: "Records",
+  previous: "Previous artists",
+  management: "Management",
+  nation: "Nation",
+  team: "Team",
+  news: "News",
+};
+const sectionLabels = Object.fromEntries(
+  await Promise.all(Object.entries(sectionLabelsSource).map(async ([k, v]) => [k, await t(v)] as const)),
+);
+
 ---
 
-<Base title="Search">
+<Base
+  title={pageTitle}
+  {/* Internal search is a crawl-efficiency sink: an unbounded query space
+      with no standalone value. It is excluded from the sitemap, but omission
+      alone does not prevent discovery, and today it is protected only by the
+      temporary staging-wide noindex — so it would become indexable the moment
+      that is lifted at launch. Page-level and permanent (SEO audit P2). */}
+  noindex
+>
   <section class="bg-ninetone-paper">
     <div class="mx-auto max-w-7xl px-6 pb-12 pt-16 md:pt-24">
-      <span class="kicker text-ninetone-ink/55">Search</span>
+      <span class="kicker text-ninetone-ink/55">{searchKicker}</span>
       <h1 class="mt-4 font-display text-[clamp(2.75rem,7vw,6rem)] leading-[0.95] tracking-[-0.035em]">
-        Find anything.
+        {findAnythingHeading}
       </h1>
       <p class="mt-4 max-w-xl text-base text-ninetone-ink/65">
-        Press <kbd class="rounded border border-ninetone-ink/15 px-1.5 py-0.5 text-xs font-medium text-ninetone-ink/70">⌘K</kbd> from anywhere on the site to open the command palette.
+        {cmdkHintPrefix} <kbd class="rounded border border-ninetone-ink/15 px-1.5 py-0.5 text-xs font-medium text-ninetone-ink/70">⌘K</kbd> {cmdkHintSuffix}
       </p>
 
       <form method="get" action={url("/search-result")} class="mt-10 flex max-w-2xl items-center gap-3 border-b border-ninetone-ink/20 pb-3">
@@ -23,20 +71,31 @@ import { url } from "../lib/url";
           id="search-input"
           type="search"
           name="q"
-          placeholder="Search artists, news, team…"
+          placeholder={searchPlaceholder}
           class="w-full border-0 bg-transparent font-display text-2xl text-ninetone-ink placeholder-ninetone-ink/35 focus:outline-none"
           autocomplete="off"
         />
         <button type="submit" class="bg-ninetone-ink px-4 py-2 text-sm font-semibold text-ninetone-paper transition-colors hover:bg-ninetone-ink-soft">
-          Search
+          {searchButtonLabel}
         </button>
       </form>
-      <p id="search-status" class="mt-4 text-xs uppercase tracking-[0.16em] text-ninetone-ink/55">Type a query and press search.</p>
+      <p id="search-status" class="mt-4 text-xs uppercase tracking-[0.16em] text-ninetone-ink/55">{typeAQueryLabel}</p>
     </div>
   </section>
 
   <section class="bg-ninetone-paper pb-24">
-    <div id="search-results" class="mx-auto max-w-7xl px-6"></div>
+    <div
+      id="search-root"
+      data-i18n-type-a-query={typeAQueryLabel}
+      data-i18n-searching={searchingLabel}
+      data-i18n-no-results-for={noResultsForLabel}
+      data-i18n-result={resultLabel}
+      data-i18n-results={resultsLabel}
+      data-i18n-for={forLabel}
+      data-i18n-section-labels={JSON.stringify(sectionLabels)}
+    >
+      <div id="search-results" class="mx-auto max-w-7xl px-6"></div>
+    </div>
   </section>
 </Base>
 
@@ -53,14 +112,33 @@ import { url } from "../lib/url";
     image?: string;
   };
 
-  const SECTION_LABELS: Record<SearchSection, string> = {
-    records: "Records",
-    previous: "Previous artists",
-    management: "Management",
-    nation: "Nation",
-    team: "Team",
-    news: "News",
+  // Bridge pattern (docs/i18n-phase-2-brief.md section 4, note 4): this
+  // <script> runs client-side with no Astro.locals, so it cannot call t()
+  // itself. Every string it needs was resolved server-side in the
+  // frontmatter above and threaded through as data-i18n-* attributes on
+  // #search-root — read once here rather than re-authored in English inline
+  // (the gap CommandPalette.astro's SECTION_LABELS documents but leaves
+  // open; fixed here since this page's script only needed a plain JSON
+  // object, not the more involved dynamic-list shape CommandPalette has).
+  const root = document.getElementById("search-root");
+  const i18n = {
+    typeAQuery: root?.dataset.i18nTypeAQuery || "Type a query and press search.",
+    searching: root?.dataset.i18nSearching || "Searching…",
+    noResultsFor: root?.dataset.i18nNoResultsFor || "No results for",
+    result: root?.dataset.i18nResult || "result",
+    results: root?.dataset.i18nResults || "results",
+    for: root?.dataset.i18nFor || "for",
   };
+  const SECTION_LABELS: Record<SearchSection, string> = root?.dataset.i18nSectionLabels
+    ? JSON.parse(root.dataset.i18nSectionLabels)
+    : {
+        records: "Records",
+        previous: "Previous artists",
+        management: "Management",
+        nation: "Nation",
+        team: "Team",
+        news: "News",
+      };
 
   const SECTION_ORDER: SearchSection[] = ["records", "management", "nation", "previous", "team", "news"];
 
@@ -80,8 +158,26 @@ import { url } from "../lib/url";
   function safeInternalUrl(value: string): string {
     try {
       const parsed = new URL(value, window.location.origin);
-      return parsed.origin === window.location.origin ? parsed.pathname + parsed.search + parsed.hash : "#";
+      const internal = parsed.origin === window.location.origin ? parsed.pathname + parsed.search + parsed.hash : "#";
+      return localizeInternal(internal);
     } catch { return "#"; }
+  }
+
+  // LOCALE-PRESERVING (translations audit P1) — see the fuller note in
+  // CommandPalette.astro. /search-index.json is a single locale-neutral
+  // document whose hrefs are bare Swedish paths; without this an English
+  // visitor clicking a search result lands on the Swedish page. Derived from
+  // the current URL rather than threaded as data, so the shared index stays
+  // one cacheable document instead of one per locale.
+  function currentLocalePrefix(): string {
+    return /^\/en(\/|$)/.test(window.location.pathname) ? "/en" : "";
+  }
+
+  function localizeInternal(path: string): string {
+    if (!path || path === "#" || path.startsWith("#")) return path;
+    const prefix = currentLocalePrefix();
+    if (!prefix) return path;
+    return /^\/en(\/|$)/.test(path) ? path : prefix + path;
   }
 
   function safeImageUrl(value: string): string {
@@ -93,7 +189,7 @@ import { url } from "../lib/url";
 
   function renderResults(query: string, hits: SearchEntry[]): string {
     if (hits.length === 0) {
-      return `<p class="text-base text-ninetone-ink/65">No results for <strong>${escapeHtml(query)}</strong>.</p>`;
+      return `<p class="text-base text-ninetone-ink/65">${i18n.noResultsFor} <strong>${escapeHtml(query)}</strong>.</p>`;
     }
 
     const grouped = new Map<SearchSection, SearchEntry[]>();
@@ -138,12 +234,12 @@ import { url } from "../lib/url";
     if (!status || !out) return;
 
     if (!query) {
-      status.textContent = "Type a query and press search.";
+      status.textContent = i18n.typeAQuery;
       out.innerHTML = "";
       return;
     }
 
-    status.textContent = "Searching…";
+    status.textContent = i18n.searching;
     out.innerHTML = "";
 
     const data = await loadIndex();
@@ -159,7 +255,8 @@ import { url } from "../lib/url";
     });
 
     const results = fuse.search(query, { limit: 100 }).map((r) => r.item);
-    status.textContent = `${results.length} result${results.length === 1 ? "" : "s"} for "${query}"`;
+    const countLabel = results.length === 1 ? i18n.result : i18n.results;
+    status.textContent = `${results.length} ${countLabel} ${i18n.for} "${query}"`;
     out.innerHTML = renderResults(query, results);
   }
 

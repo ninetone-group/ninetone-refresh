@@ -2,7 +2,14 @@
 import { renderBio } from "../lib/markdown";
 import type { SectionTheme } from "../lib/sections";
 import { sectionAccent } from "../lib/sections";
-import { url } from "../lib/url";
+import { urlFor } from "../lib/url";
+import { sharedT } from "../lib/t";
+
+// Locale-bound link builder (i18n Phase 2): every internal href on an
+// English page must keep the /en prefix, or one click drops the visitor
+// back to Swedish. Shadows the plain url() import for this component.
+const url = urlFor(Astro.locals);
+
 
 interface Props {
   /** Page heading (e.g. "Artists", "Clients", "Entertainers"). */
@@ -34,6 +41,15 @@ const {
 const bodyHtml = readMore ? renderBio(readMore) : "";
 const accent = sectionAccent[theme];
 const kickerLabel = kicker ?? accent.label;
+
+// t() bound to this request (docs/i18n-phase-2-brief.md section 4). Only the
+// Read More/Read Less toggle is chrome here — `title`/`tagline`/`readMore`
+// are caller-supplied page content (FM bios, page copy authored elsewhere),
+// not this component's own strings to translate.
+const t = sharedT(Astro.locals);
+const readMoreLabel = await t("Read more");
+const readLessLabel = await t("Read less");
+
 ---
 
 <section class="bg-ninetone-paper text-ninetone-ink">
@@ -76,9 +92,11 @@ const kickerLabel = kicker ?? accent.label;
             type="button"
             class={`mt-4 inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] ${accent.text}`}
             data-intro-toggle
+            data-label-more={readMoreLabel}
+            data-label-less={readLessLabel}
             aria-expanded="false"
           >
-            <span data-intro-toggle-label>Read more</span>
+            <span data-intro-toggle-label>{readMoreLabel}</span>
             <span aria-hidden>↓</span>
           </button>
         </div>
@@ -97,17 +115,26 @@ const kickerLabel = kicker ?? accent.label;
     const label = root.querySelector<HTMLElement>("[data-intro-toggle-label]");
     if (!collapsed || !expanded || !btn || !label) return;
 
+    // Toggle text comes from data-label-more/data-label-less (server-rendered
+    // via t() in the frontmatter above — docs/i18n-phase-2-brief.md section
+    // 4), NOT hardcoded here. This <script> runs client-side, after
+    // hydration, where t() (async, needs Astro.locals) cannot run — so the
+    // ALREADY-TRANSLATED strings are threaded through as data attributes
+    // instead of being re-authored in English in this file.
+    const moreLabel = btn.dataset.labelMore || "Read more";
+    const lessLabel = btn.dataset.labelLess || "Read less";
+
     btn.addEventListener("click", () => {
       const open = btn.getAttribute("aria-expanded") === "true";
       if (open) {
         expanded.classList.add("hidden");
         collapsed.classList.remove("hidden");
-        label.textContent = "Read more";
+        label.textContent = moreLabel;
         btn.setAttribute("aria-expanded", "false");
       } else {
         expanded.classList.remove("hidden");
         collapsed.classList.add("hidden");
-        label.textContent = "Read less";
+        label.textContent = lessLabel;
         btn.setAttribute("aria-expanded", "true");
       }
     });

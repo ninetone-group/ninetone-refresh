@@ -1,0 +1,439 @@
+/**
+ * Publication contracts — the data shapes the translate-before-publish flow
+ * agrees on (docs/translation-publication-plan-2026-09-12.md).
+ *
+ * DELIBERATELY PURE. No Cloudflare bindings, no FileMaker imports, no Astro
+ * globals — everything here is a type or a total function over plain data, so
+ * the rules that decide "is this safe to publish" are unit-testable without a
+ * build, a network, or a deploy. The Cloudflare-shaped layers (discovery,
+ * queue consumer, coordinator) import THIS; nothing here imports them.
+ *
+ * The four contracts, in the order the flow uses them:
+ *
+ *   SourceRecord   one normalized public FM record plus its content hash
+ *   TranslationJob one field, one locale — the unit queued and retried
+ *   Candidate      a source version whose jobs are still being prepared
+ *   Release        an immutable, validated generation a visitor can be served
+ *
+ * WHY A CONTENT HASH RATHER THAN A TIMESTAMP: FM has no reliable modified-at
+ * on the layouts we read (see src/pages/sitemap-pages.xml.ts, which omits
+ * lastmod honestly for the same reason). Hashing the publication-relevant
+ * fields means an edit is detected because the CONTENT changed, and an
+ * unchanged re-save produces no work at all. It also makes supersession
+ * decidable: a candidate is stale precisely when its source hash is no longer
+ * the newest hash for that entity.
+ */
+
+// ---------------------------------------------------------------------------
+// Locales and entity kinds
+// ---------------------------------------------------------------------------
+
+export type Lang = "sv" | "en";
+
+/** Both supported locales. A release is incomplete unless every required field exists in both. */
+export const SUPPORTED_LOCALES: readonly Lang[] = ["sv", "en"] as const;
+
+/**
+ * Every public entity kind that has its own route AND translatable prose.
+ *
+ * Derived from the actual `fm()` call sites and the sitemap's entity helpers,
+ * not from the warm script's job list — those two had already drifted apart
+ * once (the warm script wrote WebPosts titles on the `quality` tier while
+ * fmText() read `fast`, so the keys were never looked up). The rendering code
+ * is the authority on what must be translated.
+ */
+export type EntityKind =
+  | "artist"
+  | "previousArtist"
+  | "client"
+  | "bookingTalent"
+  | "bookingCategory"
+  | "teamMember"
+  | "newsPost"
+  | "webPostSection"
+  | "guide";
+
+/**
+ * Which fields of each kind are translated, and how.
+ *
+ * `kind` mirrors src/lib/translate.ts's Kind: "markdown" preserves syntax
+ * byte-for-byte, "title" is a headline, "plain" is everything else.
+ *
+ * `tier` MUST match what the rendering code asks for, because the tier is part
+ * of the cache key. src/lib/t.ts's fmText() always requests "fast", so every
+ * entity field here is "fast". Chrome goes through sharedT() at "quality" and
+ * is handled separately (see CHROME_TIER). Getting this wrong does not fail
+ * loudly — it writes keys nothing ever reads.
+ */
+export interface TranslatableField {
+  readonly field: string;
+  readonly kind: "plain" | "markdown" | "title";
+}
+
+export const ENTITY_FIELDS: Readonly<Record<EntityKind, readonly TranslatableField[]>> = {
+  artist: [
+    { field: "Artist Presentation Title", kind: "title" },
+    { field: "artistPresentationString", kind: "markdown" },
+    { field: "artistPresentationShort", kind: "plain" },
+  ],
+  previousArtist: [
+    { field: "Artist Presentation Title", kind: "title" },
+    { field: "artistPresentationString", kind: "markdown" },
+    { field: "artistPresentationShort", kind: "plain" },
+  ],
+  client: [
+    { field: "clientPresentationTitle", kind: "title" },
+    { field: "clientPresentationString", kind: "markdown" },
+    { field: "clientPresentationShort", kind: "plain" },
+    { field: "artistPresentationShort", kind: "plain" },
+  ],
+  bookingTalent: [
+    { field: "bookingPresentationTitle", kind: "title" },
+    { field: "bookingPresentationString", kind: "markdown" },
+  ],
+  bookingCategory: [{ field: "description", kind: "plain" }],
+  teamMember: [
+    { field: "title", kind: "title" },
+    { field: "titleDescription", kind: "plain" },
+    { field: "DescriptionString", kind: "markdown" },
+  ],
+  newsPost: [
+    { field: "Title", kind: "title" },
+    { field: "shortMessage", kind: "plain" },
+    { field: "MessageString", kind: "markdown" },
+  ],
+  webPostSection: [
+    { field: "title", kind: "title" },
+    { field: "subject", kind: "title" },
+    { field: "message", kind: "markdown" },
+  ],
+  guide: [
+    { field: "subject", kind: "title" },
+    { field: "message", kind: "markdown" },
+  ],
+};
+
+/** Entity prose renders through fmText(), which always asks for "fast". */
+export const ENTITY_TIER = "fast" as const;
+/** UI chrome renders through sharedT(), which always asks for "quality". */
+export const CHROME_TIER = "quality" as const;
+
+// ---------------------------------------------------------------------------
+// Source records
+// ---------------------------------------------------------------------------
+
+export interface SourceRecord {
+  readonly kind: EntityKind;
+  /** Stable public identity — the slug the route uses, or the section name. */
+  readonly id: string;
+  /** Hash over the publication-relevant fields; see sourceHash(). */
+  readonly hash: string;
+  /** Trimmed field values, keyed by field name. Empty fields are omitted. */
+  readonly fields: Readonly<Record<string, string>>;
+  /** Ids of other records that must be published in the same release. */
+  readonly references: readonly string[];
+  /** False for inactive/deleted records, which take the priority removal path. */
+  readonly active: boolean;
+}
+
+/**
+ * Field values that go into the hash, normalized.
+ *
+ * TRIMS, deliberately and to match scripts/translate-warm.mjs's job(), because
+ * the translation cache is keyed on trimmed text. A stray trailing newline in
+ * an FM field previously produced a different sha256 from the warmed key and a
+ * permanent cache miss — 67 of 886 fields were affected. Normalizing at the
+ * one place the hash is computed keeps that class of bug from returning.
+ */
+export function normalizeFields(
+  kind: EntityKind,
+  raw: Readonly<Record<string, unknown>>,
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const { field } of ENTITY_FIELDS[kind]) {
+    const value = raw[field];
+    const text = typeof value === "string" ? value.trim() : "";
+    if (text) out[field] = text;
+  }
+  return out;
+}
+
+/**
+ * Stable hash input for a record version.
+ *
+ * Includes identity, active flag, sorted field entries, sorted references, the
+ * locale set, and a prompt/key version — everything the design lists. Sorting
+ * matters: object key order must not change the hash, or an unchanged record
+ * would look edited on the next scan and re-run the whole translation.
+ *
+ * Returns the STRING to hash rather than the hash itself, so this stays
+ * synchronous and dependency-free; the caller applies sha256 (Web Crypto is
+ * async and already available in src/lib/translate.ts).
+ */
+export function sourceHashInput(
+  record: Omit<SourceRecord, "hash">,
+  promptVersion: string,
+): string {
+  const fields = Object.keys(record.fields)
+    .sort()
+    .map((k) => `${k}\u0000${record.fields[k]}`)
+    .join("\u0001");
+  return [
+    `v=${promptVersion}`,
+    `kind=${record.kind}`,
+    `id=${record.id}`,
+    `locales=${[...SUPPORTED_LOCALES].sort().join(",")}`,
+    `fields=${fields}`,
+  ].join("\u0002");
+}
+
+/**
+ * Membership fingerprint — status and relationships, WITHOUT the prose.
+ *
+ * Deliberately separate from sourceHashInput(). An earlier version folded
+ * `active` and `references` into the content hash, so moving an artist
+ * Active -> Previous -> Active produced a new hash both times and
+ * re-translated text that had never changed. That is paid work for nothing,
+ * and the translation cache does not need it: its key is sha256(source text)
+ * per target and tier (src/lib/translate.ts), so identical text in the same
+ * language is the same entry regardless of which section the record sits in.
+ *
+ * The required behaviour follows from the split:
+ *   - same text, status changed -> content hash unchanged, translations reused
+ *   - text edited               -> new content hash, only those fields translated
+ *   - moved back to Active      -> the original translations are reused again
+ *
+ * A release must still be rebuilt when membership changes, because section
+ * listings and route inventories differ. That is bundle assembly, not
+ * translation work.
+ */
+export function membershipFingerprint(record: Omit<SourceRecord, "hash">): string {
+  const refs = [...record.references].sort().join(",");
+  return `active=${record.active ? "1" : "0"}|refs=${refs}`;
+}
+
+// ---------------------------------------------------------------------------
+// Jobs
+// ---------------------------------------------------------------------------
+
+export interface TranslationJob {
+  readonly entityKind: EntityKind;
+  readonly entityId: string;
+  /** The source hash this job belongs to — how stale completions are detected. */
+  readonly sourceHash: string;
+  readonly field: string;
+  readonly target: Lang;
+  readonly kind: "plain" | "markdown" | "title";
+  readonly tier: "fast" | "quality";
+  /** Names that must survive translation unchanged (decision 7). */
+  readonly protect: readonly string[];
+}
+
+/**
+ * Stable job identity, per the design: entity, source hash, target, field,
+ * kind, and key version.
+ *
+ * Queue delivery is at least once, so the consumer will see duplicates; this
+ * id is what makes a redelivery a no-op rather than a second API call.
+ */
+export function jobId(job: TranslationJob, keyVersion: string): string {
+  return [
+    keyVersion,
+    job.entityKind,
+    job.entityId,
+    job.sourceHash,
+    job.field,
+    job.target,
+    job.kind,
+    job.tier,
+  ].join(":");
+}
+
+/**
+ * Every job a record version needs: one per translatable non-empty field per
+ * supported locale.
+ *
+ * BOTH locales, including the record's own source language. Decision 4 makes
+ * translation bidirectional and the model returns already-target text
+ * unchanged, so asking for both is what guarantees a release is complete
+ * regardless of which language Patrik authored in. The Team section is
+ * authored in English while most of the site is Swedish — a one-directional
+ * assumption would have left /team untranslatable.
+ */
+export function jobsForRecord(record: SourceRecord): TranslationJob[] {
+  if (!record.active) return [];
+  const jobs: TranslationJob[] = [];
+  for (const { field, kind } of ENTITY_FIELDS[record.kind]) {
+    const text = record.fields[field];
+    if (!text) continue;
+    for (const target of SUPPORTED_LOCALES) {
+      jobs.push({
+        entityKind: record.kind,
+        entityId: record.id,
+        sourceHash: record.hash,
+        field,
+        target,
+        kind,
+        tier: ENTITY_TIER,
+        protect: [],
+      });
+    }
+  }
+  return jobs;
+}
+
+// ---------------------------------------------------------------------------
+// Candidates and readiness
+// ---------------------------------------------------------------------------
+
+export type CandidateState = "preparing" | "ready" | "failed" | "superseded";
+
+export interface Candidate {
+  readonly entityKind: EntityKind;
+  readonly entityId: string;
+  readonly sourceHash: string;
+  readonly state: CandidateState;
+  /** jobId -> whether that job has a stored translation. */
+  readonly completed: Readonly<Record<string, boolean>>;
+  readonly requiredJobIds: readonly string[];
+  /** Set when state is "failed": which jobs exhausted their retries. */
+  readonly failedJobIds?: readonly string[];
+}
+
+export function isCandidateComplete(candidate: Candidate): boolean {
+  return candidate.requiredJobIds.every((id) => candidate.completed[id] === true);
+}
+
+/**
+ * Is this candidate still the newest version of its record?
+ *
+ * Promotion must reject stale completion (design, "Publication and
+ * consistency"): a queue message from an older edit can finish AFTER a newer
+ * edit was discovered, and must never overwrite the newer state.
+ */
+export function isSuperseded(candidate: Candidate, newestHash: string | undefined): boolean {
+  return newestHash !== undefined && newestHash !== candidate.sourceHash;
+}
+
+// ---------------------------------------------------------------------------
+// Releases
+// ---------------------------------------------------------------------------
+
+export interface ReleaseEntity {
+  readonly kind: EntityKind;
+  readonly id: string;
+  readonly sourceHash: string;
+  /** locale -> field -> translated text. Both locales always present. */
+  readonly text: Readonly<Record<Lang, Readonly<Record<string, string>>>>;
+  readonly references: readonly string[];
+  /**
+   * Fields the SOURCE record actually had, captured from the candidate
+   * manifest when the release was assembled.
+   *
+   * This is the completeness fix from the review. The first version inferred
+   * requirements from whichever fields happened to appear in the translated
+   * output, so an entity with `text: {sv:{}, en:{}}` validated cleanly even
+   * though its source had a biography — validation could not prove
+   * completeness, only self-consistency. Binding to the manifest means a field
+   * that vanished from BOTH locales is still reported missing.
+   */
+  readonly requiredFields: readonly string[];
+  /** Routes this entity is expected to serve. Verified against Release.routes. */
+  readonly routes: readonly string[];
+}
+
+export interface Release {
+  /** Immutable generation id. Never reused. */
+  readonly generation: string;
+  readonly createdAt: string;
+  readonly entities: readonly ReleaseEntity[];
+  /** Every route path this release can serve, both locales. */
+  readonly routes: readonly string[];
+  /** Build id and prompt version this release was prepared against. */
+  readonly buildId: string;
+  readonly promptVersion: string;
+}
+
+export type ValidationIssue =
+  | { readonly type: "missing-locale"; readonly entityId: string; readonly locale: Lang }
+  | { readonly type: "missing-field"; readonly entityId: string; readonly locale: Lang; readonly field: string }
+  | { readonly type: "empty-value"; readonly entityId: string; readonly locale: Lang; readonly field: string }
+  | { readonly type: "dangling-reference"; readonly entityId: string; readonly reference: string }
+  | { readonly type: "duplicate-id"; readonly entityId: string }
+  | { readonly type: "missing-route"; readonly entityId: string; readonly route: string };
+
+/**
+ * Mechanical publication checks: missing locales, required fields absent or
+ * blank, entity routes not present in the release, dangling references, and
+ * duplicate ids.
+ *
+ * PROTECTED-NAME CHECKING IS NOT DONE HERE. An earlier version of this comment
+ * claimed it was, which the review correctly called out as claiming an
+ * unimplemented guarantee. Names are protected at TRANSLATION time via
+ * `protect` (src/lib/translate.ts, decision 7); verifying afterwards that a
+ * name survived needs the source text, which a release entity does not carry.
+ * If that check is wanted it belongs in the queue consumer, against the source
+ * it just translated.
+ *
+ * They do NOT promise linguistic quality, and the design is explicit about
+ * that. A translation can be grammatical nonsense and still pass here; that is
+ * what src/i18n/overrides.json and human review are for. Claiming otherwise
+ * would be the same overreach as calling a passing test suite "verified".
+ */
+export function validateRelease(release: Release): ValidationIssue[] {
+  const issues: ValidationIssue[] = [];
+  const ids = new Set<string>();
+
+  for (const entity of release.entities) {
+    const key = `${entity.kind}:${entity.id}`;
+    if (ids.has(key)) issues.push({ type: "duplicate-id", entityId: entity.id });
+    ids.add(key);
+  }
+
+  const routes = new Set(release.routes);
+
+  for (const entity of release.entities) {
+    for (const route of entity.routes) {
+      if (!routes.has(route)) {
+        issues.push({ type: "missing-route", entityId: entity.id, route });
+      }
+    }
+
+    for (const locale of SUPPORTED_LOCALES) {
+      const byLocale = entity.text[locale];
+      if (!byLocale) {
+        issues.push({ type: "missing-locale", entityId: entity.id, locale });
+        continue;
+      }
+      for (const field of entity.requiredFields) {
+        // Required fields come from the candidate MANIFEST, not from whatever
+        // happens to be in the output — see ReleaseEntity.requiredFields.
+        const value = byLocale[field];
+        if (value === undefined) {
+          issues.push({ type: "missing-field", entityId: entity.id, locale, field });
+        } else if (!value.trim()) {
+          issues.push({ type: "empty-value", entityId: entity.id, locale, field });
+        }
+      }
+    }
+
+    for (const reference of entity.references) {
+      const present = release.entities.some((e) => `${e.kind}:${e.id}` === reference || e.id === reference);
+      if (!present) {
+        issues.push({ type: "dangling-reference", entityId: entity.id, reference });
+      }
+    }
+  }
+
+  return issues;
+}
+
+/**
+ * Would promoting this release be safe?
+ *
+ * Separate from validateRelease() so callers can log WHY rather than only
+ * whether — operational status is one of the handoff's requirements.
+ */
+export function isReleasePromotable(release: Release): boolean {
+  return validateRelease(release).length === 0;
+}

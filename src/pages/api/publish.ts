@@ -1,6 +1,9 @@
 import type { APIRoute } from "astro";
 import { timingSafeEqual as cryptoTimingSafeEqual } from "node:crypto";
 import { readLimitedBody, json, isCrossSite, sha256Hex } from "../../lib/http.ts";
+import { siteOrigin } from "../../lib/site.ts";
+import { staticRoutePaths } from "../../lib/routes.ts";
+import { pingIndexNow } from "../../lib/indexnow.ts";
 
 /**
  * "Publish now" — instant cache flush for editors (docs/cms-architecture.md).
@@ -81,7 +84,43 @@ export async function handlePublish(request: Request, env: CfEnv | null): Promis
   } catch {
     return json(503, { ok: false, error: "Publish is temporarily unavailable" });
   }
+
+  // IndexNow — dormant until launch (docs/seo-phase-1-brief.md §10). Only
+  // fires once the site is actually production-shaped (siteOrigin() host
+  // ends with "ninetone.com" — never on *.workers.dev staging or the GH
+  // Pages *.github.io preview). A failed or skipped ping must never affect
+  // the publish response: the epoch bump above already succeeded and is the
+  // real effect; this is best-effort extra credit. Awaited (not fire-and-
+  // forget) because a Worker can cut off unawaited async work once the
+  // response is returned — there's no waitUntil plumbing in this codebase to
+  // extend instead — but errors are always swallowed, never thrown onward.
+  try {
+    await notifyIndexNow(request);
+  } catch (err) {
+    console.error("IndexNow ping failed:", err);
+  }
+
   return json(200, { ok: true, version });
+}
+
+/**
+ * Best-effort IndexNow notification, split out so its own errors (bad
+ * origin, fetch failure, etc.) can't reach the publish response. Exported
+ * for direct unit testing of the host guard without needing a live network.
+ */
+export async function notifyIndexNow(request: Request): Promise<void> {
+  const origin = siteOrigin(request);
+  let host = "";
+  try {
+    host = new URL(origin).host;
+  } catch {
+    return;
+  }
+  // Dot-anchored: "evilninetone.com" must not pass (2026-09-12 review).
+  if (host !== "ninetone.com" && !host.endsWith(".ninetone.com")) return;
+
+  const urls = staticRoutePaths().map((path) => `${origin}${path === "/" ? "" : path}`);
+  await pingIndexNow(origin, urls);
 }
 
 export const POST: APIRoute = async ({ request }) => handlePublish(request, await getCfEnv());

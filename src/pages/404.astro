@@ -1,26 +1,48 @@
 ---
 import Base from "../layouts/Base.astro";
-import { url } from "../lib/url";
+import { urlFor } from "../lib/url";
+import { sharedT } from "../lib/t";
+
+// Locale-bound link builder (i18n Phase 2): every internal href on an
+// English page must keep the /en prefix, or one click drops the visitor
+// back to Swedish. Shadows the plain url() import for this component.
+const url = urlFor(Astro.locals);
+
+
+// t() bound to this request (docs/i18n-phase-2-brief.md section 4).
+const t = sharedT(Astro.locals);
+const pageTitle = await t("Page not found");
+const error404Kicker = await t("Error 404");
+const heading = await t("This page took a different gig.");
+const tagline = await t("It may have moved, been renamed, or never existed at all.");
+const backToHomeLabel = await t("Back to home");
+const searchTheSiteLabel = await t("Search the site");
+const orJumpToKicker = await t("Or jump to");
+const artistsReleasesLabel = await t("Artists & releases");
+const talentClientsLabel = await t("Talent & clients");
+const bookingEventsLabel = await t("Booking & events");
+const openLabel = await t("Open");
+
 ---
 
-<Base title="Page not found" theme="group">
+<Base title={pageTitle} theme="group" omitCanonical>
   <section class="bg-ninetone-paper">
     <div class="mx-auto max-w-7xl px-6 pb-24 pt-20 md:pb-32 md:pt-28">
       <div class="grid gap-10 md:grid-cols-12 md:gap-16">
         <div class="md:col-span-8">
-          <span class="kicker text-ninetone-red">Error 404</span>
+          <span class="kicker text-ninetone-red">{error404Kicker}</span>
           <h1 class="mt-6 font-display text-[clamp(3rem,9vw,8rem)] leading-[0.9] tracking-[-0.04em]">
-            This page took a different gig.
+            {heading}
           </h1>
           <p class="mt-6 max-w-xl font-display text-2xl italic leading-snug tracking-tight text-ninetone-ink/75 md:text-3xl">
-            It may have moved, been renamed, or never existed at all.
+            {tagline}
           </p>
           <div class="mt-10 flex flex-wrap gap-3">
             <a href={url("/")} class="inline-flex items-center gap-2 bg-ninetone-ink px-5 py-3 text-sm font-semibold text-ninetone-paper transition-colors hover:bg-ninetone-ink-soft">
-              Back to home <span aria-hidden>→</span>
+              {backToHomeLabel} <span aria-hidden>→</span>
             </a>
             <a href={url("/search-result")} class="inline-flex items-center gap-2 border border-ninetone-ink/20 px-5 py-3 text-sm font-semibold text-ninetone-ink transition-colors hover:border-ninetone-ink hover:bg-ninetone-ink hover:text-ninetone-paper">
-              Search the site <span aria-hidden>↗</span>
+              {searchTheSiteLabel} <span aria-hidden>↗</span>
             </a>
           </div>
         </div>
@@ -29,22 +51,22 @@ import { url } from "../lib/url";
       <div class="mt-16 h-px w-full bg-ninetone-ink/30" aria-hidden></div>
 
       <div class="mt-10">
-        <span class="kicker text-ninetone-ink/55">Or jump to</span>
+        <span class="kicker text-ninetone-ink/55">{orJumpToKicker}</span>
         <div class="mt-6 grid grid-cols-1 gap-3 md:grid-cols-3">
           <a href={url("/records")} class="group flex flex-col gap-1 border border-ninetone-rule p-6 transition-colors hover:border-ninetone-red">
             <span class="kicker text-ninetone-red">Records</span>
-            <p class="mt-2 font-display text-2xl font-medium leading-tight tracking-tight">Artists &amp; releases</p>
-            <span class="mt-auto pt-4 text-xs font-semibold uppercase tracking-[0.16em] text-ninetone-ink/60 transition-colors group-hover:text-ninetone-ink">Open <span aria-hidden>→</span></span>
+            <p class="mt-2 font-display text-2xl font-medium leading-tight tracking-tight">{artistsReleasesLabel}</p>
+            <span class="mt-auto pt-4 text-xs font-semibold uppercase tracking-[0.16em] text-ninetone-ink/60 transition-colors group-hover:text-ninetone-ink">{openLabel} <span aria-hidden>→</span></span>
           </a>
           <a href={url("/management")} class="group flex flex-col gap-1 border border-ninetone-rule p-6 transition-colors hover:border-ninetone-navy">
             <span class="kicker text-ninetone-navy">Management</span>
-            <p class="mt-2 font-display text-2xl font-medium leading-tight tracking-tight">Talent &amp; clients</p>
-            <span class="mt-auto pt-4 text-xs font-semibold uppercase tracking-[0.16em] text-ninetone-ink/60 transition-colors group-hover:text-ninetone-ink">Open <span aria-hidden>→</span></span>
+            <p class="mt-2 font-display text-2xl font-medium leading-tight tracking-tight">{talentClientsLabel}</p>
+            <span class="mt-auto pt-4 text-xs font-semibold uppercase tracking-[0.16em] text-ninetone-ink/60 transition-colors group-hover:text-ninetone-ink">{openLabel} <span aria-hidden>→</span></span>
           </a>
           <a href={url("/ninetone-nation")} class="group flex flex-col gap-1 border border-ninetone-rule p-6 transition-colors hover:border-ninetone-green">
             <span class="kicker text-ninetone-green-dark">Nation</span>
-            <p class="mt-2 font-display text-2xl font-medium leading-tight tracking-tight">Booking &amp; events</p>
-            <span class="mt-auto pt-4 text-xs font-semibold uppercase tracking-[0.16em] text-ninetone-ink/60 transition-colors group-hover:text-ninetone-ink">Open <span aria-hidden>→</span></span>
+            <p class="mt-2 font-display text-2xl font-medium leading-tight tracking-tight">{bookingEventsLabel}</p>
+            <span class="mt-auto pt-4 text-xs font-semibold uppercase tracking-[0.16em] text-ninetone-ink/60 transition-colors group-hover:text-ninetone-ink">{openLabel} <span aria-hidden>→</span></span>
           </a>
         </div>
       </div>

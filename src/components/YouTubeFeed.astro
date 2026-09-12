@@ -14,6 +14,8 @@
 import type { YouTubeFeed } from "../lib/youtube";
 import type { SectionTheme } from "../lib/sections";
 import { sectionAccent } from "../lib/sections";
+import { sharedT } from "../lib/t";
+import { formatDate as formatDateLocalized, type Lang } from "../lib/dates";
 
 interface Props {
   feed: YouTubeFeed | null;
@@ -38,6 +40,15 @@ const kickerLabel = `${divisionLabel[theme]} · YouTube`;
 const latest = feed?.latest ?? [];
 const topViewed = feed?.topViewed ?? [];
 const hasTopViewed = topViewed.length > 0;
+
+// YouTube thumbnails are NOT fixed-size: src/lib/youtube.ts falls back
+// through maxres (1280×720) → standard (640×480) → high/hqdefault (480×360)
+// depending on what YouTube has generated for a given video, and the RSS
+// path used for `latest` can't request a specific resolution at all. No
+// single width/height pair would be real for every thumbnail, so we omit
+// both and rely on the aspect-video frame (already set below) plus `sizes`
+// instead — grid is 2-col mobile / 3-col tablet / 5-col desktop.
+const thumbSizes = "(min-width: 1024px) 20vw, (min-width: 768px) 33vw, 50vw";
 const total = latest.length;
 
 // Cloudflare target renders this block per request (60s in-process + edge
@@ -45,20 +56,35 @@ const total = latest.length;
 // deploy" is wrong there; the static (gh) build really does freeze at
 // build time. See astro.config.mjs / CLAUDE.md for PUBLIC_HAS_RUNTIME.
 const hasRuntime = import.meta.env.PUBLIC_HAS_RUNTIME === true || import.meta.env.PUBLIC_HAS_RUNTIME === "true";
-const freshnessLabel = hasRuntime ? "live from YouTube" : "refreshes on each deploy";
 
-function formatDate(iso: string): string {
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return "";
-  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-  return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
-}
+// t() bound to this request (docs/i18n-phase-2-brief.md section 4).
+// `formatViews`/`formatDate` interpolate a computed number/date into an
+// English word ("views") — those template literals aren't statically
+// resolvable string literals for t(), so the word itself is translated once
+// here and interpolated, keeping the numeric formatting untouched.
+const t = sharedT(Astro.locals);
+const freshnessLabel = await t(hasRuntime ? "live from YouTube" : "refreshes on each deploy");
+const latestFromChannelHeading = await t("Latest from the channel.");
+const oneVideoLabel = await t("video");
+const manyVideosLabel = await t("videos");
+const latestTabLabel = await t("Latest");
+const mostViewedTabLabel = await t("Most viewed");
+const viewsLabel = await t("views");
+
+// Locale-aware date formatting (docs/i18n-phase-2-brief.md "Dates" item):
+// src/lib/dates.ts replaces the hardcoded-English-month-abbreviation
+// formatter that used to live here. Same structural `Astro.locals.lang`
+// read + "sv" fallback Base.astro uses for `<html lang>` (see its doc
+// comment) — this is pure Intl formatting, not a translation, so it does
+// NOT go through t()/sharedT() (no API call, no budget).
+const dateLang: Lang = (Astro.locals as { lang?: Lang } | undefined)?.lang ?? "sv";
+const formatDate = (iso: string): string => formatDateLocalized(iso, dateLang);
 
 function formatViews(n: number | undefined): string {
   if (!n || n < 1) return "";
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, "")}M views`;
-  if (n >= 1_000) return `${Math.round(n / 1_000)}K views`;
-  return `${n} views`;
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, "")}M ${viewsLabel}`;
+  if (n >= 1_000) return `${Math.round(n / 1_000)}K ${viewsLabel}`;
+  return `${n} ${viewsLabel}`;
 }
 ---
 
@@ -69,11 +95,11 @@ function formatViews(n: number | undefined): string {
         <div class="md:col-span-7">
           <span class={`kicker ${accent.text}`}>{kickerLabel}</span>
           <h2 class="mt-3 font-display text-4xl leading-[1.05] tracking-tight md:text-6xl">
-            Latest from the channel.
+            {latestFromChannelHeading}
           </h2>
         </div>
         <p class="text-sm text-ninetone-ink/60 md:col-span-5 md:pb-1 md:text-right">
-          {total} {total === 1 ? "video" : "videos"} · {freshnessLabel}
+          {total} {total === 1 ? oneVideoLabel : manyVideosLabel} · {freshnessLabel}
         </p>
       </header>
 
@@ -90,7 +116,7 @@ function formatViews(n: number | undefined): string {
             class="kicker yt-tab px-3 py-2 text-ninetone-ink/55 transition-colors hover:text-ninetone-ink data-[active]:text-ninetone-ink"
             data-active
           >
-            Latest
+            {latestTabLabel}
           </button>
           {hasTopViewed && (
             <button
@@ -98,7 +124,7 @@ function formatViews(n: number | undefined): string {
               data-yt-tab="top"
               class="kicker yt-tab px-3 py-2 text-ninetone-ink/55 transition-colors hover:text-ninetone-ink data-[active]:text-ninetone-ink"
             >
-              Most viewed
+              {mostViewedTabLabel}
             </button>
           )}
         </div>
@@ -121,6 +147,7 @@ function formatViews(n: number | undefined): string {
                   <img
                     src={v.thumbnail}
                     alt=""
+                    sizes={thumbSizes}
                     class="fm-img h-full w-full object-cover transition-transform duration-700 ease-out group-hover:scale-[1.04]"
                     loading="lazy"
                     onload="this.classList.add('is-loaded'); this.closest('.fm-img-frame')?.classList.add('is-ready')"
@@ -157,6 +184,7 @@ function formatViews(n: number | undefined): string {
                     <img
                       src={v.thumbnail}
                       alt=""
+                      sizes={thumbSizes}
                       class="fm-img h-full w-full object-cover transition-transform duration-700 ease-out group-hover:scale-[1.04]"
                       loading="lazy"
                       onload="this.classList.add('is-loaded'); this.closest('.fm-img-frame')?.classList.add('is-ready')"

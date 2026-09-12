@@ -2,7 +2,17 @@
 import Base from "../../layouts/Base.astro";
 import { getTeam } from "../../lib/ninetone";
 import { renderBio, isAiSpeculative } from "../../lib/markdown";
-import { url } from "../../lib/url";
+import { urlFor } from "../../lib/url";
+import { pageJsonLdOrigin } from "../../lib/site";
+import { breadcrumbs, person, descriptionWithBioFallback } from "../../lib/schema";
+import { notFound } from "../../lib/not-found";
+import { fmText, sharedT } from "../../lib/t";
+
+// Locale-bound link builder (i18n Phase 2): every internal href on an
+// English page must keep the /en prefix, or one click drops the visitor
+// back to Swedish. Shadows the plain url() import for this component.
+const url = urlFor(Astro.locals);
+
 
 export async function getStaticPaths() {
   const team = await getTeam();
@@ -20,15 +30,32 @@ let member = (Astro.props as { member?: Record<string, unknown> }).member;
 if (!member) {
   const team = await getTeam();
   member = team.find((m) => String(m.SLUG ?? "") === Astro.params.slug);
-  if (!member) return Astro.rewrite("/404");
+  if (!member) return notFound(() => Astro.rewrite("/404"));
 }
 
 const name = String(member.userNameCalc ?? "");
-const title = String(member.title ?? "");
-const titleDescription = String(member.titleDescription ?? "");
+// FM CONTENT (decision 8). Team copy is authored in ENGLISH in FM, so it is
+// the SWEDISH render that needs translating here — see the fuller note in
+// team/index.astro. The person's own name is protected.
+const fm = fmText(Astro.locals, { protect: [name].filter(Boolean) });
+const title = await fm(String(member.title ?? ""), "title");
+const titleDescription = await fm(String(member.titleDescription ?? ""));
+
+// isAiSpeculative() runs on the SOURCE text, before translation: it is a
+// heuristic tuned to the phrasing FM actually stores, and a translated
+// paraphrase could slip past it. Suppression is decided on the source, and
+// only the text that survives is translated for display.
 const rawDescription = String(member.DescriptionString ?? member.Description ?? "");
 const aiBio = isAiSpeculative(rawDescription);
-const descriptionHtml = aiBio ? "" : renderBio(rawDescription);
+const descriptionHtml = aiBio ? "" : renderBio(await fm(rawDescription, "markdown"));
+
+// Meta description: a job title alone is far under the 70-character floor
+// (seo-phase-1b P1 item 7), so fall back to the opening of the bio. Respects
+// the same aiBio guard the visible bio does — a bio suppressed on the page as
+// AI-speculative must not reappear in a meta tag.
+const metaDescription =
+  descriptionWithBioFallback(titleDescription || title, aiBio ? "" : rawDescription) ||
+  `${name} | Ninetone Group`;
 const photo = member.userPhoto
   ? String(member.userPhoto)
   : member.userPhotoSmall
@@ -36,28 +63,67 @@ const photo = member.userPhoto
   : undefined;
 const email = String(member.userEmail ?? "");
 const phone = String(member.Phone ?? "");
+
+const slug = String(member.SLUG ?? "");
+const origin = pageJsonLdOrigin(Astro.request);
+const jsonLd = [
+  breadcrumbs(origin, [
+    { name: "Team", path: "/team" },
+    { name, path: `/team/${slug}` },
+  ]),
+  person(origin, name, {
+    role: "team",
+    path: `team/${slug}`,
+    image: photo,
+    description: titleDescription || title || undefined,
+    jobTitle: title || undefined,
+    worksFor: true,
+  }),
+];
+
+// t() bound to this request (docs/i18n-phase-2-brief.md section 4). `name`/
+// `title`/`titleDescription`/`descriptionHtml` are FM-derived content, not
+// this page's own chrome.
+const t = sharedT(Astro.locals);
+const backToTeamLabel = await t("← Team");
+const teamKicker = await t("Ninetone — Team");
+const emailLabel = await t("Email");
+const forMoreAboutPrefix = await t("For more about");
+const getInTouchAtSuffix = await t("get in touch at");
+const moreAboutPrefix = await t("More about");
+const moreAboutComingSoonSuffix = await t("coming soon.");
+
 ---
 
-<Base title={name}>
+<Base
+  title={name}
+  description={metaDescription}
+  ogImage={photo}
+  ogType="profile"
+  jsonLd={jsonLd}
+>
   <section class="bg-ninetone-paper">
     <div class="mx-auto max-w-7xl px-6 pb-12 pt-12 md:pt-16">
       <p class="mb-8">
-        <a href={url("/team")} class="kicker text-ninetone-ink/55 hover:text-ninetone-ink">← Team</a>
+        <a href={url("/team")} class="kicker text-ninetone-ink/55 hover:text-ninetone-ink">{backToTeamLabel}</a>
       </p>
 
       <div class="grid gap-10 md:grid-cols-12 md:gap-16">
         <aside class="md:col-span-4 lg:col-span-4">
           <div class="md:sticky md:top-24">
-            {/* FM team photos are 200×200 — cap container so we never upscale.
-                Width 240px ≈ 1.2× source, beyond which pixelation becomes visible. */}
+            {/* FM team photos (worker-fm-proxy /team/:slug/big|small) are 200×200
+                intrinsic — verified against live proxy output. Container is 240px
+                (w-60); width/height below reserve layout space at the real
+                intrinsic ratio (1:1), not the rendered CSS size. */}
             <div class="fm-img-frame relative aspect-square w-60 max-w-full overflow-hidden bg-ninetone-paper-warm">
               {photo && (
                 <img
                   src={photo}
                   alt={name}
-                  width="240"
-                  height="240"
+                  width="200"
+                  height="200"
                   class="fm-img h-full w-full object-cover grayscale transition-all duration-700 ease-out hover:grayscale-0"
+                  fetchpriority="high"
                   onload="this.classList.add('is-loaded'); this.closest('.fm-img-frame')?.classList.add('is-ready')"
                 />
               )}
@@ -69,7 +135,7 @@ const phone = String(member.Phone ?? "");
                   href={`mailto:${email}`}
                   class="inline-flex items-center justify-center gap-2 bg-ninetone-ink px-4 py-3 text-sm font-semibold text-ninetone-paper transition-colors hover:bg-ninetone-ink-soft"
                 >
-                  Email <span aria-hidden>→</span>
+                  {emailLabel} <span aria-hidden>→</span>
                 </a>
               )}
               {phone && (
@@ -85,7 +151,7 @@ const phone = String(member.Phone ?? "");
         </aside>
 
         <div class="md:col-span-8 lg:col-span-8">
-          <span class="kicker text-ninetone-ink/55">Ninetone — Team</span>
+          <span class="kicker text-ninetone-ink/55">{teamKicker}</span>
           <h1 class="mt-4 font-display text-[clamp(3rem,8vw,7rem)] leading-[0.9] tracking-[-0.045em]">{name}</h1>
 
           {title && (
@@ -106,7 +172,7 @@ const phone = String(member.Phone ?? "");
                   href={`mailto:${email}`}
                   class="inline-flex items-center justify-center gap-2 bg-ninetone-ink px-4 py-3 text-sm font-semibold text-ninetone-paper"
                 >
-                  Email <span aria-hidden>→</span>
+                  {emailLabel} <span aria-hidden>→</span>
                 </a>
               )}
               {phone && (
@@ -125,9 +191,9 @@ const phone = String(member.Phone ?? "");
           ) : (
             <div class="mt-12 border-t border-ninetone-rule pt-8 text-base text-ninetone-ink/65">
               {email ? (
-                <>For more about {name}, get in touch at <a href={`mailto:${email}`} class="text-ninetone-ink underline-offset-4 hover:underline">{email}</a>.</>
+                <>{forMoreAboutPrefix} {name}, {getInTouchAtSuffix} <a href={`mailto:${email}`} class="text-ninetone-ink underline-offset-4 hover:underline">{email}</a>.</>
               ) : (
-                <>More about {name} coming soon.</>
+                <>{moreAboutPrefix} {name} {moreAboutComingSoonSuffix}</>
               )}
             </div>
           )}

@@ -1,0 +1,7 @@
+Command:
+node --experimental-strip-types docs/audit-evidence/seo-i18n-2026-09-11/translation-kv-serialization.mjs
+
+Recorded output from the audit run:
+{"mockKvDelayMs":10,"calls":50,"sequentialMs":556.7,"parallelMs":11.8}
+
+This controlled result demonstrates dependency depth with an artificial 10 ms KV hit. It is not a measurement or estimate of Cloudflare KV latency.

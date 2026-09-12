@@ -12,6 +12,11 @@
 # Order matters — first matching rule wins per header name.
 
 # Sitewide noindex while the preview is gated. Remove this block on public launch.
+# Part of the three-noindex-flips-together launch checklist in
+# docs/seo-strategy-2026-09.md ("The three noindex flips, all on the same
+# day"): PUBLIC_NOINDEX=false, robots.txt -> Variant A, and this header block
+# removed — all three move together, not before. Do not remove ahead of the
+# other two.
 /*
   X-Robots-Tag: noindex, nofollow, noarchive, nosnippet, noimageindex
   X-Content-Type-Options: nosniff

@@ -1,52 +1,91 @@
 ---
 import type { SectionTheme } from "../lib/sections";
 import { sectionAccent } from "../lib/sections";
-import { url } from "../lib/url";
+import { urlFor } from "../lib/url";
+import { sharedT } from "../lib/t";
+
+// Locale-bound link builder (i18n Phase 2): every internal href on an
+// English page must keep the /en prefix, or one click drops the visitor
+// back to Swedish. Shadows the plain url() import for this component.
+const url = urlFor(Astro.locals);
+
 
 interface Props {
   theme?: SectionTheme;
   lang?: "en" | "sv";
 }
 
-const { theme = "group", lang = "en" } = Astro.props;
+const { theme = "group" } = Astro.props;
 const accent = sectionAccent[theme];
 
-const ctaCopy: Record<SectionTheme, { en: { title: string; body: string; cta: string; href: string }; sv: { title: string; body: string; cta: string; href: string } }> = {
-  group: {
-    en: { title: "We want your demos.", body: "Send us your music and we'll listen. We're always looking for the next voice.", cta: "Submit a demo", href: "/records/contact-records" },
-    sv: { title: "Vi vill ha dina demos.", body: "Skicka in din musik så lyssnar vi. Vi söker alltid nästa röst.", cta: "Skicka demo", href: "/records/contact-records" },
-  },
-  records: {
-    en: { title: "We want your demos.", body: "Send us your music and we'll listen. We're always looking for the next voice.", cta: "Submit a demo", href: "/records/contact-records" },
-    sv: { title: "Vi vill ha dina demos.", body: "Skicka in din musik så lyssnar vi. Vi söker alltid nästa röst.", cta: "Skicka demo", href: "/records/contact-records" },
-  },
-  management: {
-    en: { title: "We succeed together.", body: "Building a serious career in social and entertainment? Let's talk.", cta: "Get in touch", href: "/management/contact-management" },
-    sv: { title: "Vi lyckas tillsammans.", body: "Bygger du en seriös karriär inom social och underhållning? Hör av dig.", cta: "Kontakta oss", href: "/management/contact-management" },
-  },
-  nation: {
-    en: { title: "Book your next moment.", body: "Sweden's leading artists and entertainers, available for your event.", cta: "Booking request", href: "/ninetone-nation/contact-ninetone-nation" },
-    sv: { title: "Boka ditt nästa ögonblick.", body: "Sveriges främsta artister och underhållare, redo för ditt event.", cta: "Bokningsförfrågan", href: "/ninetone-nation/contact-ninetone-nation" },
-  },
+// t() bound to this request — see src/lib/t.ts's doc comment. sharedT(), not
+// createT() directly: Footer is mounted as a Header/CommandPalette sibling
+// on every page via Base.astro, and only sharedT() gives all three ONE
+// combined 25-call render budget instead of 25 each.
+const t = sharedT(Astro.locals);
+
+// `ctaCopy`'s sv/en pairs PREDATE section 4 and are exactly the hardcoded
+// chrome pairs decision 5 asks to fold into t() (constraint 3: "if they ARE
+// hardcoded pairs, converting them to t() is IN scope ... pick ONE source
+// language"). Swedish kept as source throughout this file — same choice,
+// same reasoning, as Header.astro (decision 1: sv is the default/root
+// locale, so the 546-page static gh build needs zero live translation to
+// render correctly with sv as source).
+const ctaCopySource: Record<SectionTheme, { title: string; body: string; cta: string; href: string }> = {
+  group: { title: "Vi vill ha dina demos.", body: "Skicka in din musik så lyssnar vi. Vi söker alltid nästa röst.", cta: "Skicka demo", href: "/records/contact-records" },
+  records: { title: "Vi vill ha dina demos.", body: "Skicka in din musik så lyssnar vi. Vi söker alltid nästa röst.", cta: "Skicka demo", href: "/records/contact-records" },
+  management: { title: "Vi lyckas tillsammans.", body: "Bygger du en seriös karriär inom social och underhållning? Hör av dig.", cta: "Kontakta oss", href: "/management/contact-management" },
+  nation: { title: "Boka ditt nästa ögonblick.", body: "Sveriges främsta artister och underhållare, redo för ditt event.", cta: "Bokningsförfrågan", href: "/ninetone-nation/contact-ninetone-nation" },
 };
 
-const copy = ctaCopy[theme][lang];
+const copySource = ctaCopySource[theme];
+// Resolved in frontmatter (t() is async — src/lib/translate.ts), not inside
+// the template, per constraint 2.
+const copy = {
+  title: await t(copySource.title),
+  body: await t(copySource.body),
+  cta: await t(copySource.cta),
+  href: copySource.href,
+};
 
-const exploreLinks = [
-  { href: "/records", labelEn: "Records", labelSv: "Records" },
-  { href: "/management", labelEn: "Management", labelSv: "Management" },
-  { href: "/ninetone-nation", labelEn: "Nation", labelSv: "Nation" },
-  { href: "/news", labelEn: "News", labelSv: "Nyheter" },
-  { href: "/team", labelEn: "Team", labelSv: "Team" },
-  { href: "/records/artists/previous", labelEn: "Previous artists", labelSv: "Tidigare artister" },
+const exploreLinksSource = [
+  { href: "/records", label: "Records" },
+  { href: "/management", label: "Management" },
+  { href: "/ninetone-nation", label: "Nation" },
+  { href: "/news", label: "Nyheter" },
+  { href: "/guider", label: "Guider" },
+  { href: "/team", label: "Team" },
+  { href: "/records/artists/previous", label: "Tidigare artister" },
 ];
 
-const studioLinks = [
-  { href: "/records/contact-records", labelEn: "Submit a demo", labelSv: "Skicka demo" },
-  { href: "/management/contact-management", labelEn: "Management enquiry", labelSv: "Förfrågan management" },
-  { href: "/ninetone-nation/booking", labelEn: "Book talent", labelSv: "Boka talang" },
-  { href: "/ninetone-nation/contact-ninetone-nation", labelEn: "Press", labelSv: "Press" },
+const studioLinksSource = [
+  { href: "/records/contact-records", label: "Skicka demo" },
+  { href: "/management/contact-management", label: "Förfrågan management" },
+  { href: "/ninetone-nation/booking", label: "Boka talang" },
+  { href: "/ninetone-nation/contact-ninetone-nation", label: "Press" },
 ];
+
+// Promise.all, not a template .map() — same async-in-frontmatter rule as
+// Header.astro's navItems.
+const exploreLinks = await Promise.all(
+  exploreLinksSource.map(async (item) => ({ ...item, label: await t(item.label) })),
+);
+const studioLinks = await Promise.all(
+  studioLinksSource.map(async (item) => ({ ...item, label: await t(item.label) })),
+);
+
+// Remaining chrome strings — resolved once up front, same rule.
+const talkToUsKicker = await t("Berätta för oss");
+const exploreKicker = await t("Utforska");
+const studioKicker = await t("Studio");
+const followKicker = await t("Följ");
+const taglineBody = await t(
+  "Ett hus för musik, talang, varumärken, offentliga personer och publiken de behöver nå. Sundsvall / Stockholm, Sverige.",
+);
+const allRightsReserved = await t("Alla rättigheter förbehålls.");
+const privacyPolicyLabel = await t("Integritetspolicy");
+const cookieSettingsLabel = await t("Cookie-inställningar");
+const madeWithCare = await t("Sundsvall — gjord med omsorg.");
 
 const socials = [
   { name: "Instagram", href: "https://www.instagram.com/ninetonemanagement/" },
@@ -62,6 +101,7 @@ const socials = [
   { name: "Vimeo", href: "https://vimeo.com/user188122269" },
   { name: "Wikipedia", href: "https://sv.wikipedia.org/wiki/Ninetone_Records" },
 ];
+
 ---
 
 <footer class="bg-ninetone-ink text-ninetone-paper">
@@ -69,7 +109,7 @@ const socials = [
   <section class="border-b border-white/10">
     <div class="mx-auto max-w-7xl px-6 py-16 md:py-24">
       <div>
-        <span class="kicker text-ninetone-paper/60">{lang === "sv" ? "Berätta för oss" : "Talk to us"}</span>
+        <span class="kicker text-ninetone-paper/60">{talkToUsKicker}</span>
         <h2 class="mt-4 font-display text-4xl leading-[1.05] tracking-tight md:text-6xl">
           {copy.title}
         </h2>
@@ -94,19 +134,17 @@ const socials = [
           <span class="font-display text-xl font-medium tracking-tight">Ninetone Group</span>
         </a>
         <p class="max-w-xs text-sm text-ninetone-paper/60">
-          {lang === "sv"
-            ? "Ett hus för musik, talang, varumärken, offentliga personer och publiken de behöver nå. Sundsvall / Stockholm, Sverige."
-            : "A house for music, talent, brands, public people and the audiences they need to reach. Sundsvall / Stockholm, Sweden."}
+          {taglineBody}
         </p>
       </div>
 
       <div>
-        <span class="kicker text-ninetone-paper/45">{lang === "sv" ? "Utforska" : "Explore"}</span>
+        <span class="kicker text-ninetone-paper/45">{exploreKicker}</span>
         <ul class="mt-4 space-y-2.5 text-sm">
           {exploreLinks.map((item) => (
             <li>
               <a href={url(item.href)} class="text-ninetone-paper/85 transition-colors hover:text-ninetone-paper">
-                {lang === "sv" ? item.labelSv : item.labelEn}
+                {item.label}
               </a>
             </li>
           ))}
@@ -114,12 +152,12 @@ const socials = [
       </div>
 
       <div>
-        <span class="kicker text-ninetone-paper/45">{lang === "sv" ? "Studio" : "Studio"}</span>
+        <span class="kicker text-ninetone-paper/45">{studioKicker}</span>
         <ul class="mt-4 space-y-2.5 text-sm">
           {studioLinks.map((item) => (
             <li>
               <a href={url(item.href)} class="text-ninetone-paper/85 transition-colors hover:text-ninetone-paper">
-                {lang === "sv" ? item.labelSv : item.labelEn}
+                {item.label}
               </a>
             </li>
           ))}
@@ -127,7 +165,7 @@ const socials = [
       </div>
 
       <div class="col-span-2 md:col-span-1">
-        <span class="kicker text-ninetone-paper/45">{lang === "sv" ? "Följ" : "Follow"}</span>
+        <span class="kicker text-ninetone-paper/45">{followKicker}</span>
         <ul class="mt-4 grid grid-cols-2 gap-x-4 gap-y-2.5 text-sm">
           {socials.map((s) => (
             <li>
@@ -148,20 +186,20 @@ const socials = [
   </section>
 
   <div class="mx-auto flex max-w-7xl flex-col items-start justify-between gap-3 px-6 py-6 text-xs text-ninetone-paper/50 sm:flex-row sm:items-center">
-    <p>© Ninetone Group {new Date().getFullYear()}. {lang === "sv" ? "Alla rättigheter förbehålls." : "All rights reserved."}</p>
+    <p>© Ninetone Group {new Date().getFullYear()}. {allRightsReserved}</p>
     <div class="flex flex-wrap items-center gap-x-5 gap-y-2">
       <a href={url("/integritet")} class="text-ninetone-paper/65 transition-colors hover:text-ninetone-paper">
-        {lang === "sv" ? "Integritetspolicy" : "Privacy policy"}
+        {privacyPolicyLabel}
       </a>
       <button
         type="button"
         data-cookie-settings
         class="text-ninetone-paper/65 transition-colors hover:text-ninetone-paper"
       >
-        {lang === "sv" ? "Cookie-inställningar" : "Cookie settings"}
+        {cookieSettingsLabel}
       </button>
     </div>
-    <p class="font-display italic tracking-tight">{lang === "sv" ? "Sundsvall — gjord med omsorg." : "Sundsvall — made with care."}</p>
+    <p class="font-display italic tracking-tight">{madeWithCare}</p>
   </div>
 </footer>
 

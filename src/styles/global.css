@@ -1,5 +1,66 @@
 @import "tailwindcss";
 
+/* Self-hosted fonts (SEO Phase 1b P1 §11) — all three are OFL-licensed
+   Google Fonts, downloaded once into public/fonts/ rather than requested
+   from fonts.googleapis.com/fonts.gstatic.com at runtime. Root-relative
+   url()s here resolve correctly on BOTH deploy targets: Vite's CSS url()
+   rewriter matches any url() against publicDir and prepends the configured
+   `base` at build time (verified against Vite's own source in
+   node_modules/vite/dist/node/chunks/node.js — UrlRewritePostcssPlugin →
+   checkPublicFile → publicFileToBuiltUrl → joinUrlSegments(base, url)), so
+   this becomes "/ninetone-refresh-preview/fonts/…" on the gh (static,
+   sub-path) target and "/fonts/…" on the cf (SSR, base "/") target with no
+   hand-maintained prefix. Do NOT reference src/lib/url.ts's url() helper
+   here — that's a .ts helper for .astro frontmatter/JS, not usable inside a
+   plain CSS file.
+
+   Only the weights genuinely referenced anywhere in src/ are shipped (see
+   grep audit in the shipping PR): Newsreader roman+italic variable files
+   (wght 400–600 roman incl. 500 for h1–h6/.prose h4-h6's 600, wght 400–500
+   italic for taglines/.display-italic; opsz axis 6–72 kept because
+   global.css sets font-variation-settings "opsz" 72/144 — same file Google
+   itself would have served, opsz clamps to the family's actual 72 max
+   either way, pre-existing and unrelated to self-hosting), Space Grotesk
+   roman variable (wght 300–700, covers default/medium/semibold/bold body
+   and UI text), and Space Mono as two static instances (400 kicker/h6/body
+   mono, 700 kicker/.kicker/font-bold mono) — no italic Space Mono ships,
+   none is referenced anywhere in src/. */
+@font-face {
+  font-family: "Newsreader";
+  font-style: normal;
+  font-weight: 400 600;
+  font-display: swap;
+  src: url("/fonts/newsreader-roman.woff2") format("woff2-variations"), url("/fonts/newsreader-roman.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Newsreader";
+  font-style: italic;
+  font-weight: 400 500;
+  font-display: swap;
+  src: url("/fonts/newsreader-italic.woff2") format("woff2-variations"), url("/fonts/newsreader-italic.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Space Grotesk";
+  font-style: normal;
+  font-weight: 300 700;
+  font-display: swap;
+  src: url("/fonts/space-grotesk-roman.woff2") format("woff2-variations"), url("/fonts/space-grotesk-roman.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Space Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/space-mono-400.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Space Mono";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/fonts/space-mono-700.woff2") format("woff2");
+}
+
 @theme {
   /* Brand colors (official) */
   --color-ninetone-red: #91000c;
@@ -116,7 +177,7 @@ nav, header nav a, footer nav a {
   line-height: 1.7;
   color: var(--color-ninetone-ink);
 }
-.prose h1, .prose h2, .prose h3, .prose h4 {
+.prose h1, .prose h2, .prose h3, .prose h4, .prose h5, .prose h6 {
   font-family: var(--font-display);
   font-weight: 500;
   margin-top: 2rem;
@@ -127,6 +188,7 @@ nav, header nav a, footer nav a {
 .prose h2 { font-size: 2rem; }
 .prose h3 { font-size: 1.5rem; }
 .prose h4 { font-size: 1.25rem; font-weight: 600; }
+.prose h5, .prose h6 { font-size: 1.0625rem; font-weight: 600; }
 .prose p {
   margin-top: 0;
   margin-bottom: 1.25em;
@@ -202,6 +264,27 @@ nav, header nav a, footer nav a {
   position: relative;
   isolation: isolate;
   background-color: var(--color-ninetone-paper-warm);
+}
+@layer base {
+  /* Fallback aspect-ratio so a frame never collapses to 0 height before its
+     image loads (CLS) if a caller forgets to size it. `--fm-img-ratio` is
+     unset everywhere today — nothing currently opts in — so this is purely
+     a safety net for future callers via `style="--fm-img-ratio: 1/1"` or
+     similar; wire-in a specific value is what a caller decides.
+     4/5 mirrors the portrait-first artist/client/talent hero frames (the
+     most common .fm-img-frame usage across the detail-page archetype — see
+     DESIGN.md §3B / the sticky split image column) rather than the
+     square/16:10 cases, which are the minority.
+     Placed in `@layer base` (not left unlayered like the rules above) so it
+     sits below Tailwind's own `utilities` layer in cascade-layer order —
+     every existing caller already sets an explicit Tailwind `aspect-*`
+     utility class (aspect-[4/5], aspect-square, aspect-video, aspect-[3/4],
+     aspect-[16/10]) and those utilities keep winning untouched. Only a
+     caller with NO aspect utility and no inline --fm-img-ratio would ever
+     see this default apply. */
+  .fm-img-frame {
+    aspect-ratio: var(--fm-img-ratio, 4 / 5);
+  }
 }
 .fm-img-frame::before {
   content: "";

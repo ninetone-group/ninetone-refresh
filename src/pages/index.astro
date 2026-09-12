@@ -8,13 +8,32 @@ import EditorialNewsBlock from "../components/EditorialNewsBlock.astro";
 import MarqueeBand from "../components/MarqueeBand.astro";
 import MerchSection from "../components/MerchSection.astro";
 import { sectionAccent } from "../lib/sections";
-import { url } from "../lib/url";
+import { hoverArtBackground } from "../lib/hover-art";
+import { urlFor } from "../lib/url";
+import { fmText, sharedT } from "../lib/t";
+
+// Locale-bound link builder (i18n Phase 2): every internal href on an
+// English page must keep the /en prefix, or one click drops the visitor
+// back to Swedish. Shadows the plain url() import for this component.
+const url = urlFor(Astro.locals);
+
 import {
   getFeaturedArtists,
   getArtistOfTheWeek,
+  getArtistBySlug,
   getLatestClient,
   getNews,
 } from "../lib/ninetone";
+
+// t() bound to this request (docs/i18n-phase-2-brief.md section 4). See the
+// PR description's budget note: this page alone, plus the Header/Footer/
+// CommandPalette chrome it always renders alongside via Base.astro, exceeds
+// the 25-uncached-call-per-render ceiling on a cold cache (fresh deploy, or
+// a TRANSLATION_KEY_VERSION bump) — flagged rather than silently shipped.
+// sharedT() (src/lib/t.ts) still gives this page's own strings + Header's +
+// Footer's ONE combined budget rather than one each, which is the most this
+// call site can do about it without touching translate.ts (out of scope).
+const t = sharedT(Astro.locals);
 
 const collectionId =
   import.meta.env.SHOPIFY_HOMEPAGE_COLLECTION_ID ||
@@ -31,10 +50,21 @@ const [featuredArtists, heroArtist, heroClient, latestNews] = await Promise.all(
   getNews().then((p) => p.slice(0, 4)),
 ]);
 
-const heroArtistImage = heroArtist?.artistPicture_big ?? heroArtist?.artistPicture_small;
+// getArtistOfTheWeek() sources from the API_ARTIST roster layout, which
+// (verified live on staging) carries only artistPicture_small — never _big —
+// unlike API_Management (heroClient below). The `??` here used to read as a
+// "prefer big" fallback but was actually always resolving to small, loading
+// a 500×500 image with fetchpriority="high" into this 610px-tall feature
+// tile as the page's LCP element. Fetch the real detail record (same
+// API_ARTIST_DETAIL lookup every artist page already uses) to get the
+// genuine 1000×1000 big picture instead of guessing from roster fields.
+const heroArtistDetail = heroArtist?.SLUG ? await getArtistBySlug(String(heroArtist.SLUG)) : undefined;
+const heroArtistImage = heroArtistDetail?.artistPicture_big ?? heroArtist?.artistPicture_small;
+const heroArtistImageSize = heroArtistDetail?.artistPicture_big ? 1000 : 500;
 const heroArtistName = String(heroArtist?.["Head Artist"] ?? "");
 
 const heroClientImage = heroClient?.artistPicture_big ?? heroClient?.artistPicture_small;
+const heroClientImageSize = heroClient?.artistPicture_big ? 1000 : 500;
 const heroClientName = String(heroClient?.["Head Artist"] ?? "");
 
 const featuredNewsItem = latestNews[0];
@@ -45,37 +75,201 @@ const marqueeNames = featuredArtists
   .map((a) => String(a["Head Artist"] ?? ""))
   .filter(Boolean);
 
-const portals = [
+const portalsSource = [
   { theme: "records" as const, title: "Records", href: "/records", banner: "/images/recordsBanner.png", tagline: "From song to universe.", blurb: "Vi hjälper artister att förvandla musik till något större än en release — från A&R och produktion till berättelse, visuell identitet och långsiktig artistutveckling." },
   { theme: "management" as const, title: "Management", href: "/management", banner: "/images/managementBanner.png", tagline: "Backoffice for public people.", blurb: "Struktur, strategi och riktning för kreatörer, influencers, sportprofiler och TV-personligheter som redan har publikens uppmärksamhet." },
   { theme: "nation" as const, title: "Nation", href: "/ninetone-nation", banner: "/images/nationBanner.png", tagline: "Talent, attention and live moments.", blurb: "Vi kopplar artister, profiler, speakers och underhållare till scener, varumärken och events där deras närvaro skapar faktisk effekt." },
 ];
+// Every hardcoded string on this page is translated in frontmatter (t() is
+// async — src/lib/translate.ts), never inside the template's .map(), per
+// constraint 2. Each literal keeps whatever language it was already written
+// in (decision 5) — this page mixes English taglines with Swedish blurbs
+// verbatim, so both stay as their own t() source rather than being
+// rewritten to match each other.
+const portals = await Promise.all(
+  portalsSource.map(async (p) => ({
+    ...p,
+    title: await t(p.title),
+    tagline: await t(p.tagline),
+    blurb: await t(p.blurb),
+  })),
+);
+
+// Hero section
+const heroKicker = await t("Sundsvall / Stockholm — since 2006");
+const heroH1 = await t("We connect what people need with what people care about.");
+const heroBody = await t(
+  "Ninetone är länken mellan behov, erbjudanden och publik. Vi hjälper artister, kreatörer, organisationer, företag, idrottslag och offentliga personer att förstå vad de egentligen erbjuder — och hur det ska formuleras, paketeras och nå fram.",
+);
+const heroTagline = await t(
+  "Vi arbetar där kultur, kommunikation, algoritmer, underhållning, sociala medier och mänskligt beteende möts.",
+);
+const talkToUsCta = await t("Talk to us"); // reused verbatim at both hero + closing CTA — sharedT() memoizes, so this is ONE call even though it renders twice.
+const seeWhatWeDoCta = await t("See what we do");
+
+// Positioning band
+const positioningKicker = await t("Positioning");
+const positioningH2 = await t("Not a label. Not an agency. Not traditional management.");
+const positioningTagline = await t("Ninetone är ett kommunikations- och utvecklingshus för den moderna uppmärksamhetsekonomin.");
+const positioningBody = await t(
+  "Ibland arbetar vi med musik. Ibland med influencers. Ibland med företag, organisationer, idrottslag, TV-profiler eller kreatörer. Men uppgiften är nästan alltid densamma: att förstå ett behov. Förädla ett erbjudande. Och bygga bron till de människor som behöver känna, förstå, köpa, följa, lyssna, komma, rösta, dela eller bry sig.",
+);
+
+// Portal band per-card "Enter" affordance + kicker
+const enterLabel = await t("Enter");
+const ninetoneKicker = await t("Ninetone");
+
+// "What we do" vignette band
+const howWeWorkKicker = await t("How we work");
+const buildBridgeH2 = await t("We build the bridge.");
+const howWeWorkTagline = await t("Varje uppdrag börjar med samma fråga: vad behöver kopplas ihop?");
+const sportKicker = await t("Sport · Idrottsklubb");
+const sportBody = await t(
+  "Att förstå klubbens behov av publik, energi, biljettförsäljning och starkare relation till fansen. Ninetone arbetar med budskap, kanalval, rådgivning till ledningen och kommunikation som kan fylla läktarna och stärka klubbens närvaro i människors vardag.",
+);
+const orgKicker = await t("Organisation");
+const orgBody = await t(
+  "Att tydliggöra värdet i deras tjänster, formulera erbjudandet tillsammans med ledningen och nå Sveriges företagare på ett sätt som känns relevant, konkret och användbart.",
+);
+const musicKicker = await t("Music · Artist");
+const musicHeading = await t("En artist");
+const musicBody = await t(
+  "Att ta en konstnärlig produkt och bygga ett universum runt den — ljud, berättelse, känsla, kanal, publik och långsiktig riktning.",
+);
+const creatorKicker = await t("Public person · Creator");
+const creatorHeading = await t("En influencer");
+const creatorBody = await t("Att omvandla uppmärksamhet till struktur, affär, kreativ utveckling och hållbar karriär.");
+const sameCoreTagline = await t("Olika världar. Samma kärna.");
+const sameCoreEmphasis = await t("Behov. Erbjudande. Människa.");
+
+// Bento "What's on"
+const whatsOnKicker = await t("What's on");
+const whatsMovingH2 = await t("What's moving.");
+const whatsMovingBody = await t("Projekt, releaser, berättelser och människor vi arbetar med just nu.");
+const updatedWeeklyLabel = await t("Updated weekly");
+const artistOfWeekKicker = await t("Artist of the week");
+// FM CONTENT on the homepage (decision 8). The bento tiles and the Latest
+// Story headline render FM prose directly — without this they stayed Swedish
+// on /en/ while the chrome around them was English. Names are protected so
+// "Hälsingefyr" and "Avdelning 44" are never "translated".
+const fm = fmText(Astro.locals, { protect: [heroArtistName, heroClientName].filter(Boolean) });
+const heroArtistBlurb = await fm(String(heroArtist?.artistPresentationShort ?? ""));
+const heroClientBlurb = await fm(String(heroClient?.clientPresentationShort || heroClient?.artistPresentationShort || ""));
+const featuredNewsHeading = await fm(String(featuredNewsItem?.Title ?? ""), "title");
+
+const viewProfileCta = await t("View profile");
+
+// Meta description through t() (SEO audit P2). It was a fixed English string
+// for BOTH locales, so the Swedish homepage — lang="sv" — described itself in
+// English in <meta name="description">, og:description and twitter:description.
+// English is kept as the source string (it is what is authored here today, and
+// overrides key on the source hash), so /en is unchanged and /sv gets Swedish.
+const metaDescription = await t(
+  "Ninetone connects what people need with what people care about — music, talent management and booking for artists, creators and public figures since 2006.",
+); // reused for both heroArtist + heroClient tiles — memoized to one call.
+const latestStoryKicker = await t("Latest story");
+const readCta = await t("Read");
+const bookingKicker = await t("Booking");
+const bookTalentHeading = await t("Book talent");
+const bookTalentBlurb = await t(
+  "Artister, profiler, speakers och entertainers för sammanhang där rätt person kan förändra hela rummet.",
+);
+const openBookingCta = await t("Open booking");
+const demosOpenKicker = await t("Demos open");
+const weListenHeading = await t("We listen to everything.");
+const weListenBlurb = await t(
+  "Skicka musiken. Inte för att vi letar efter perfektion, utan för att vi letar efter något som går att bygga vidare på.",
+);
+const submitCta = await t("Submit");
+const managementKicker = await t("Management");
+const publicPeopleHeading = await t("Public people need private structure.");
+const publicPeopleBlurb = await t("Vi bygger systemet bakom människor som syns.");
+const seeClientsCta = await t("See clients");
+const clientInFocusKicker = await t("Client in focus");
+
+// Roster strip
+const rosterKicker = await t("The roster");
+const rosterHeading = await t("People, projects and public attention.");
+const rosterBlurb = await t(
+  "Här finns artister, kreatörer och profiler vi arbetar med, har byggt med eller hjälper att föra vidare till nästa nivå.",
+);
+const allArtistsCta = await t("All artists");
+
+// Metrics panel
+const byTheNumbersKicker = await t("By the numbers");
+const metricsHeading = await t("Quietly moving attention — and behaviour.");
+const metricsSource = [
+  { value: "342+", label: "Artists, creators and public profiles", note: "Through the years" },
+  { value: "18+", label: "Years inside music, media and digital culture", note: "Since 2006" },
+  { value: "120+", label: "Active campaigns, releases and collaborations", note: "Across music, social, brand and sport" },
+  { value: "1", label: "House built around studios, people and ideas", note: "Sundsvall / Stockholm" },
+];
+const metrics = await Promise.all(
+  metricsSource.map(async (m) => ({ ...m, label: await t(m.label), note: await t(m.note) })),
+);
+
+// Editorial news block
+const editorialHeading = await t("Stories from the intersection.");
+const editorialKicker = await t("From the intersection");
+const editorialBlurb = await t("Nyheter från musik, management, varumärken, kreatörer, organisationer och publika projekt.");
+
+// About
+const aboutKicker = await t("About");
+const aboutParagraphs = await Promise.all(
+  [
+    "Ninetone Group är ett svenskt utvecklings-, management- och kommunikationshus byggt för den moderna uppmärksamhetsekonomin.",
+    "Vi arbetar med människor och organisationer som behöver nå fram: artister, kreatörer, influencers, sportprofiler, företag, idrottslag, organisationer och offentliga personer.",
+    "Vår styrka ligger i att förstå både avsändaren och mottagaren. Vad behöver sägas? Vem behöver känna det? Vilken kanal bär budskapet bäst? Hur blir ett erbjudande inte bara synligt, utan relevant?",
+    "Därför arbetar vi tvärs över musik, sociala medier, PR, management, affärsutveckling, produktion, storytelling, distribution och publikförståelse.",
+    "Vi är inte bara ett musikbolag. Inte bara ett managementbolag. Inte bara en byrå.",
+  ].map((p) => t(p)),
+);
+const aboutClosing = await t("Vi är länken mellan behovet, erbjudandet och människorna på andra sidan.");
+
+// Merch
+const merchHeading = await t("The house, wearable.");
+const merchKicker = await t("Merch");
+const merchBlurb = await t(
+  "Kläder och objekt från Ninetone-världen. Enkla saker för människor som rör sig nära musiken, projekten och kulturen runt huset.",
+);
+
+// Closing CTA band
+const closingKicker = talkToUsCta; // same source string as the hero CTA ("Talk to us") — reuse the resolved value instead of a second t() call.
+const closingH2 = await t("Tell us what needs to move.");
+const closingBody = await t(
+  "Har du musik som behöver hitta rätt publik, en profil som behöver struktur, ett företag som behöver formulera sitt erbjudande eller en organisation som behöver nå fram? Börja där. Vi hjälper dig att bygga bron.",
+);
+
 ---
 
-<Base title="Ninetone Group" theme="group">
+<Base
+  title="Ninetone Group"
+  theme="group"
+  description={metaDescription}
+>
   <!-- Typographic hero -->
   <section class="relative overflow-hidden bg-ninetone-paper">
     <div class="mx-auto max-w-7xl px-6 pb-16 pt-20 md:pb-24 md:pt-28">
       <div class="grid gap-10 md:grid-cols-12 md:gap-16">
         <div class="md:col-span-8">
-          <span class="kicker text-ninetone-ink/55">Sundsvall / Stockholm — since 2006</span>
+          <span class="kicker text-ninetone-ink/55">{heroKicker}</span>
           <h1 class="mt-6 font-display text-[clamp(3rem,9vw,8rem)] leading-[0.9] tracking-[-0.04em]">
-            We connect what people need with what people care about.
+            {heroH1}
           </h1>
         </div>
         <div class="flex flex-col justify-end gap-4 md:col-span-4">
           <p class="text-lg leading-relaxed text-ninetone-ink/75">
-            Ninetone är länken mellan behov, erbjudanden och publik. Vi hjälper artister, kreatörer, organisationer, företag, idrottslag och offentliga personer att förstå vad de egentligen erbjuder — och hur det ska formuleras, paketeras och nå fram.
+            {heroBody}
           </p>
           <p class="font-display text-lg italic leading-snug tracking-tight text-ninetone-ink/70 md:text-xl">
-            Vi arbetar där kultur, kommunikation, algoritmer, underhållning, sociala medier och mänskligt beteende möts.
+            {heroTagline}
           </p>
           <div class="flex flex-wrap gap-3 pt-2">
             <a href={url("/management/contact-management")} class="inline-flex items-center gap-2 bg-ninetone-ink px-4 py-3 text-sm font-semibold text-ninetone-paper transition-colors hover:bg-ninetone-ink-soft">
-              Talk to us <span aria-hidden>→</span>
+              {talkToUsCta} <span aria-hidden>→</span>
             </a>
             <a href="#what-we-do" class="inline-flex items-center gap-2 border border-ninetone-ink px-4 py-3 text-sm font-semibold text-ninetone-ink transition-colors hover:bg-ninetone-ink hover:text-ninetone-paper">
-              See what we do <span aria-hidden>→</span>
+              {seeWhatWeDoCta} <span aria-hidden>→</span>
             </a>
           </div>
         </div>
@@ -88,17 +282,17 @@ const portals = [
     <div class="mx-auto max-w-7xl px-6 py-20 md:py-24">
       <div class="grid gap-10 md:grid-cols-12 md:gap-16">
         <div class="md:col-span-7">
-          <span class="kicker text-ninetone-ink/55">Positioning</span>
+          <span class="kicker text-ninetone-ink/55">{positioningKicker}</span>
           <h2 class="mt-3 font-display text-4xl leading-[1.05] tracking-tight md:text-5xl">
-            Not a label. Not an agency. Not traditional management.
+            {positioningH2}
           </h2>
           <p class="mt-6 max-w-2xl font-display text-2xl italic leading-snug tracking-tight text-ninetone-ink/75 md:text-3xl">
-            Ninetone är ett kommunikations- och utvecklingshus för den moderna uppmärksamhetsekonomin.
+            {positioningTagline}
           </p>
         </div>
         <div class="md:col-span-5 md:pt-10">
           <p class="max-w-xl text-[0.9375rem] leading-relaxed text-ninetone-ink/85">
-            Ibland arbetar vi med musik. Ibland med influencers. Ibland med företag, organisationer, idrottslag, TV-profiler eller kreatörer. Men uppgiften är nästan alltid densamma: att förstå ett behov. Förädla ett erbjudande. Och bygga bron till de människor som behöver känna, förstå, köpa, följa, lyssna, komma, rösta, dela eller bry sig.
+            {positioningBody}
           </p>
         </div>
       </div>
@@ -117,12 +311,12 @@ const portals = [
             <div class={`absolute inset-0 ${accent.bg} opacity-0 group-hover:opacity-100`} aria-hidden></div>
             <div
               class="absolute inset-0 bg-cover bg-center opacity-0 mix-blend-multiply transition-opacity duration-700 ease-out group-hover:opacity-50"
-              style={`background-image: url(${url(p.banner)});`}
+              style={`background-image: ${hoverArtBackground(p.banner, url)};`}
               aria-hidden
             ></div>
 
             <div class="relative z-10 flex h-full flex-col justify-between gap-10 p-8 md:p-10">
-              <span class={`kicker transition-colors duration-150 ease-out ${accent.text} group-hover:text-ninetone-paper/80`}>Ninetone</span>
+              <span class={`kicker transition-colors duration-150 ease-out ${accent.text} group-hover:text-ninetone-paper/80`}>{ninetoneKicker}</span>
               <div>
                 <h2 class="font-display text-5xl font-medium leading-[0.95] tracking-[-0.04em] text-ninetone-ink transition-colors duration-150 ease-out group-hover:text-ninetone-paper md:text-7xl">
                   {p.title}
@@ -134,7 +328,7 @@ const portals = [
                   {p.blurb}
                 </p>
                 <span class="mt-6 inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-ninetone-ink transition-colors duration-150 ease-out group-hover:text-ninetone-paper">
-                  Enter <span aria-hidden>→</span>
+                  {enterLabel} <span aria-hidden>→</span>
                 </span>
               </div>
             </div>
@@ -151,54 +345,54 @@ const portals = [
     <div class="mx-auto max-w-7xl px-6">
       <div class="grid gap-10 md:grid-cols-12 md:gap-16">
         <div class="md:col-span-7">
-          <span class="kicker text-ninetone-ink/55">How we work</span>
+          <span class="kicker text-ninetone-ink/55">{howWeWorkKicker}</span>
           <h2 class="mt-3 font-display text-4xl leading-[1.05] tracking-tight md:text-5xl">
-            We build the bridge.
+            {buildBridgeH2}
           </h2>
         </div>
         <div class="md:col-span-5 md:pt-2">
           <p class="font-display text-2xl italic leading-snug tracking-tight text-ninetone-ink/75 md:text-3xl">
-            Varje uppdrag börjar med samma fråga: vad behöver kopplas ihop?
+            {howWeWorkTagline}
           </p>
         </div>
       </div>
 
       <div class="mt-16 grid gap-10 md:grid-cols-2 md:gap-x-16 md:gap-y-14">
         <div>
-          <span class="kicker text-ninetone-ink/55">Sport · Idrottsklubb</span>
+          <span class="kicker text-ninetone-ink/55">{sportKicker}</span>
           <h3 class="mt-3 font-display text-2xl leading-tight tracking-tight md:text-3xl">GIF Sundsvall</h3>
           <p class="mt-4 max-w-xl text-[0.9375rem] leading-relaxed text-ninetone-ink/85">
-            Att förstå klubbens behov av publik, energi, biljettförsäljning och starkare relation till fansen. Ninetone arbetar med budskap, kanalval, rådgivning till ledningen och kommunikation som kan fylla läktarna och stärka klubbens närvaro i människors vardag.
+            {sportBody}
           </p>
         </div>
 
         <div>
-          <span class="kicker text-ninetone-ink/55">Organisation</span>
+          <span class="kicker text-ninetone-ink/55">{orgKicker}</span>
           <h3 class="mt-3 font-display text-2xl leading-tight tracking-tight md:text-3xl">Företagarna</h3>
           <p class="mt-4 max-w-xl text-[0.9375rem] leading-relaxed text-ninetone-ink/85">
-            Att tydliggöra värdet i deras tjänster, formulera erbjudandet tillsammans med ledningen och nå Sveriges företagare på ett sätt som känns relevant, konkret och användbart.
+            {orgBody}
           </p>
         </div>
 
         <div>
-          <span class="kicker text-ninetone-ink/55">Music · Artist</span>
-          <h3 class="mt-3 font-display text-2xl leading-tight tracking-tight md:text-3xl">En artist</h3>
+          <span class="kicker text-ninetone-ink/55">{musicKicker}</span>
+          <h3 class="mt-3 font-display text-2xl leading-tight tracking-tight md:text-3xl">{musicHeading}</h3>
           <p class="mt-4 max-w-xl text-[0.9375rem] leading-relaxed text-ninetone-ink/85">
-            Att ta en konstnärlig produkt och bygga ett universum runt den — ljud, berättelse, känsla, kanal, publik och långsiktig riktning.
+            {musicBody}
           </p>
         </div>
 
         <div>
-          <span class="kicker text-ninetone-ink/55">Public person · Creator</span>
-          <h3 class="mt-3 font-display text-2xl leading-tight tracking-tight md:text-3xl">En influencer</h3>
+          <span class="kicker text-ninetone-ink/55">{creatorKicker}</span>
+          <h3 class="mt-3 font-display text-2xl leading-tight tracking-tight md:text-3xl">{creatorHeading}</h3>
           <p class="mt-4 max-w-xl text-[0.9375rem] leading-relaxed text-ninetone-ink/85">
-            Att omvandla uppmärksamhet till struktur, affär, kreativ utveckling och hållbar karriär.
+            {creatorBody}
           </p>
         </div>
       </div>
 
       <p class="mt-20 max-w-3xl font-display text-2xl italic leading-snug tracking-tight text-ninetone-ink/75 md:text-3xl">
-        Olika världar. Samma kärna. <span class="not-italic font-medium text-ninetone-red">Behov. Erbjudande. Människa.</span>
+        {sameCoreTagline} <span class="not-italic font-medium text-ninetone-red">{sameCoreEmphasis}</span>
       </p>
 
       <div class="mt-12 h-px w-full bg-ninetone-ink/80" aria-hidden></div>
@@ -210,13 +404,13 @@ const portals = [
     <div class="mx-auto max-w-7xl px-6">
       <div class="mb-10 grid gap-4 md:grid-cols-[1fr_auto] md:items-end">
         <div>
-          <span class="kicker text-ninetone-ink/55">What's on</span>
-          <h2 class="mt-3 font-display text-4xl leading-[1.05] tracking-tight md:text-5xl">What's moving.</h2>
+          <span class="kicker text-ninetone-ink/55">{whatsOnKicker}</span>
+          <h2 class="mt-3 font-display text-4xl leading-[1.05] tracking-tight md:text-5xl">{whatsMovingH2}</h2>
           <p class="mt-4 max-w-2xl text-[0.9375rem] leading-relaxed text-ninetone-ink/70">
-            Projekt, releaser, berättelser och människor vi arbetar med just nu.
+            {whatsMovingBody}
           </p>
         </div>
-        <span class="self-start text-xs uppercase tracking-[0.16em] text-ninetone-ink/55">Updated weekly</span>
+        <span class="self-start text-xs uppercase tracking-[0.16em] text-ninetone-ink/55">{updatedWeeklyLabel}</span>
       </div>
 
       <BentoGrid>
@@ -227,10 +421,13 @@ const portals = [
             theme="records"
             href={`/records/artists/${String(heroArtist.SLUG ?? "")}`}
             image={heroArtistImage ? String(heroArtistImage) : undefined}
-            kicker="Artist of the week"
+            imageWidth={heroArtistImageSize}
+            imageHeight={heroArtistImageSize}
+            kicker={artistOfWeekKicker}
             heading={heroArtistName}
-            blurb={String(heroArtist.artistPresentationShort ?? "")}
-            cta="View profile"
+            blurb={heroArtistBlurb}
+            cta={viewProfileCta}
+            priority
           />
         )}
 
@@ -241,9 +438,9 @@ const portals = [
             theme="records"
             href={`/news/${String(featuredNewsItem.slug ?? "")}`}
             image={featuredNewsItem.image_webp ? String(featuredNewsItem.image_webp) : undefined}
-            kicker="Latest story"
-            heading={String(featuredNewsItem.Title ?? "")}
-            cta="Read"
+            kicker={latestStoryKicker}
+            heading={featuredNewsHeading}
+            cta={readCta}
           />
         )}
 
@@ -251,30 +448,30 @@ const portals = [
           variant="ink"
           href="/ninetone-nation/booking"
           theme="nation"
-          kicker="Booking"
-          heading="Book talent"
-          blurb="Artister, profiler, speakers och entertainers för sammanhang där rätt person kan förändra hela rummet."
-          cta="Open booking"
+          kicker={bookingKicker}
+          heading={bookTalentHeading}
+          blurb={bookTalentBlurb}
+          cta={openBookingCta}
         />
 
         <BentoTile
           variant="warm"
           href="/records/contact-records"
           theme="records"
-          kicker="Demos open"
-          heading="We listen to everything."
-          blurb="Skicka musiken. Inte för att vi letar efter perfektion, utan för att vi letar efter något som går att bygga vidare på."
-          cta="Submit"
+          kicker={demosOpenKicker}
+          heading={weListenHeading}
+          blurb={weListenBlurb}
+          cta={submitCta}
         />
 
         <BentoTile
           variant="accent"
           theme="management"
           href="/management"
-          kicker="Management"
-          heading="Public people need private structure."
-          blurb="Vi bygger systemet bakom människor som syns."
-          cta="See clients"
+          kicker={managementKicker}
+          heading={publicPeopleHeading}
+          blurb={publicPeopleBlurb}
+          cta={seeClientsCta}
         />
 
         {heroClient && (
@@ -284,10 +481,12 @@ const portals = [
             theme="management"
             href={`/management/clients/${String(heroClient.SLUG ?? "")}`}
             image={heroClientImage ? String(heroClientImage) : undefined}
-            kicker="Client in focus"
+            imageWidth={heroClientImageSize}
+            imageHeight={heroClientImageSize}
+            kicker={clientInFocusKicker}
             heading={heroClientName}
-            blurb={String(heroClient.clientPresentationShort || heroClient.artistPresentationShort || "")}
-            cta="View profile"
+            blurb={heroClientBlurb}
+            cta={viewProfileCta}
           />
         )}
       </BentoGrid>
@@ -304,32 +503,27 @@ const portals = [
     <RosterStrip
       artists={featuredArtists}
       theme="records"
-      kicker="The roster"
-      heading="People, projects and public attention."
-      blurb="Här finns artister, kreatörer och profiler vi arbetar med, har byggt med eller hjälper att föra vidare till nästa nivå."
-      cta={{ label: "All artists", href: "/records/artists" }}
+      kicker={rosterKicker}
+      heading={rosterHeading}
+      blurb={rosterBlurb}
+      cta={{ label: allArtistsCta, href: "/records/artists" }}
     />
   )}
 
   <!-- By the numbers -->
   <MetricsPanel
     variant="ink"
-    kicker="By the numbers"
-    heading="Quietly moving attention — and behaviour."
-    metrics={[
-      { value: "342+", label: "Artists, creators and public profiles", note: "Through the years" },
-      { value: "18+", label: "Years inside music, media and digital culture", note: "Since 2006" },
-      { value: "120+", label: "Active campaigns, releases and collaborations", note: "Across music, social, brand and sport" },
-      { value: "1", label: "House built around studios, people and ideas", note: "Sundsvall / Stockholm" },
-    ]}
+    kicker={byTheNumbersKicker}
+    heading={metricsHeading}
+    metrics={metrics}
   />
 
   <!-- Editorial news -->
   <EditorialNewsBlock
     limit={3}
-    heading="Stories from the intersection."
-    kicker="From the intersection"
-    blurb="Nyheter från musik, management, varumärken, kreatörer, organisationer och publika projekt."
+    heading={editorialHeading}
+    kicker={editorialKicker}
+    blurb={editorialBlurb}
     href="/news"
   />
 
@@ -337,27 +531,13 @@ const portals = [
   <section class="bg-ninetone-paper py-20">
     <div class="mx-auto grid max-w-7xl gap-10 px-6 md:grid-cols-12 md:gap-16">
       <div class="md:col-span-4 md:sticky md:top-28 md:self-start">
-        <span class="kicker text-ninetone-ink/55">About</span>
+        <span class="kicker text-ninetone-ink/55">{aboutKicker}</span>
         <h2 class="mt-3 font-display text-4xl leading-[1.05] tracking-tight md:text-5xl">Ninetone Group</h2>
       </div>
       <div class="md:col-span-8 space-y-6 max-w-2xl text-[0.9375rem] leading-relaxed text-ninetone-ink/85">
-        <p>
-          Ninetone Group är ett svenskt utvecklings-, management- och kommunikationshus byggt för den moderna uppmärksamhetsekonomin.
-        </p>
-        <p>
-          Vi arbetar med människor och organisationer som behöver nå fram: artister, kreatörer, influencers, sportprofiler, företag, idrottslag, organisationer och offentliga personer.
-        </p>
-        <p>
-          Vår styrka ligger i att förstå både avsändaren och mottagaren. Vad behöver sägas? Vem behöver känna det? Vilken kanal bär budskapet bäst? Hur blir ett erbjudande inte bara synligt, utan relevant?
-        </p>
-        <p>
-          Därför arbetar vi tvärs över musik, sociala medier, PR, management, affärsutveckling, produktion, storytelling, distribution och publikförståelse.
-        </p>
-        <p>
-          Vi är inte bara ett musikbolag. Inte bara ett managementbolag. Inte bara en byrå.
-        </p>
+        {aboutParagraphs.map((p) => <p>{p}</p>)}
         <p class="font-display text-xl italic leading-snug tracking-tight text-ninetone-ink/85 md:text-2xl">
-          Vi är länken mellan behovet, erbjudandet och människorna på andra sidan.
+          {aboutClosing}
         </p>
       </div>
     </div>
@@ -366,9 +546,9 @@ const portals = [
   <!-- Merch -->
   <MerchSection
     collectionId={collectionId}
-    heading="The house, wearable."
-    kicker="Merch"
-    blurb="Kläder och objekt från Ninetone-världen. Enkla saker för människor som rör sig nära musiken, projekten och kulturen runt huset."
+    heading={merchHeading}
+    kicker={merchKicker}
+    blurb={merchBlurb}
     limit={10}
   />
 
@@ -377,20 +557,20 @@ const portals = [
     <div class="mx-auto max-w-7xl px-6">
       <div class="grid gap-10 md:grid-cols-12 md:gap-16">
         <div class="md:col-span-7">
-          <span class="kicker text-ninetone-paper/55">Talk to us</span>
+          <span class="kicker text-ninetone-paper/55">{closingKicker}</span>
           <h2 class="mt-3 font-display text-4xl leading-[1.05] tracking-tight md:text-5xl">
-            Tell us what needs to move.
+            {closingH2}
           </h2>
         </div>
         <div class="md:col-span-5 md:pt-2">
           <p class="max-w-xl text-[0.9375rem] leading-relaxed text-ninetone-paper/80">
-            Har du musik som behöver hitta rätt publik, en profil som behöver struktur, ett företag som behöver formulera sitt erbjudande eller en organisation som behöver nå fram? Börja där. Vi hjälper dig att bygga bron.
+            {closingBody}
           </p>
           <a
             href={url("/management/contact-management")}
             class="mt-8 inline-flex items-center gap-2 bg-ninetone-paper px-5 py-3 text-sm font-semibold text-ninetone-ink transition-colors hover:bg-ninetone-paper-warm"
           >
-            Talk to us <span aria-hidden>→</span>
+            {talkToUsCta} <span aria-hidden>→</span>
           </a>
         </div>
       </div>

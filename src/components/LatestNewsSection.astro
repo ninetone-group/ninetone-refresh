@@ -1,7 +1,14 @@
 ---
 import NewsCard from "./NewsCard.astro";
 import { getNews } from "../lib/ninetone";
-import { url } from "../lib/url";
+import { urlFor } from "../lib/url";
+import { fmText, sharedT } from "../lib/t";
+
+// Locale-bound link builder (i18n Phase 2): every internal href on an
+// English page must keep the /en prefix, or one click drops the visitor
+// back to Swedish. Shadows the plain url() import for this component.
+const url = urlFor(Astro.locals);
+
 
 interface Props {
   /** How many posts to show. Defaults to 2. */
@@ -10,7 +17,15 @@ interface Props {
   heading?: string;
 }
 
-const { limit = 2, heading = "News" } = Astro.props as Props;
+const { limit = 2, heading: headingProp } = Astro.props as Props;
+
+// t() bound to this request (docs/i18n-phase-2-brief.md section 4). Only
+// this component's own default "News" heading + own chrome go through t()
+// — a caller-supplied heading is translated at its own call site.
+const t = sharedT(Astro.locals);
+const headingLabel = headingProp ?? (await t("News"));
+const latestStoriesKicker = await t("Latest stories");
+const allNewsLabel = await t("All news");
 
 const hasNewsVideo = (p: Record<string, unknown>): boolean =>
   ["ytLinkA", "ytLinkB", "ytLinkC", "ytLinkD"].some((k) => {
@@ -21,38 +36,61 @@ const hasNewsVideo = (p: Record<string, unknown>): boolean =>
 let posts: Awaited<ReturnType<typeof getNews>> = [];
 try {
   posts = (await getNews()).slice(0, limit);
+  // FM CONTENT (decision 8): translate the posts ONCE here, before the cards
+  // render. NewsCard only translates its own chrome labels; title and excerpt
+  // arrive as props straight from FM, so without this the English homepage
+  // showed Swedish headlines. "title" kind for headlines, plain for excerpts,
+  // both on the `fast` tier to match what the warm script cached.
+  const fm = fmText(Astro.locals);
+  posts = await Promise.all(
+    posts.map(async (p) => ({
+      ...p,
+      Title: await fm(String(p.Title ?? ""), "title"),
+      shortMessage: await fm(String(p.shortMessage ?? p.Message ?? "")),
+    })),
+  );
 } catch {
   posts = [];
 }
 
-if (posts.length === 0) return Astro.redirect("");
+// Render nothing when there are no posts. NOTE: this must be a template
+// guard, not `return Astro.redirect("")` — that only short-circuits safely
+// from a top-level page's frontmatter, before the response starts streaming.
+// From a child component, Astro.redirect() still returns a Response object,
+// which the parent page's already-streaming renderer then tries to write as
+// an HTML chunk — throwing `ResponseSentError` at flush and leaving the
+// visitor with an empty body / 500. See docs/seo-phase-1b-brief.md P0 item 3.
+const hasPosts = posts.length > 0;
+
 ---
 
-<section class="bg-ninetone-paper-warm py-20">
-  <div class="mx-auto max-w-7xl px-6">
-    <div class="mb-10 grid gap-4 md:grid-cols-[1fr_auto] md:items-end">
-      <div>
-        <span class="kicker text-ninetone-ink/55">Latest stories</span>
-        <h2 class="mt-3 font-display text-4xl leading-[1.05] tracking-tight md:text-5xl">{heading}</h2>
+{hasPosts && (
+  <section class="bg-ninetone-paper-warm py-20">
+    <div class="mx-auto max-w-7xl px-6">
+      <div class="mb-10 grid gap-4 md:grid-cols-[1fr_auto] md:items-end">
+        <div>
+          <span class="kicker text-ninetone-ink/55">{latestStoriesKicker}</span>
+          <h2 class="mt-3 font-display text-4xl leading-[1.05] tracking-tight md:text-5xl">{headingLabel}</h2>
+        </div>
+        <a href={url("/news")} class="inline-flex items-center gap-2 self-start text-xs font-semibold uppercase tracking-[0.16em] text-ninetone-ink">
+          {allNewsLabel} <span aria-hidden>→</span>
+        </a>
       </div>
-      <a href={url("/news")} class="inline-flex items-center gap-2 self-start text-xs font-semibold uppercase tracking-[0.16em] text-ninetone-ink">
-        All news <span aria-hidden>→</span>
-      </a>
+      <div class="grid gap-x-10 gap-y-12 md:grid-cols-2">
+        {posts.map((p) => (
+          <NewsCard
+            title={String(p.Title ?? "")}
+            slug={String(p.slug ?? "")}
+            image={p.image_webp ? String(p.image_webp) : undefined}
+            excerpt={String(p.shortMessage ?? "")}
+            date={String(p.Date ?? "")}
+            author={String(p["Created By"] ?? "")}
+            category={String(p.category ?? "")}
+            hasVideo={hasNewsVideo(p)}
+            size="lg"
+          />
+        ))}
+      </div>
     </div>
-    <div class="grid gap-x-10 gap-y-12 md:grid-cols-2">
-      {posts.map((p) => (
-        <NewsCard
-          title={String(p.Title ?? "")}
-          slug={String(p.slug ?? "")}
-          image={p.image_webp ? String(p.image_webp) : undefined}
-          excerpt={String(p.shortMessage ?? p.Message ?? "")}
-          date={String(p.Date ?? "")}
-          author={String(p["Created By"] ?? "")}
-          category={String(p.category ?? "")}
-          hasVideo={hasNewsVideo(p)}
-          size="lg"
-        />
-      ))}
-    </div>
-  </div>
-</section>
+  </section>
+)}

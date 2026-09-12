@@ -1,6 +1,7 @@
 ---
 import type { ArtistSocials } from "./ArtistCard.astro";
 import { externalUrl } from "../lib/url";
+import { sharedT } from "../lib/t";
 
 interface Props {
   socials: ArtistSocials;
@@ -30,10 +31,24 @@ const safeEntries = entries
   .map((entry) => ({ ...entry, href: externalUrl(entry.href) }))
   .filter((entry): entry is Entry => entry.href !== null);
 
-if (safeEntries.length === 0) return Astro.redirect("");
+// Render nothing when there are no usable links. NOTE: this must be a template
+// guard, not `return Astro.redirect("")` — that pattern only works safely in a
+// top-level page's frontmatter (before the response starts streaming). Called
+// from a child component like this one, Astro.redirect() still returns a
+// Response object, which the parent page's already-streaming renderer then
+// tries to write as an HTML chunk — throwing `ResponseSentError` at flush and
+// leaving the visitor with an empty body. See docs/seo-phase-1b-brief.md P0
+// item 3 (zero-byte / 500 pages for every entity with no social links).
+const hasEntries = safeEntries.length > 0;
 
 const stream = safeEntries.filter((e) => e.group === "stream");
 const social = safeEntries.filter((e) => e.group === "social");
+
+// t() bound to this request (docs/i18n-phase-2-brief.md section 4). Platform
+// names ("Spotify", "YouTube", ...) are proper nouns — not translated.
+const t = sharedT(Astro.locals);
+const listenLabel = await t("Listen");
+const followLabel = await t("Follow");
 
 const subTextClass = variant === "ink" ? "text-ninetone-paper/55" : "text-ninetone-ink/55";
 const ruleClass = variant === "ink" ? "border-ninetone-paper/15" : "border-ninetone-ink/15";
@@ -42,46 +57,48 @@ const linkClass = variant === "ink"
   : "border-ninetone-ink/15 text-ninetone-ink/75 hover:border-ninetone-ink hover:text-ninetone-ink";
 ---
 
-<div class="flex flex-col gap-5">
-  {kicker && <span class={`kicker ${subTextClass}`}>{kicker}</span>}
+{hasEntries && (
+  <div class="flex flex-col gap-5">
+    {kicker && <span class={`kicker ${subTextClass}`}>{kicker}</span>}
 
-  {stream.length > 0 && (
-    <div class={`flex flex-col gap-2 border-t pt-4 ${ruleClass}`}>
-      <span class={`text-[0.6875rem] uppercase tracking-[0.16em] ${subTextClass}`}>Listen</span>
-      <ul class="flex flex-wrap gap-2">
-        {stream.map((e) => (
-          <li>
-            <a
-              href={e.href}
-              target="_blank"
-              rel="noopener"
-              class={`inline-flex items-center gap-2 border px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] transition-colors ${linkClass}`}
-            >
-              {e.label} <span aria-hidden class="text-[0.625rem] opacity-60">↗</span>
-            </a>
-          </li>
-        ))}
-      </ul>
-    </div>
-  )}
+    {stream.length > 0 && (
+      <div class={`flex flex-col gap-2 border-t pt-4 ${ruleClass}`}>
+        <span class={`text-[0.6875rem] uppercase tracking-[0.16em] ${subTextClass}`}>{listenLabel}</span>
+        <ul class="flex flex-wrap gap-2">
+          {stream.map((e) => (
+            <li>
+              <a
+                href={e.href}
+                target="_blank"
+                rel="noopener"
+                class={`inline-flex items-center gap-2 border px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] transition-colors ${linkClass}`}
+              >
+                {e.label} <span aria-hidden class="text-[0.625rem] opacity-60">↗</span>
+              </a>
+            </li>
+          ))}
+        </ul>
+      </div>
+    )}
 
-  {social.length > 0 && (
-    <div class={`flex flex-col gap-2 border-t pt-4 ${ruleClass}`}>
-      <span class={`text-[0.6875rem] uppercase tracking-[0.16em] ${subTextClass}`}>Follow</span>
-      <ul class="flex flex-wrap gap-2">
-        {social.map((e) => (
-          <li>
-            <a
-              href={e.href}
-              target="_blank"
-              rel="noopener"
-              class={`inline-flex items-center gap-2 border px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] transition-colors ${linkClass}`}
-            >
-              {e.label} <span aria-hidden class="text-[0.625rem] opacity-60">↗</span>
-            </a>
-          </li>
-        ))}
-      </ul>
-    </div>
-  )}
-</div>
+    {social.length > 0 && (
+      <div class={`flex flex-col gap-2 border-t pt-4 ${ruleClass}`}>
+        <span class={`text-[0.6875rem] uppercase tracking-[0.16em] ${subTextClass}`}>{followLabel}</span>
+        <ul class="flex flex-wrap gap-2">
+          {social.map((e) => (
+            <li>
+              <a
+                href={e.href}
+                target="_blank"
+                rel="noopener"
+                class={`inline-flex items-center gap-2 border px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] transition-colors ${linkClass}`}
+              >
+                {e.label} <span aria-hidden class="text-[0.625rem] opacity-60">↗</span>
+              </a>
+            </li>
+          ))}
+        </ul>
+      </div>
+    )}
+  </div>
+)}

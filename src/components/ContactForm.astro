@@ -1,7 +1,14 @@
 ---
 import type { SectionTheme } from "../lib/sections";
 import { sectionAccent } from "../lib/sections";
-import { url } from "../lib/url";
+import { url as basePathOnly, urlFor } from "../lib/url";
+import { sharedT } from "../lib/t";
+
+// Locale-bound link builder (i18n Phase 2): every internal href on an
+// English page must keep the /en prefix, or one click drops the visitor
+// back to Swedish. Shadows the plain url() import for this component.
+const url = urlFor(Astro.locals);
+
 
 export interface ContactField {
   type: "text" | "email" | "tel" | "textarea";
@@ -74,7 +81,48 @@ const accent = sectionAccent[theme];
 // keep showing the honest mailto fallback instead of a form that can't send.
 const hasRuntime = import.meta.env.PUBLIC_HAS_RUNTIME === true || import.meta.env.PUBLIC_HAS_RUNTIME === "true";
 
-const action = url("/api/contact");
+// API ACTION IS LOCALE-NEUTRAL — basePathOnly(), never the locale-bound url().
+//
+// src/middleware.ts deliberately 404s ^/en/api(/|$) so a locale-prefixed URL
+// can never reach the contact/publish handlers; the real endpoint exists only
+// at /api/contact. The locale-bound helper this component uses for visitor
+// links turned the action into "/en/api/contact" on every English render, so
+// both the native form POST and the client-side fetch(form.action) hit that
+// deliberate 404 — every English contact submission failed before reaching
+// the handler. Same class of regression as the language switch: a path that
+// is already complete must not have the current locale re-applied.
+const action = basePathOnly("/api/contact");
+
+// t() bound to this request (docs/i18n-phase-2-brief.md section 4). Only
+// this component's OWN chrome (honeypot label, legal copy, static-build
+// fallback copy) goes through t() here — `kicker`/`heading`/`formTitle`/
+// `submitLabel`/etc. are caller-supplied props, translated at their own
+// call sites (division landing/contact pages), not this component's job.
+const t = sharedT(Astro.locals);
+const honeypotLabel = await t("Leave this field blank");
+const legalNotice = await t(
+  "Genom att skicka in samtycker du till att Ninetone Group AB behandlar dina uppgifter för att besvara din förfrågan. Läs vår",
+);
+const privacyPolicyLinkLabel = await t("integritetspolicy");
+const replyTimeHint = await t("We reply within one business day.");
+const sendingLabel = await t("Sending…");
+const tooManyAttemptsKicker = await t("Too many attempts");
+const tooManyAttemptsMessage = await t("Too many attempts. Try again in a minute.");
+const sentKicker = await t("Sent");
+const sentMessage = await t("Thanks. We read everything and reply when it's a fit.");
+const errorKicker = await t("Something went wrong");
+const errorMessagePrefix = await t("Something went wrong. Email us at");
+const errorMessageSuffix = await t("instead.");
+const emailFallbackBlurb = await t(
+  "Please email your enquiry directly. Include the details above so the right team can respond.",
+);
+const emailLabel = await t("Email");
+const mailtoFooter = await t(
+  "Your email app will open with a new message. Read our",
+);
+const privacyPolicyLabel = await t("privacy policy");
+const privacyPolicyForLabel = await t("for how we handle personal data.");
+
 ---
 
 <section class="bg-ninetone-paper">
@@ -130,7 +178,7 @@ const action = url("/api/contact");
               {/* Honeypot — hidden from sighted and AT users, left blank by humans. */}
               <div class="absolute -left-[9999px]" aria-hidden="true">
                 <label>
-                  Leave this field blank
+                  {honeypotLabel}
                   <input type="text" name="website" tabindex={-1} autocomplete="off" aria-hidden="true" />
                 </label>
               </div>
@@ -170,12 +218,12 @@ const action = url("/api/contact");
               })}
 
               <p class="mt-4 text-[0.6875rem] leading-relaxed text-ninetone-ink/55">
-                Genom att skicka in samtycker du till att Ninetone Group AB behandlar dina uppgifter för att besvara din förfrågan. Läs vår <a href={url("/integritet")} class="underline underline-offset-2 hover:text-ninetone-ink">integritetspolicy</a>.
+                {legalNotice} <a href={url("/integritet")} class="underline underline-offset-2 hover:text-ninetone-ink">{privacyPolicyLinkLabel}</a>.
               </p>
 
               <div class="mt-3 flex items-center justify-between gap-3">
                 <p class="text-[0.6875rem] text-ninetone-ink/50" data-form-hint>
-                  We reply within one business day.
+                  {replyTimeHint}
                 </p>
                 <button
                   type="submit"
@@ -186,7 +234,20 @@ const action = url("/api/contact");
               </div>
 
             </form>
-              <div data-form-result class="hidden mt-2 border-t border-ninetone-rule pt-4" role="status" aria-live="polite">
+              <div
+                data-form-result
+                class="hidden mt-2 border-t border-ninetone-rule pt-4"
+                role="status"
+                aria-live="polite"
+                data-i18n-sending={sendingLabel}
+                data-i18n-too-many-kicker={tooManyAttemptsKicker}
+                data-i18n-too-many-message={tooManyAttemptsMessage}
+                data-i18n-sent-kicker={sentKicker}
+                data-i18n-sent-message={sentMessage}
+                data-i18n-error-kicker={errorKicker}
+                data-i18n-error-prefix={errorMessagePrefix}
+                data-i18n-error-suffix={errorMessageSuffix}
+              >
                 <span class={`kicker ${accent.text}`} data-form-result-kicker></span>
                 <p class="mt-2 text-sm leading-relaxed text-ninetone-ink/80" data-form-result-message></p>
               </div>
@@ -194,16 +255,16 @@ const action = url("/api/contact");
           ) : (
             <div class="mt-8 border-t border-ninetone-rule pt-6">
               <p class="max-w-md text-sm leading-relaxed text-ninetone-ink/65">
-                Please email your enquiry directly. Include the details above so the right team can respond.
+                {emailFallbackBlurb}
               </p>
               <a
                 href={`mailto:${contactEmail}`}
                 class={`mt-6 inline-flex min-h-11 items-center gap-2 px-5 py-3 text-sm font-semibold ${accent.cta} transition-colors`}
               >
-                Email {contactEmail} <span aria-hidden>→</span>
+                {emailLabel} {contactEmail} <span aria-hidden>→</span>
               </a>
               <p class="mt-5 text-[0.6875rem] leading-relaxed text-ninetone-ink/55">
-                Your email app will open with a new message. Read our <a href={url("/integritet")} class="underline underline-offset-2 hover:text-ninetone-ink">privacy policy</a> for how we handle personal data.
+                {mailtoFooter} <a href={url("/integritet")} class="underline underline-offset-2 hover:text-ninetone-ink">{privacyPolicyLabel}</a> {privacyPolicyForLabel}
               </p>
             </div>
           )}
@@ -226,6 +287,27 @@ const action = url("/api/contact");
       const fallbackEmail = form.dataset.fallbackEmail || "hello@ninetone.com";
       const originalLabel = buttonLabel?.textContent ?? "Send";
 
+      // Bridge pattern (docs/i18n-phase-2-brief.md section 4, note 4): this
+      // <script> runs client-side with no Astro.locals, so it cannot call
+      // t() itself. Every string it needs was resolved server-side in the
+      // frontmatter above and threaded through as data-i18n-* attributes on
+      // [data-form-result] — read once here rather than re-authored in
+      // English inline.
+      const i18n = {
+        sending: result?.dataset.i18nSending || "Sending…",
+        tooManyKicker: result?.dataset.i18nTooManyKicker || "Too many attempts",
+        tooManyMessage: result?.dataset.i18nTooManyMessage || "Too many attempts. Try again in a minute.",
+        sentKicker: result?.dataset.i18nSentKicker || "Sent",
+        sentMessage: result?.dataset.i18nSentMessage || "Thanks. We read everything and reply when it's a fit.",
+        errorKicker: result?.dataset.i18nErrorKicker || "Something went wrong",
+        errorPrefix: result?.dataset.i18nErrorPrefix || "Something went wrong. Email us at",
+        errorSuffix: result?.dataset.i18nErrorSuffix || "instead.",
+      };
+
+      function errorMessage(): string {
+        return `${i18n.errorPrefix} <a href="mailto:${fallbackEmail}" class="underline underline-offset-2 hover:text-ninetone-ink">${fallbackEmail}</a> ${i18n.errorSuffix}`;
+      }
+
       function showResult(kind: "success" | "error", kickerText: string, message: string) {
         if (!result || !resultKicker || !resultMessage) return;
         result.classList.remove("hidden");
@@ -240,7 +322,7 @@ const action = url("/api/contact");
         if (!button || !buttonLabel) return;
 
         button.disabled = true;
-        buttonLabel.textContent = "Sending…";
+        buttonLabel.textContent = i18n.sending;
 
         try {
           const formData = new FormData(form);
@@ -257,11 +339,7 @@ const action = url("/api/contact");
           });
 
           if (res.status === 429) {
-            showResult(
-              "error",
-              "Too many attempts",
-              "Too many attempts. Try again in a minute.",
-            );
+            showResult("error", i18n.tooManyKicker, i18n.tooManyMessage);
             button.disabled = false;
             buttonLabel.textContent = originalLabel;
             return;
@@ -272,27 +350,15 @@ const action = url("/api/contact");
           if (res.ok && data?.ok) {
             form.reset();
             form.hidden = true;
-            showResult(
-              "success",
-              "Sent",
-              "Thanks. We read everything and reply when it's a fit.",
-            );
+            showResult("success", i18n.sentKicker, i18n.sentMessage);
             return;
           }
 
-          showResult(
-            "error",
-            "Something went wrong",
-            `Something went wrong. Email us at <a href="mailto:${fallbackEmail}" class="underline underline-offset-2 hover:text-ninetone-ink">${fallbackEmail}</a> instead.`,
-          );
+          showResult("error", i18n.errorKicker, errorMessage());
           button.disabled = false;
           buttonLabel.textContent = originalLabel;
         } catch {
-          showResult(
-            "error",
-            "Something went wrong",
-            `Something went wrong. Email us at <a href="mailto:${fallbackEmail}" class="underline underline-offset-2 hover:text-ninetone-ink">${fallbackEmail}</a> instead.`,
-          );
+          showResult("error", i18n.errorKicker, errorMessage());
           button.disabled = false;
           buttonLabel.textContent = originalLabel;
         }

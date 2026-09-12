@@ -1,13 +1,29 @@
 ---
 import type { Artist } from "../lib/ninetone";
-import { url } from "../lib/url";
+import { urlFor } from "../lib/url";
+import { fmText, resolveFmDisplayText } from "../lib/t";
+
+// Locale-bound link builder (i18n Phase 2): every internal href on an
+// English page must keep the /en prefix, or one click drops the visitor
+// back to Swedish. Shadows the plain url() import for this component.
+const url = urlFor(Astro.locals);
+
 
 interface Props {
   artists: Artist[];
   hrefBase: string;
+  /**
+   * Render visible by default instead of `display: none`. The
+   * RosterFilters-paired usage (records/artists, management/clients) keeps
+   * the JS layout-switch toggle behavior (default false). A standalone
+   * always-on index (e.g. previous-artists A–Ö block) passes `visible`.
+   */
+  visible?: boolean;
+  /** artistPresentationShort already contains locale-resolved display text. */
+  blurbsTranslated?: boolean;
 }
 
-const { artists, hrefBase } = Astro.props as Props;
+const { artists, hrefBase, visible = false, blurbsTranslated = false } = Astro.props as Props;
 
 // Group by first letter
 const byLetter = new Map<string, Artist[]>();
@@ -20,10 +36,43 @@ for (const a of artists) {
   arr.push(a);
   byLetter.set(key, arr);
 }
-const sortedLetters = Array.from(byLetter.keys()).sort();
+// Swedish collation: Å, Ä, Ö sort as distinct letters after Z (not folded
+// into A/O). Use localeCompare("sv") rather than relying on code-point
+// order, which coincidentally matches here but isn't the contract.
+// FM CONTENT (decision 8). This component renders the SAME blurb field the
+// cards above it do, in a second A-Ö view — and it was never wired, so
+// /en/records/artists/previous still showed ~100 Swedish blocks even after
+// every card on the page translated correctly. The three callers disagreed
+// about whose job this was: artists.astro and clients.astro pass a
+// pre-translated list, but previous/[...page].astro passes `allPrevious`,
+// a different and untranslated array.
+//
+// Resolved HERE rather than asking each caller to remember, so a future
+// caller cannot reintroduce the gap. Pre-built as a lookup keyed by slug
+// because the render below happens inside .map(), which cannot await.
+// Callers with resolved values say so explicitly. fmText's memo key contains
+// the exact input, so translated prose cannot hit its original source key.
+const fm = fmText(Astro.locals);
+const blurbBySlug = new Map<string, string>(
+  await Promise.all(
+    artists.map(async (a): Promise<[string, string]> => [
+      String(a.SLUG ?? ""),
+      await resolveFmDisplayText(
+        String(a.artistPresentationShort ?? ""),
+        fm,
+        blurbsTranslated,
+      ),
+    ]),
+  ),
+);
+
+const sortedLetters = Array.from(byLetter.keys()).sort((a, b) =>
+  a === "#" ? -1 : b === "#" ? 1 : a.localeCompare(b, "sv"),
+);
+
 ---
 
-<div data-roster-index style="display: none;" class="space-y-12">
+<div data-roster-index style={visible ? undefined : "display: none;"} class="space-y-12">
   {sortedLetters.map((letter) => (
     <div class="grid gap-6 md:grid-cols-[80px_1fr] md:gap-12">
       <div class="md:sticky md:top-24 md:self-start">
@@ -33,7 +82,7 @@ const sortedLetters = Array.from(byLetter.keys()).sort();
         {byLetter.get(letter)!.map((a) => {
           const name = String(a["Head Artist"] ?? "");
           const slug = String(a.SLUG ?? "");
-          const blurb = String(a.artistPresentationShort ?? "");
+          const blurb = blurbBySlug.get(slug) ?? String(a.artistPresentationShort ?? "");
           const tags = a.genre ? String(a.genre).split(/\r|\n/).filter(Boolean).slice(0, 3) : [];
           return (
             <li class="group">

@@ -2,7 +2,14 @@
 import type { Artist } from "../lib/ninetone";
 import type { SectionTheme } from "../lib/sections";
 import { sectionAccent } from "../lib/sections";
-import { url } from "../lib/url";
+import { urlFor } from "../lib/url";
+import { sharedT } from "../lib/t";
+
+// Locale-bound link builder (i18n Phase 2): every internal href on an
+// English page must keep the /en prefix, or one click drops the visitor
+// back to Swedish. Shadows the plain url() import for this component.
+const url = urlFor(Astro.locals);
+
 
 interface Props {
   artists: Artist[];
@@ -18,13 +25,31 @@ const {
   artists,
   theme = "records",
   hrefBase = "/records/artists",
-  kicker = "The roster",
-  heading = "Artists in residence.",
+  kicker: kickerProp,
+  heading: headingProp,
   blurb,
-  cta = { label: "View all", href: "/records/artists" },
+  cta: ctaProp,
 } = Astro.props as Props;
 
 const accent = sectionAccent[theme];
+
+// t() bound to this request (docs/i18n-phase-2-brief.md section 4). Only the
+// DEFAULT fallback strings are translated here, not `kickerProp`/
+// `headingProp`/`ctaProp` themselves — every current caller (e.g.
+// src/pages/index.astro) that passes those props already resolves them
+// through its OWN t() call before handing them down, so translating them a
+// second time here would be a redundant, budget-wasting no-op (decision 4:
+// an already-target-language string returns unchanged, but the call still
+// costs a cache/override lookup and a budget slot). A caller that passes a
+// literal untranslated string instead is expected to route it through t()
+// itself, same as index.astro does — this component cannot tell the two
+// cases apart, so it only owns strings it is fully responsible for: its own
+// defaults.
+const t = sharedT(Astro.locals);
+const kicker = kickerProp ?? (await t("The roster"));
+const heading = headingProp ?? (await t("Artists in residence."));
+const cta = ctaProp ?? { label: await t("View all"), href: "/records/artists" };
+
 ---
 
 <section class="bg-ninetone-paper py-20">

@@ -1,26 +1,60 @@
 ---
 import Base from "../../layouts/Base.astro";
 import ContactForm from "../../components/ContactForm.astro";
+import { pageJsonLdOrigin } from "../../lib/site";
+import { contactPage } from "../../lib/schema";
+import { sharedT } from "../../lib/t";
+
+const jsonLd = contactPage(pageJsonLdOrigin(Astro.request), "/ninetone-nation/contact-ninetone-nation");
+
+// t() bound to this request (docs/i18n-phase-2-brief.md section 4).
+const t = sharedT(Astro.locals);
+const pageTitle = await t("Booking request");
+const description = await t(
+  "Book your next moment. Tell us the artist, the date, the room and the budget — Ninetone Nation replies within one business day.",
+);
+const kicker = await t("Nation — Booking");
+const heading = await t("Book your next moment.");
+const tagline = await t("Sweden's leading artists, hosts, and entertainers.");
+const blurb = await t(
+  "Tell us the artist, the date, the room, and the budget — we'll get back with availability, fee structure, and technical needs within one business day.",
+);
+const formTitle = await t("Send a booking request.");
+const formBlurb = await t("The more context you give us, the faster we can confirm.");
+const submitLabel = await t("Send request");
+const yourNameLabel = await t("Your name");
+const fullNamePlaceholder = await t("Full name");
+const emailLabel = await t("Email");
+const companyEventLabel = await t("Company / event");
+const optionalPlaceholder = await t("Optional");
+const eventDateLabel = await t("Event date");
+const detailsLabel = await t("Details");
+const detailsPlaceholder = await t("Which artist? Date, location, audience size, format…");
 ---
 
-<Base title="Booking request" theme="nation">
+<Base
+  title={pageTitle}
+  theme="nation"
+  jsonLd={jsonLd}
+  description={description}
+>
   <ContactForm
     theme="nation"
     division="nation"
-    kicker="Nation — Booking"
-    heading="Book your next moment."
-    tagline="Sweden's leading artists, hosts, and entertainers."
-    blurb="Tell us the artist, the date, the room, and the budget — we'll get back with availability, fee structure, and technical needs within one business day."
-    formTitle="Send a booking request."
-    formBlurb="The more context you give us, the faster we can confirm."
+    kicker={kicker}
+    heading={heading}
+    tagline={tagline}
+    blurb={blurb}
+    formTitle={formTitle}
+    formBlurb={formBlurb}
     contactEmail="booking@ninetone.com"
-    submitLabel="Send request"
+    submitLabel={submitLabel}
     fields={[
-      { type: "text", name: "name", label: "Your name", placeholder: "Full name", required: true },
-      { type: "email", name: "email", label: "Email", placeholder: "you@company.com", required: true },
-      { type: "text", name: "company", label: "Company / event", placeholder: "Optional" },
-      { type: "text", name: "date", label: "Event date", placeholder: "Optional" },
-      { type: "textarea", name: "details", label: "Details", placeholder: "Which artist? Date, location, audience size, format…", rows: 5, required: true },
+      { type: "text", name: "name", label: yourNameLabel, placeholder: fullNamePlaceholder, required: true },
+      { type: "email", name: "email", label: emailLabel, placeholder: "you@company.com", required: true },
+      { type: "text", name: "company", label: companyEventLabel, placeholder: optionalPlaceholder },
+      { type: "text", name: "date", label: eventDateLabel, placeholder: optionalPlaceholder },
+      { type: "textarea", name: "details", label: detailsLabel, placeholder: detailsPlaceholder, rows: 5, required: true },
     ]}
   />
 </Base>

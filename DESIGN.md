@@ -35,9 +35,9 @@ Section accent palette is centralized in [src/lib/sections.ts](src/lib/sections.
 
 | Role | Family | Weights | Loaded as | When to use |
 |---|---|---|---|---|
-| **Display** (`font-display`) | **Newsreader** (Google Fonts, OFL) | variable, 300–800 + italic, opsz 6–72 | `<link>` in [src/layouts/Base.astro](src/layouts/Base.astro) | All h1–h5, italic display taglines, drop-cap ledes. Substitute for paid PP Hatton — soft humanist serif with optical sizing. |
-| **Sans** (`font-sans`) | **Space Grotesk** (Google Fonts, OFL) | 300–700 | same | Body, paragraph, UI labels, nav, CTAs. Substitute for paid PP Supply Sans — engineered geometric grotesque. |
-| **Mono** (`font-mono`) | **Space Mono** (Google Fonts, OFL) | 400, 700 + italic | same | Kickers, h6, metadata (dates, categories), form labels, small uppercase captions. Substitute for paid PP Supply Mono. |
+| **Display** (`font-display`) | **Newsreader** (OFL, self-hosted) | variable, wght 400–600 roman / 400–500 italic, opsz 6–72 | `@font-face` in [global.css](src/styles/global.css), files in `public/fonts/`; roman + italic preloaded in [Base.astro](src/layouts/Base.astro) | All h1–h5, italic display taglines, drop-cap ledes. Substitute for paid PP Hatton — soft humanist serif with optical sizing. |
+| **Sans** (`font-sans`) | **Space Grotesk** (OFL, self-hosted) | variable, wght 300–700 | same, no preload (not the LCP element) | Body, paragraph, UI labels, nav, CTAs. Substitute for paid PP Supply Sans — engineered geometric grotesque. |
+| **Mono** (`font-mono`) | **Space Mono** (OFL, self-hosted) | 400, 700 (static instances; no italic — unused in this codebase) | same, no preload | Kickers, h6, metadata (dates, categories), form labels, small uppercase captions. Substitute for paid PP Supply Mono. |
 
 **Type scale** (in [global.css](src/styles/global.css) `@layer base`):
 
@@ -241,5 +241,5 @@ The bar appears site-wide, dismissible per-user via `localStorage`.
 ## 9. References
 
 - **Inspiration:** [Arturia.com](https://www.arturia.com), [Pangram Pangram type specimens](https://pangrampangram.com), [IMG Models](https://www.imgmodels.com), [Whalar](https://whalar.com), Awwwards SOTD music + sound winners 2025–2026.
-- **Original paid fonts (referenced for character):** PP Hatton (display) + PP Supply / Supply Mono (sans + mono) by Pangram Pangram. Free substitutes used in production: Newsreader + Space Grotesk + Space Mono via Google Fonts, all OFL-licensed.
+- **Original paid fonts (referenced for character):** PP Hatton (display) + PP Supply / Supply Mono (sans + mono) by Pangram Pangram. Free substitutes used in production: Newsreader + Space Grotesk + Space Mono, all OFL-licensed and self-hosted from `public/fonts/` (no runtime request to Google Fonts).
 - **Tailwind v4** with `@theme` tokens — all design tokens live in [src/styles/global.css](src/styles/global.css).

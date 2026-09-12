@@ -39,3 +39,12 @@ worker-fm-proxy/node_modules/
 
 # Cloudflare local dev secrets (wrangler dev)
 .dev.vars
+
+# i18n Phase 2 warm-script byproducts.
+# i18n-chrome-capture.jsonl is written by the build when
+# I18N_CAPTURE_CHROME_STRINGS=1 (src/lib/t.ts) so scripts/translate-warm.mjs
+# can discover chrome strings that source-parsing cannot see (brief
+# Implementation note D). It is a ~1MB regenerable artifact, never input to
+# a build. The bulk-put files are transient wrangler payloads.
+i18n-chrome-capture.jsonl
+.translate-warm-bulk-put.json*

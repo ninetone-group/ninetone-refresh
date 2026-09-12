@@ -8,8 +8,14 @@
  * either mode.
  */
 
-import { cached } from "./cache";
-import { mirrorRecordImages } from "./fm-image-mirror";
+// `.ts` extensions on purpose: plain Node (the test runner, with
+// --experimental-strip-types) cannot resolve extension-less imports, and
+// test/filemaker-kv.test.mjs imports this module directly.
+import { cached, type KvLike } from "./cache.ts";
+import { getCfEnv } from "./cf.ts";
+import { mirrorRecordImages } from "./fm-image-mirror.ts";
+import { fmFindViaKv } from "./fm-kv.ts";
+import { timeServer } from "./server-timing.ts";
 
 /**
  * Env resolution that works in all four contexts:
@@ -101,11 +107,21 @@ export type FmFindBody = {
   portalLimits?: Record<string, number>;
 };
 
+// Cross-isolate KV read-through for finds — see src/lib/fm-kv.ts.
+async function liveKv(): Promise<KvLike | null> {
+  const env = await getCfEnv();
+  return env?.CACHE_STATE ?? null;
+}
+
 export function fmFind<T = Record<string, unknown>>(
   layout: string,
   body: FmFindBody,
 ): Promise<T[]> {
-  return cached(`fm-${layout}`, body, () => fmFindUncached<T>(layout, body));
+  return timeServer("fmread", () =>
+    cached(`fm-${layout}`, body, async () =>
+      fmFindViaKv<T>(await liveKv(), layout, body, false, () => fmFindUncached<T>(layout, body)),
+    ),
+  );
 }
 
 export type FmRecord<T> = { fieldData: T; portalData?: Record<string, unknown[]> };
@@ -119,8 +135,10 @@ export function fmFindWithPortals<T = Record<string, unknown>>(
   layout: string,
   body: FmFindBody,
 ): Promise<FmRecord<T>[]> {
-  return cached(`fm-portals-${layout}`, body, () =>
-    fmFindUncachedWithPortals<T>(layout, body),
+  return timeServer("fmread", () =>
+    cached(`fm-portals-${layout}`, body, async () =>
+      fmFindViaKv<FmRecord<T>>(await liveKv(), layout, body, true, () => fmFindUncachedWithPortals<T>(layout, body)),
+    ),
   );
 }
 
@@ -128,6 +146,14 @@ async function fmRequest<T>(
   layout: string,
   body: FmFindBody,
   isRetry = false,
+): Promise<FmFindResponse<T> | null> {
+  return timeServer("fmnet", () => fmRequestUntimed<T>(layout, body, isRetry));
+}
+
+async function fmRequestUntimed<T>(
+  layout: string,
+  body: FmFindBody,
+  isRetry: boolean,
 ): Promise<FmFindResponse<T> | null> {
   const token = await getToken();
 

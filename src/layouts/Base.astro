@@ -5,25 +5,266 @@ import Footer from "../components/Footer.astro";
 import PromoBar from "../components/PromoBar.astro";
 import CommandPalette from "../components/CommandPalette.astro";
 import CookieConsent from "../components/CookieConsent.astro";
+import JsonLd from "../components/JsonLd.astro";
 import type { SectionTheme } from "../lib/sections";
 import { getPromo } from "../lib/ninetone";
 import { url } from "../lib/url";
+import { siteOrigin, isProductionShaped, resolveSitePath, jsonLdOrigin } from "../lib/site";
+import { organization, website } from "../lib/schema";
+import { hreflangLinks, localizedPath } from "../lib/i18n";
+import type { Lang } from "../lib/translate";
 
 interface Props {
   title: string;
+  /** When false, `title` is used verbatim for <title>/og:title/twitter:title
+   * with no " | Ninetone Group" suffix appended. Use this when the caller has
+   * already built a complete, disambiguated title (e.g. "{Name} · Artist |
+   * Ninetone Records") — Base must never double up or conflict with a
+   * suffix the page already added. Defaults to true (existing behavior). */
+  appendSiteName?: boolean;
   description?: string;
   theme?: SectionTheme;
-  lang?: "en" | "sv";
+  /** Explicit override — see the `lang` derivation below (right after
+   * Astro.props destructuring) for why this is no longer defaulted here and
+   * instead left `undefined` when the caller doesn't pass it. Only two call
+   * sites pass this today
+   * (src/pages/integritet.astro, src/pages/guider/*.astro), both hardcoding
+   * "sv" for their own hand-authored-Swedish-copy reasons that predate
+   * Phase 2 — every other page relies on `locals.lang`. */
+  lang?: Lang;
+  /** Absolute URL or site-relative path (e.g. "/records/artists"). Defaults
+   * to the current page's path. Always emitted as an absolute production-
+   * shaped URL via siteOrigin() — never the GH Pages sub-path one. */
+  canonical?: string;
+  /** Absolute image URL (FM proxy URLs are already absolute). Defaults to
+   * the site-wide /og-default.png. */
+  ogImage?: string;
+  ogType?: "website" | "article" | "profile";
+  /** Page-level noindex override. ORed with the site-wide PUBLIC_NOINDEX flag
+   * — either one being true is enough to noindex the page. */
+  noindex?: boolean;
+  /** Error pages (404) have no canonical URL and no language siblings: emit
+   * no <link rel="canonical">, no hreflang cluster and no og:url for them,
+   * rather than asserting that a URL that does not exist is canonical. */
+  omitCanonical?: boolean;
+  jsonLd?: Record<string, unknown> | Record<string, unknown>[];
 }
 
 const {
   title,
+  appendSiteName = true,
   description = "Ninetone Group — Music Production, Talent Management & Booking",
   theme = "group",
-  lang = "en",
+  lang: langProp,
+  canonical,
+  ogImage,
+  ogType = "website",
+  noindex: noindexProp = false,
+  omitCanonical = false,
+  jsonLd,
 } = Astro.props;
 
-const fullTitle = title === "Ninetone Group" ? title : `${title} | Ninetone Group`;
+// `<html lang>` source of truth (brief §1, section 3 deliverable).
+//
+// Precedence: explicit `lang` prop (a caller's deliberate override) >
+// `Astro.locals.lang` (src/middleware.ts, cf target only, set from the
+// ACTUAL request path before any rewrite happened — see src/lib/i18n.ts's
+// `switchHref` doc comment for the fuller version of why that's the only
+// trustworthy source once a page is rendering) > a hardcoded fallback.
+//
+// `Astro.locals` has no declared type anywhere in this codebase (no
+// env.d.ts), so it's read structurally here rather than imported from a
+// nonexistent App.Locals — the same defensive-typing pattern
+// src/lib/translate.ts's `LocalsWithScheduler` already uses for the same
+// reason. On the gh/static target `locals.lang` is simply never set
+// (src/middleware.ts's locale-detection block is entirely HAS_RUNTIME-gated
+// — decision 2, "/en/ is a CF-only feature"), so `localsLang` is
+// `undefined` there and the fallback below is what actually ships on every
+// one of the 546 statically-built pages.
+//
+// FALLBACK CHOICE, EXPLAINED (brief asks for this explicitly): the fallback
+// is "sv", not the previous default of "en". This is a deliberate change of
+// existing behavior, not an oversight:
+//   - Decision 1 (docs/i18n-phase-2-brief.md, astro.config.mjs) is explicit
+//     that Swedish is the DEFAULT locale, served at the root with no
+//     prefix — English is the one that gets a path segment. A static build
+//     with no locale routing at all is, by construction, "the default
+//     locale, unprefixed" — i.e. Swedish — not some third undecided state.
+//   - Every page's actual authored copy backs this up: grepping the 26
+//     pages that render through Base, only 2 ever pass an explicit `lang`
+//     prop today (integritet.astro, guider/*), and both pass "sv" — because
+//     their hardcoded strings ARE Swedish. The other 24 pages were silently
+//     mislabeling their own (also Swedish, FM-driven) content as English via
+//     the old `lang = "en"` prop default. That default was never a
+//     deliberate "English-first" decision — it predates Phase 2 entirely —
+//     it was just Base.astro's original placeholder before locale handling
+//     existed. Switching the fallback to "sv" fixes an existing mislabel
+//     bug for all 546 gh-target pages rather than preserving it.
+//   - The alternative (defaulting to "en" here to match Base's OLD prop
+//     default, on the theory that a mid-migration fallback should be
+//     conservative) would mean shipping `<html lang="en">` over
+//     Swedish-language content on every static preview page, which is a
+//     real, measurable SEO/accessibility defect (screen readers and search
+//     engines both trust this attribute) — worse than a one-line behavior
+//     change documented here and called out to the reviewer.
+const localsLang = (Astro.locals as { lang?: Lang } | undefined)?.lang;
+const lang: Lang = langProp ?? localsLang ?? "sv";
+
+// FM bios and taglines routinely carry leading/trailing whitespace and hard
+// line breaks straight from the database, which surfaced as meta descriptions
+// beginning with a space. Normalize once here so every caller benefits rather
+// than making each page remember to trim.
+const metaDescription = String(description ?? "").replace(/\s+/g, " ").trim();
+
+const fullTitle =
+  title === "Ninetone Group" || !appendSiteName ? title : `${title} | Ninetone Group`;
+
+// Canonical + OG URL: the origin always comes from siteOrigin() — the
+// production-shaped host, never hardcoded.
+//
+// The GH Pages sub-path base is a preview-only artifact (astro.config.mjs's
+// `base: "/ninetone-refresh-preview"` on the gh target). It's meaningful ONLY
+// when we're still serving from mixxmastermike123.github.io — the moment
+// PUBLIC_SITE_ORIGIN is set (production domain), that sub-path has no
+// meaning there and must be stripped, never re-added, regardless of whether
+// astro.config.mjs's `base` itself has been flipped to "/" yet (that's a
+// separate, later launch-day step). See brief §1: "Strip the sub-path base
+// from canonical on the static target only if url() already adds it;
+// canonical must be the absolute production-shaped URL... when
+// PUBLIC_SITE_ORIGIN is set."
+//
+// Astro.url.pathname is the actual served path — on the static (gh) target
+// it already includes the sub-path base (Astro resolves that before handing
+// us the URL); on the CF (server) target `base` is "/", so there's nothing
+// to strip either way.
+const origin = siteOrigin(Astro.request);
+const productionShaped = isProductionShaped();
+const basePrefix = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
+const basePath = (path: string) => resolveSitePath(path, basePrefix, productionShaped, url);
+
+// The current path, base-prefix stripped, as ONE variable shared by the
+// canonical URL below and the hreflang block further down. Computed here
+// rather than in two places so the two can never drift apart — they are
+// answering the same question ("which page is this, locale-free?") and a
+// canonical that disagrees with its own hreflang set is precisely the
+// contradiction search engines resolve against you.
+//
+// On gh, Astro.url.pathname carries the "/ninetone-refresh-preview" sub-path;
+// on cf, base is "/" and this stripping is a no-op.
+const rawCurrentPath = Astro.url.pathname.replace(/\/$/, "") || "/";
+const currentPath =
+  basePrefix && rawCurrentPath.startsWith(basePrefix)
+    ? rawCurrentPath.slice(basePrefix.length) || "/"
+    : rawCurrentPath;
+
+// CANONICAL PER LOCALE (brief, Base.astro build item).
+//
+// Astro.url.pathname is the POST-REWRITE path: src/middleware.ts strips the
+// "/en" segment and calls next(renderTarget), so by the time this layout
+// renders, an English request looks path-identical to its Swedish twin. A
+// canonical built straight from it therefore pointed every /en/* page at the
+// Swedish URL — while the hreflang block below simultaneously advertised that
+// same page AS the English alternate. Google resolves that contradiction in
+// favour of the canonical, which would have folded the entire English corpus
+// into the Swedish one and dropped it from the index. It would also have made
+// every English link shared to Slack/LinkedIn unfurl the Swedish page, since
+// og:url reuses this value.
+//
+// localizedPath() re-applies the locale and is a no-op for sv, so Swedish
+// pages and the whole gh target are byte-identical to before — only /en/*
+// changes. Deliberately NOT using Astro.originPathname (which also holds the
+// pre-rewrite path): nothing else in this codebase depends on that API, and
+// re-localizing from the resolved `lang` stays correct even if the
+// middleware's rewrite strategy changes.
+const canonicalUrl = canonical
+  ? /^https?:\/\//i.test(canonical)
+    ? canonical
+    : `${origin}${basePath(canonical.startsWith("/") ? canonical : `/${canonical}`)}`
+  : `${origin}${basePath(localizedPath(currentPath, lang))}`;
+
+const ogImageUrl = ogImage || `${origin}${basePath("/og-default.png")}`;
+const ogLocale = lang === "sv" ? "sv_SE" : "en_GB";
+const ogLocaleAlternate = lang === "sv" ? "en_GB" : "sv_SE";
+
+// Every page gets Organization + WebSite (brief §2 "Wire:"). Instagram is a
+// static Footer literal (src/components/Footer.astro), not an FM read — safe
+// to pass straight through, no new fetch involved.
+//
+// JSON-LD URLs are plain `${origin}${path}` concatenations inside schema.ts
+// (it has no url()/resolveSitePath() of its own — see jsonLdOrigin()'s
+// comment in src/lib/site.ts) — fold the GH Pages preview sub-path into the
+// origin here, once, so every entity/breadcrumb URL this page's own jsonLd
+// prop supplies is reachable too.
+const jsonLdSafeOrigin = jsonLdOrigin(origin, basePrefix, productionShaped);
+const baseJsonLd = [
+  organization(jsonLdSafeOrigin, { instagram: "https://www.instagram.com/ninetonemanagement/" }),
+  website(jsonLdSafeOrigin),
+];
+const pageJsonLd = jsonLd ? (Array.isArray(jsonLd) ? jsonLd : [jsonLd]) : [];
+
+// inLanguage (section 3 deliverable, brief §"Base.astro") — applied to the
+// PAGE's own nodes only, never to the two shared base nodes.
+//
+// Stamped here rather than threaded through schema.ts's dozen builders:
+// those are deliberately Astro-free data functions reused by pages that
+// don't know about locale at all, and `inLanguage` is a fact about WHICH
+// RENDER THIS IS, not about the entity. One spread at the place that
+// already knows `lang` beats an options param through ~10 builders and ~15
+// call sites, and a future builder gets it for free.
+//
+// But it must NOT be stamped on `organization()` and `website()`. Both are
+// keyed by a deliberately LOCALE-INVARIANT @id (orgId(origin) and
+// `${origin}/#website`), so stamping the render's locale onto them made
+// /records publish {"@id": ".../#organization", "inLanguage": "sv"} while
+// /en/records published the same @id with "en". Google merges nodes by @id,
+// so that is two irreconcilable assertions about one entity — and Ninetone
+// Group the company does not have a language. `inLanguage` is also not a
+// valid property of Organization at all (it is defined on CreativeWork, and
+// Organization is not one), so this was schema noise on top of a
+// contradiction. Caught in review after a dist census found it on 544
+// Organization and 544 WebSite nodes.
+//
+// The page's own nodes are the ones where it is both valid and meaningful:
+// their @ids are URL-derived and so already differ per locale once the
+// canonical above is locale-correct.
+const jsonLdList = [...baseJsonLd, ...pageJsonLd.map((entry) => ({ ...entry, inLanguage: lang }))];
+
+// hreflang pairs (section 3 deliverable, brief: "hreflang pairs via
+// hreflangLinks() from src/lib/i18n.ts"). hreflangLinks() strips whatever
+// locale prefix its `currentPath` argument carries (via stripLocale) before
+// re-building both language variants — but stripLocale only recognizes a
+// LEADING "/en" segment, so it must be fed a path with any OTHER prefix
+// already removed first. On the gh/static target, `Astro.url.pathname`
+// carries the GH Pages sub-path base ("/ninetone-refresh-preview/records"),
+// which is not "/en" and would sail straight through stripLocale
+// unrecognized, then get "/en" spliced in AHEAD of the base
+// ("/en/ninetone-refresh-preview/records") by localizedPath — a URL that
+// resolves nowhere on either target and, worse, is nonsensical on gh where
+// decision 2 says English doesn't exist at all. Strip the base the same way
+// Header.astro's own `pathname` (used for its nav-active-state AND its
+// switchHref call) already does, so this file has exactly one path-stripping
+// recipe rather than two that could drift apart.
+//
+// On the cf target `base` is "/" (astro.config.mjs), so this stripping is a
+// no-op there and `Astro.url.pathname` is used as-is — already locale-free
+// post-middleware-rewrite for an English request, which stripLocale handles
+// identically to a never-prefixed Swedish one (see the function's own doc
+// comment): either input strips to the same locale-free path, so
+// hreflangLinks(), unlike the header switch (src/lib/i18n.ts's
+// `switchHref`), does NOT need `locals.lang` passed in at all — it emits
+// BOTH locales' URLs unconditionally, so there's no "which language is
+// this" branch that could get the wrong answer from a stripped pathname.
+//
+// origin uses jsonLdSafeOrigin (not the bare `origin`) for the same reason
+// the JSON-LD builders above do: on the gh/preview target these must be
+// real, reachable URLs under the "/ninetone-refresh-preview" sub-path, and
+// jsonLdSafeOrigin is the one origin value in this file that already folds
+// that base prefix in — combined with the now-base-stripped path below, the
+// two reconstruct a correct, reachable URL on both targets.
+// Reuses `currentPath` (computed above the canonical) rather than repeating
+// the base-stripping recipe — the canonical and these alternates must agree
+// about which page this is, so they read from one variable.
+const hreflangs = hreflangLinks(currentPath, jsonLdSafeOrigin);
 
 // Promo bar is opt-in: nothing shows unless a "Promo" WebPosts category exists.
 // Optional chrome — a failed fetch must not take the page down, but it should
@@ -34,9 +275,13 @@ const promo = await getPromo().catch((err) => {
 });
 
 // Site-wide noindex while the preview is gated. Flip PUBLIC_NOINDEX=false (or
-// unset) at launch. Belt-and-braces with public/robots.txt and the X-Robots-Tag
-// header in public/_headers — any one of them is enough to stop indexing.
-const noindex = String(import.meta.env.PUBLIC_NOINDEX ?? "true") !== "false";
+// unset) at launch. Belt-and-braces with the /robots.txt endpoint (reads this
+// same env flag — src/pages/robots.txt.ts) and the X-Robots-Tag header in
+// public/_headers — any one of them is enough to stop indexing.
+// Page-level `noindex` prop ORs in on top — a page can opt itself out of
+// indexing even once the site-wide flag goes false, but never the reverse.
+const envNoindex = String(import.meta.env.PUBLIC_NOINDEX ?? "true") !== "false";
+const noindex = envNoindex || noindexProp;
 
 // Trackers only fire when the site is actually live (noindex off). Keeps the
 // preview environment from polluting analytics. Tracker IDs are placeholders
@@ -48,6 +293,23 @@ const GA4_ID = "G-X26Z7RRXTY";            // reused from current ninetone.com
 const META_PIXEL_ID = "199979048106038";  // reused from current ninetone.com
 const CLARITY_ID = "CLARITY-PLACEHOLDER"; // TODO: replace with real project ID before launch
 const TIKTOK_PIXEL_ID = "TIKTOK-PLACEHOLDER"; // TODO: replace with real pixel ID before launch
+// A placeholder ID must never become a live script load: flipping
+// PUBLIC_NOINDEX at launch is a plausible single-flag action, and without this
+// guard it would request gtm.js?id=GTM-PLACEHOLDER (2026-09-12 review). Each
+// tracker turns on individually once its real ID is in.
+const isPlaceholder = (id: string) => id.endsWith("-PLACEHOLDER");
+const gtmEnabled = tracking && !isPlaceholder(GTM_ID);
+const clarityEnabled = tracking && !isPlaceholder(CLARITY_ID);
+const tiktokEnabled = tracking && !isPlaceholder(TIKTOK_PIXEL_ID);
+
+// DELIBERATELY NOT locale-bound, unlike every other component.
+//
+// This layout's url() feeds resolveSitePath() for the canonical and OG URLs,
+// and those already apply localizedPath() explicitly (see the canonical block
+// above) — binding url() to the locale here would prefix them a SECOND time
+// and emit "/en/en/records". The handful of chrome links this file renders
+// (skip-link, logo) are locale-agnostic anchors or handled by Header/Footer,
+// which are bound. Left as the plain import on purpose.
 ---
 
 <!doctype html>
@@ -71,13 +333,15 @@ const TIKTOK_PIXEL_ID = "TIKTOK-PLACEHOLDER"; // TODO: replace with real pixel I
 
         {/* Google Tag Manager — loads GA4 + other Google tags. Consent Mode v2
             above ensures nothing fires until user grants consent. */}
-        <script is:inline define:vars={{ GTM_ID }}>
-          (function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
-          new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
-          j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
-          'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
-          })(window,document,'script','dataLayer',GTM_ID);
-        </script>
+        {gtmEnabled && (
+          <script is:inline define:vars={{ GTM_ID }}>
+            (function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+            new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+            j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+            'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+            })(window,document,'script','dataLayer',GTM_ID);
+          </script>
+        )}
 
         {/* GA4 direct — fallback in case GTM container isn't yet configured. Safe
             to leave alongside GTM (Consent Mode v2 prevents double-firing of
@@ -113,63 +377,106 @@ const TIKTOK_PIXEL_ID = "TIKTOK-PLACEHOLDER"; // TODO: replace with real pixel I
 
         {/* Microsoft Clarity — loaded only after analytics consent is granted.
             Listens for ninetone:consent-analytics-granted event from CookieConsent. */}
-        <script is:inline define:vars={{ CLARITY_ID }}>
-          (function () {
-            var loaded = false;
-            function loadClarity() {
-              if (loaded) return;
-              loaded = true;
-              (function(c,l,a,r,i,t,y){
-                c[a]=c[a]||function(){(c[a].q=c[a].q||[]).push(arguments)};
-                t=l.createElement(r);t.async=1;t.src="https://www.clarity.ms/tag/"+i;
-                y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y);
-              })(window, document, "clarity", "script", CLARITY_ID);
-            }
-            try {
-              var raw = localStorage.getItem('ninetone_consent_v1');
-              if (raw && JSON.parse(raw).analytics) loadClarity();
-            } catch (e) {}
-            window.addEventListener('ninetone:consent-analytics-granted', loadClarity);
-          })();
-        </script>
+        {clarityEnabled && (
+          <script is:inline define:vars={{ CLARITY_ID }}>
+            (function () {
+              var loaded = false;
+              function loadClarity() {
+                if (loaded) return;
+                loaded = true;
+                (function(c,l,a,r,i,t,y){
+                  c[a]=c[a]||function(){(c[a].q=c[a].q||[]).push(arguments)};
+                  t=l.createElement(r);t.async=1;t.src="https://www.clarity.ms/tag/"+i;
+                  y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y);
+                })(window, document, "clarity", "script", CLARITY_ID);
+              }
+              try {
+                var raw = localStorage.getItem('ninetone_consent_v1');
+                if (raw && JSON.parse(raw).analytics) loadClarity();
+              } catch (e) {}
+              window.addEventListener('ninetone:consent-analytics-granted', loadClarity);
+            })();
+          </script>
+        )}
 
         {/* TikTok Pixel — same pattern as Clarity. Only loads after marketing
             consent (TikTok is a marketing pixel, not analytics). */}
-        <script is:inline define:vars={{ TIKTOK_PIXEL_ID }}>
-          (function () {
-            var loaded = false;
-            function loadTikTok() {
-              if (loaded) return;
-              loaded = true;
-              !function (w, d, t) {
-                w.TiktokAnalyticsObject=t;var ttq=w[t]=w[t]||[];ttq.methods=["page","track","identify","instances","debug","on","off","once","ready","alias","group","enableCookie","disableCookie","holdConsent","revokeConsent","grantConsent"];ttq.setAndDefer=function(t,e){t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}};for(var i=0;i<ttq.methods.length;i++)ttq.setAndDefer(ttq,ttq.methods[i]);ttq.instance=function(t){for(var e=ttq._i[t]||[],n=0;n<ttq.methods.length;n++)ttq.setAndDefer(e,ttq.methods[n]);return e};ttq.load=function(e,n){var r="https://analytics.tiktok.com/i18n/pixel/events.js";ttq._i=ttq._i||{},ttq._i[e]=[],ttq._i[e]._u=r,ttq._t=ttq._t||{},ttq._t[e]=+new Date,ttq._o=ttq._o||{},ttq._o[e]=n||{};var i=document.createElement("script");i.type="text/javascript",i.async=!0,i.src=r+"?sdkid="+e+"&lib="+t;var o=document.getElementsByTagName("script")[0];o.parentNode.insertBefore(i,o)};
-                ttq.load(TIKTOK_PIXEL_ID);
-                ttq.page();
-              }(window, document, 'ttq');
-            }
-            try {
-              var raw = localStorage.getItem('ninetone_consent_v1');
-              if (raw && JSON.parse(raw).marketing) loadTikTok();
-            } catch (e) {}
-            window.addEventListener('ninetone:consent-marketing-granted', loadTikTok);
-          })();
-        </script>
+        {tiktokEnabled && (
+          <script is:inline define:vars={{ TIKTOK_PIXEL_ID }}>
+            (function () {
+              var loaded = false;
+              function loadTikTok() {
+                if (loaded) return;
+                loaded = true;
+                !function (w, d, t) {
+                  w.TiktokAnalyticsObject=t;var ttq=w[t]=w[t]||[];ttq.methods=["page","track","identify","instances","debug","on","off","once","ready","alias","group","enableCookie","disableCookie","holdConsent","revokeConsent","grantConsent"];ttq.setAndDefer=function(t,e){t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}};for(var i=0;i<ttq.methods.length;i++)ttq.setAndDefer(ttq,ttq.methods[i]);ttq.instance=function(t){for(var e=ttq._i[t]||[],n=0;n<ttq.methods.length;n++)ttq.setAndDefer(e,ttq.methods[n]);return e};ttq.load=function(e,n){var r="https://analytics.tiktok.com/i18n/pixel/events.js";ttq._i=ttq._i||{},ttq._i[e]=[],ttq._i[e]._u=r,ttq._t=ttq._t||{},ttq._t[e]=+new Date,ttq._o=ttq._o||{},ttq._o[e]=n||{};var i=document.createElement("script");i.type="text/javascript",i.async=!0,i.src=r+"?sdkid="+e+"&lib="+t;var o=document.getElementsByTagName("script")[0];o.parentNode.insertBefore(i,o)};
+                  ttq.load(TIKTOK_PIXEL_ID);
+                  ttq.page();
+                }(window, document, 'ttq');
+              }
+              try {
+                var raw = localStorage.getItem('ninetone_consent_v1');
+                if (raw && JSON.parse(raw).marketing) loadTikTok();
+              } catch (e) {}
+              window.addEventListener('ninetone:consent-marketing-granted', loadTikTok);
+            })();
+          </script>
+        )}
       </>
     )}
 
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content={description} />
+    <meta name="description" content={metaDescription} />
     {noindex && <meta name="robots" content="noindex, nofollow, noarchive, nosnippet, noimageindex" />}
-    <link rel="icon" type="image/png" href={url("/images/favicon.png")} />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300..800;1,6..72,300..800&family=Space+Grotesk:wght@300;400;500;600;700&family=Space+Mono:ital,wght@0,400;0,700;1,400;1,700&display=swap"
-    />
+    {!omitCanonical && <link rel="canonical" href={canonicalUrl} />}
+
+    <!-- hreflang pairs (docs/i18n-phase-2-brief.md, section 3) — one per
+         locale plus x-default (= Swedish, decision 1). Emitted on every
+         page so crawlers can always find the sibling-language URL, even
+         while section 4's chrome-string translation hasn't landed on a
+         given page yet — hreflang correctness doesn't depend on whether
+         the page's copy is translated. -->
+    {!omitCanonical && hreflangs.map((link) => (
+      <link rel="alternate" hreflang={link.hreflang} href={link.href} />
+    ))}
+
+    <!-- Open Graph -->
+    <meta property="og:site_name" content="Ninetone Group" />
+    <meta property="og:title" content={fullTitle} />
+    <meta property="og:description" content={metaDescription} />
+    {!omitCanonical && <meta property="og:url" content={canonicalUrl} />}
+    <meta property="og:image" content={ogImageUrl} />
+    <meta property="og:type" content={ogType} />
+    <meta property="og:locale" content={ogLocale} />
+    <meta property="og:locale:alternate" content={ogLocaleAlternate} />
+
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={fullTitle} />
+    <meta name="twitter:description" content={metaDescription} />
+    <meta name="twitter:image" content={ogImageUrl} />
+
+    <meta name="theme-color" content="#f5f3ee" />
+
+    <!-- Favicons -->
+    <link rel="icon" type="image/svg+xml" href={url("/favicon.svg")} />
+    <link rel="icon" type="image/x-icon" sizes="32x32" href={url("/favicon.ico")} />
+    <link rel="apple-touch-icon" sizes="180x180" href={url("/apple-touch-icon.png")} />
+
+    <!-- Self-hosted fonts (SEO Phase 1b P1 §11) — @font-face rules live in
+         src/styles/global.css, files in public/fonts/. Preload only the two
+         Newsreader (display) files the homepage/editorial hero renders above
+         the fold: the h1 (roman) and the italic hero tagline directly under
+         it (e.g. src/pages/index.astro's ".font-display italic" paragraph).
+         Space Grotesk/Space Mono are body/kicker text, not the LCP element,
+         so they load via the ordinary @font-face (no preload needed). -->
+    <link rel="preload" as="font" type="font/woff2" href={url("/fonts/newsreader-roman.woff2")} crossorigin />
+    <link rel="preload" as="font" type="font/woff2" href={url("/fonts/newsreader-italic.woff2")} crossorigin />
     <meta name="generator" content={Astro.generator} />
     <title>{fullTitle}</title>
+
+    <JsonLd data={jsonLdList} />
   </head>
   <body class="min-h-screen bg-ninetone-paper text-ninetone-ink antialiased">
     <PromoBar promo={promo} />

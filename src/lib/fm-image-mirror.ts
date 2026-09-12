@@ -16,7 +16,7 @@ const FM_STREAMING_RE = /^https?:\/\/files\.ninetone\.com\/Streaming_SSL\//i;
 
 const PROXY_BASE = (
   import.meta.env.FM_IMAGE_PROXY_BASE ??
-  "https://ninetone-fm-image-proxy.micke-ohlen.workers.dev"
+  "https://ninetone-fm-image-proxy.ninetone.workers.dev"
 ).replace(/\/$/, "");
 
 // Map (FM layout) → (proxy "kind" route segment). Layouts not in this map

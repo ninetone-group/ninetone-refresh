@@ -4,6 +4,17 @@ import ArtistCard from "../../components/ArtistCard.astro";
 import SectionIntro from "../../components/SectionIntro.astro";
 import { getBookingCategories, getWebPostSection } from "../../lib/ninetone";
 import { displayTitle } from "../../lib/display-title";
+import { pageJsonLdOrigin } from "../../lib/site";
+import { collectionPage } from "../../lib/schema";
+import { slugifyTag } from "../../lib/booking-slug";
+import { urlFor } from "../../lib/url";
+import { fmText, sharedT } from "../../lib/t";
+
+// Locale-bound link builder (i18n Phase 2): every internal href on an
+// English page must keep the /en prefix, or one click drops the visitor
+// back to Swedish. Shadows the plain url() import for this component.
+const url = urlFor(Astro.locals);
+
 
 // Core content — failures render the error page (never edge-cached) instead
 // of a silently-empty booking roster. Transients are absorbed by lib/cache.ts.
@@ -12,29 +23,69 @@ const categories = await getBookingCategories();
 // Only render categories that have at least one talent — empty
 // categories add noise without adding value. The data still
 // exists in FM; this is purely a render filter.
-const populatedCategories = categories.filter((c) => c.artists.length > 0);
+const populatedCategoriesRaw = categories.filter((c) => c.artists.length > 0);
+
+// FM CONTENT (decision 8): each talent's blurb is FM prose. Pre-translated
+// here because fm() is async and the cards render inside nested .map()s,
+// which cannot await.
+const fm = fmText(Astro.locals);
+const populatedCategories = await Promise.all(
+  populatedCategoriesRaw.map(async (c) => ({
+    ...c,
+    artists: await Promise.all(
+      c.artists.map(async (a) => ({ ...a, blurb: await fm(String(a.blurb ?? "")) })),
+    ),
+    description: await fm(String(c.description ?? "")),
+  })),
+);
 
 // Section intro copy: pull from WebPosts (same as before).
 const webPosts = await getWebPostSection("Ninetone Nation");
-const introBody =
-  webPosts?.blocks?.find((b) => b.message)?.message ?? "";
+// FM CONTENT (decision 8): the WebPosts intro block and each category's own
+// description are FM prose warmed by the warm script, previously rendered raw.
+const introBody = await fm(
+  String(webPosts?.blocks?.find((b) => b.message)?.message ?? ""),
+  "markdown",
+);
 
 const totalArtists = populatedCategories.reduce((n, c) => n + c.artists.length, 0);
 
-// Slugify category names for in-page anchors (and stable element ids)
-function slugifyTag(s: string): string {
-  return s
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "");
-}
+const origin = pageJsonLdOrigin(Astro.request);
+const jsonLd = collectionPage(origin, {
+  name: "Booking — Ninetone Nation",
+  path: "/ninetone-nation/booking",
+  items: populatedCategories.flatMap((c) =>
+    c.artists.map((a) => ({ name: a.name, path: `/ninetone-nation/${a.slug}` })),
+  ),
+});
+
+// t() bound to this request (docs/i18n-phase-2-brief.md section 4). `c.tag`
+// values are FM booking-category labels (decision 7's protected-terms
+// list, API_BOOKING_TAG) — proper nouns, not translated. The Swedish
+// pluralization ternary below that builds category headings from `c.tag`
+// is untouched for the same reason.
+const t = sharedT(Astro.locals);
+const pageTitle = await t("Booking");
+const entertainersTitle = await t("Entertainers");
+const description = await t(
+  "Sweden's leading artists, hosts and speakers, available for your event — browse bookable talent by category.",
+);
+const bookableLabel = await t("bookable");
+const browseByCategoryAriaLabel = await t("Browse by category");
+const oneTalentLabel = await t("talent");
+const manyTalentsLabel = await t("talents");
+const bookLabel = await t("Book");
+
 ---
 
-<Base title="Booking" theme="nation">
+<Base
+  title={pageTitle}
+  theme="nation"
+  jsonLd={jsonLd}
+  description={description}
+>
   <SectionIntro
-    title="Entertainers"
+    title={entertainersTitle}
     tagline={displayTitle(webPosts?.title)}
     readMore={introBody}
     theme="nation"
@@ -47,17 +98,17 @@ function slugifyTag(s: string): string {
       {populatedCategories.length > 1 && (
         <nav
           class="mb-12 -mx-6 overflow-x-auto border-b border-ninetone-rule [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-          aria-label="Jump to category"
+          aria-label={browseByCategoryAriaLabel}
         >
           <ul class="flex items-center gap-1 px-6 pb-3">
             <li class="shrink-0">
-              <span class="kicker text-ninetone-green-dark">{totalArtists} bookable</span>
+              <span class="kicker text-ninetone-green-dark">{totalArtists} {bookableLabel}</span>
             </li>
             <li class="mx-3 h-4 w-px shrink-0 bg-ninetone-rule" aria-hidden></li>
             {populatedCategories.map((c) => (
               <li class="shrink-0">
                 <a
-                  href={`#cat-${slugifyTag(c.tag)}`}
+                  href={url(`/ninetone-nation/kategori/${slugifyTag(c.tag)}`)}
                   class="inline-flex items-center gap-2 px-3 py-1.5 font-mono text-[0.6875rem] font-bold uppercase tracking-[0.12em] text-ninetone-ink/60 transition-colors hover:text-ninetone-ink"
                 >
                   {c.tag}
@@ -70,22 +121,29 @@ function slugifyTag(s: string): string {
       )}
 
       <div class="space-y-24">
-        {populatedCategories.map((c) => {
-          const id = `cat-${slugifyTag(c.tag)}`;
-          return (
-            <section id={id} class="scroll-mt-28">
+        {populatedCategories.map((c) => (
+          <section>
               <header class="mb-10 grid gap-6 md:grid-cols-12 md:gap-16">
                 <div class="md:col-span-7">
-                  <span class="kicker text-ninetone-green-dark">
-                    {c.tag} · {c.artists.length} {c.artists.length === 1 ? "talent" : "talents"}
-                  </span>
+                  <a
+                    href={url(`/ninetone-nation/kategori/${slugifyTag(c.tag)}`)}
+                    class="kicker inline-flex items-center gap-2 text-ninetone-green-dark transition-opacity hover:opacity-70"
+                  >
+                    {c.tag} · {c.artists.length} {c.artists.length === 1 ? oneTalentLabel : manyTalentsLabel}
+                    <span aria-hidden>→</span>
+                  </a>
                   <h2 class="mt-4 font-display text-[clamp(2rem,5vw,4rem)] leading-[0.95] tracking-[-0.035em]">
-                    {c.tag === "Föreläsare" ? "Föreläsare." :
-                     c.tag === "Konferencier" ? "Konferenciers." :
-                     c.tag === "Moderator" ? "Moderatorer." :
-                     c.tag === "Underhållare" ? "Underhållare." :
-                     c.tag === "Influencer" ? "Influencers." :
-                     `${c.tag}er.`}
+                    <a
+                      href={url(`/ninetone-nation/kategori/${slugifyTag(c.tag)}`)}
+                      class="transition-opacity hover:opacity-70"
+                    >
+                      {c.tag === "Föreläsare" ? "Föreläsare." :
+                       c.tag === "Konferencier" ? "Konferenciers." :
+                       c.tag === "Moderator" ? "Moderatorer." :
+                       c.tag === "Underhållare" ? "Underhållare." :
+                       c.tag === "Influencer" ? "Influencers." :
+                       `${c.tag}er.`}
+                    </a>
                   </h2>
                 </div>
                 {c.description && (
@@ -105,16 +163,17 @@ function slugifyTag(s: string): string {
                     slug={a.slug}
                     blurb={a.blurb}
                     image={a.imageSmall ?? a.imageBig}
+                    imageWidth={a.imageSmall ? 500 : 1000}
+                    imageHeight={a.imageSmall ? 500 : 1000}
                     tags={[c.tag]}
-                    ctaLabel="Book"
+                    ctaLabel={bookLabel}
                     highlight={a.highlight}
                     socials={a.socials}
                   />
                 ))}
               </div>
             </section>
-          );
-        })}
+        ))}
       </div>
     </div>
   </section>

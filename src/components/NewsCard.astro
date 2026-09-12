@@ -1,5 +1,13 @@
 ---
-import { url } from "../lib/url";
+import { urlFor } from "../lib/url";
+import { sharedT } from "../lib/t";
+import { formatDate, formatIsoDate, type Lang } from "../lib/dates";
+
+// Locale-bound link builder (i18n Phase 2): every internal href on an
+// English page must keep the /en prefix, or one click drops the visitor
+// back to Swedish. Shadows the plain url() import for this component.
+const url = urlFor(Astro.locals);
+
 
 interface Props {
   title: string;
@@ -14,11 +22,50 @@ interface Props {
   size?: "sm" | "md" | "lg";
   /** Article includes one or more embedded YouTube videos (ytLinkA-D). */
   hasVideo?: boolean;
+  /** Route prefix the card links into. Defaults to "/news" (every existing
+   *  caller). Guides (src/pages/guider/index.astro) pass "/guider" so this
+   *  same card/hover-mark pattern can be reused for a second detail-page
+   *  route without a copy-pasted component. */
+  basePath?: string;
 }
 
-const { title, slug, image, excerpt, date, author, category, lang = "en", size = "md", hasVideo = false } = Astro.props;
-const readMore = lang === "sv" ? "Läs" : "Read";
-const href = url(`/news/${slug}`);
+const {
+  title,
+  slug,
+  image,
+  excerpt,
+  date,
+  author,
+  category,
+  size = "md",
+  hasVideo = false,
+  basePath = "/news",
+} = Astro.props;
+
+// t() bound to this request (docs/i18n-phase-2-brief.md section 4). sharedT()
+// (src/lib/t.ts), not createT() directly: NewsCard is rendered many times
+// per page (news grid, roster "related stories" strips) and its memoization
+// means "Läs" / "Av" / "Innehåller video" are each translated once per
+// render no matter how many cards ask for them, not once per card.
+const t = sharedT(Astro.locals);
+// Swedish kept as source (same choice as Header/Footer — see their comments
+// for the full reasoning): "Läs"/"Read" was a hardcoded pair pre-dating
+// section 4; decision 5 brings it into t() the same way.
+const readMore = await t("Läs");
+const containsVideoLabel = await t("Innehåller video");
+const byLabel = await t("Av");
+const href = url(`${basePath}/${slug}`);
+
+// Locale-aware dateline (docs/i18n-phase-2-brief.md "Dates" item): replaces
+// the raw FM "MM/DD/YYYY" string this card used to render directly in
+// <time> with no `datetime` attribute at all. This is the single formatting
+// point for every caller that passes a `date` prop through (news/index.astro,
+// EditorialNewsBlock.astro, LatestNewsSection.astro all pass the raw FM
+// string straight through). Pure Intl formatting, not a translation — does
+// not go through t()/sharedT().
+const dateLang: Lang = (Astro.locals as { lang?: Lang } | undefined)?.lang ?? "sv";
+const displayDate = date ? formatDate(date, dateLang) : "";
+const isoDate = date ? formatIsoDate(date) : "";
 
 const titleClass = size === "lg"
   ? "font-display text-3xl font-medium leading-[1.1] tracking-tight md:text-5xl"
@@ -27,6 +74,19 @@ const titleClass = size === "lg"
   : "font-display text-2xl font-medium leading-tight tracking-tight";
 
 const aspectClass = size === "lg" ? "aspect-[16/9]" : "aspect-[16/10]";
+
+// FM news cover images (worker-fm-proxy /news/:slug/cover → API_WEBPOSTS
+// image_webp) are NOT fixed-size: verified against live proxy output, height
+// is a consistent 488px but width varies per upload (906–1007px across
+// samples checked). No single width/height pair would be real for every
+// article, so we intentionally omit both attributes here and rely on the
+// aspect-ratio frame (already set via aspectClass above) plus `sizes` to hint
+// the browser at layout width instead.
+const sizesAttr =
+  size === "lg" ? "(min-width: 768px) 66vw, 100vw"
+  : size === "md" ? "(min-width: 768px) 50vw, 100vw"
+  : "(min-width: 1024px) 25vw, (min-width: 768px) 33vw, 50vw";
+
 ---
 
 <article class="group flex flex-col">
@@ -35,6 +95,7 @@ const aspectClass = size === "lg" ? "aspect-[16/9]" : "aspect-[16/10]";
       <img
         src={image}
         alt={title}
+        sizes={sizesAttr}
         class="fm-img h-full w-full object-cover transition-transform duration-700 ease-out group-hover:scale-[1.04]"
         loading="lazy"
         onload="this.classList.add('is-loaded'); this.closest('.fm-img-frame')?.classList.add('is-ready')"
@@ -44,8 +105,8 @@ const aspectClass = size === "lg" ? "aspect-[16/9]" : "aspect-[16/10]";
     {hasVideo && (
       <span
         class="absolute bottom-3 right-3 inline-flex h-9 w-9 items-center justify-center bg-ninetone-paper/95 text-ninetone-ink shadow-[0_1px_0_rgba(0,0,0,0.04)] backdrop-blur-sm"
-        aria-label={lang === "sv" ? "Innehåller video" : "Contains video"}
-        title={lang === "sv" ? "Innehåller video" : "Contains video"}
+        aria-label={containsVideoLabel}
+        title={containsVideoLabel}
       >
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="h-3.5 w-3.5" aria-hidden="true">
           <path d="M8 5v14l11-7z"></path>
@@ -59,7 +120,7 @@ const aspectClass = size === "lg" ? "aspect-[16/9]" : "aspect-[16/10]";
       <div class="flex items-center gap-3 text-[0.6875rem] uppercase tracking-[0.16em] text-ninetone-ink/55">
         {category && <span>{category}</span>}
         {category && date && <span class="opacity-40">·</span>}
-        {date && <time>{date}</time>}
+        {date && <time datetime={isoDate}>{displayDate}</time>}
       </div>
     )}
 
@@ -72,7 +133,7 @@ const aspectClass = size === "lg" ? "aspect-[16/9]" : "aspect-[16/10]";
     )}
 
     {author && (
-      <p class="text-xs uppercase tracking-[0.12em] text-ninetone-ink/55">{lang === "sv" ? "Av" : "By"} {author}</p>
+      <p class="text-xs uppercase tracking-[0.12em] text-ninetone-ink/55">{byLabel} {author}</p>
     )}
 
     <a

@@ -2,7 +2,19 @@
 import Base from "../../layouts/Base.astro";
 import { getNews } from "../../lib/ninetone";
 import { renderBio } from "../../lib/markdown";
-import { url } from "../../lib/url";
+import { urlFor } from "../../lib/url";
+import { pageJsonLdOrigin } from "../../lib/site";
+import { breadcrumbs, newsArticle, markdownToPlainText, fmDateToIso } from "../../lib/schema";
+import { shouldAppendSiteName } from "../../lib/display-title";
+import { notFound } from "../../lib/not-found";
+import { fmText, sharedT } from "../../lib/t";
+import { formatDate, type Lang } from "../../lib/dates";
+
+// Locale-bound link builder (i18n Phase 2): every internal href on an
+// English page must keep the /en prefix, or one click drops the visitor
+// back to Swedish. Shadows the plain url() import for this component.
+const url = urlFor(Astro.locals);
+
 
 export async function getStaticPaths() {
   const posts = await getNews();
@@ -20,34 +32,117 @@ let post = (Astro.props as { post?: Record<string, unknown> }).post;
 if (!post) {
   const posts = await getNews();
   post = posts.find((p) => String(p.slug ?? "") === Astro.params.slug);
-  if (!post) return Astro.rewrite("/404");
+  if (!post) return notFound(() => Astro.rewrite("/404"));
 }
 
-const title = String(post.Title ?? "");
+const fm = fmText(Astro.locals);
+// FM CONTENT (decision 8): the headline as a title, the body as MARKDOWN so
+// renderBio still receives markdown — the system prompt keeps syntax, links
+// and line breaks byte-for-byte and rewrites only the prose. `fast` tier to
+// match what scripts/translate-warm.mjs warmed; a different tier is a
+// different cache key and would miss every warmed entry.
+const title = await fm(String(post.Title ?? ""), "title");
+
+// seo-phase-1b-brief.md P1 item 7: FM news headlines are written as
+// editorial copy, not SEO strings, and can run long. Appending
+// " | Ninetone Group" on top of an already-long headline pushes the
+// rendered <title> well past what search results display (~60 chars is the
+// conventional truncation point) — drop the suffix rather than truncate the
+// headline itself, which would change what the crawler sees vs. what a
+// reader sees on the page (the visible <h1> is untouched either way).
+const appendSiteName = shouldAppendSiteName(title);
 const author = String(post["Created By"] ?? "");
 const date = String(post.Date ?? "");
 const category = String(post.category ?? "");
-const lede = String(post.shortMessage ?? "");
+// FM CONTENT (decision 8). The standfirst under the <h1>, and the last
+// untranslated field on a news article — the headline and body were wired,
+// this was not, so every English article carried exactly one Swedish
+// paragraph. It was ~50 routes in the sweep at 1 block each, which is what
+// gave it away: a uniform count across many pages means one shared element,
+// not many separate defects.
+const lede = await fm(String(post.shortMessage ?? ""));
 const image = post.image_webp ? String(post.image_webp) : undefined;
-const messageHtml = renderBio(String(post.MessageString ?? post.Message ?? ""));
+const messageHtml = renderBio(await fm(String(post.MessageString ?? post.Message ?? ""), "markdown"));
 
 const ytLinks = [post.ytLinkA, post.ytLinkB, post.ytLinkC, post.ytLinkD]
   .map((u) => String(u ?? "").trim())
   .filter(Boolean);
+
+const slug = String(post.slug ?? "");
+const origin = pageJsonLdOrigin(Astro.request);
+const isoDate = fmDateToIso(date);
+
+// API_NEWS exposes no modification timestamp field distinct from `Date`
+// (verified against src/lib/ninetone.ts's WebPost type) — dateModified falls
+// back to datePublished inside newsArticle() per the brief, rather than
+// fabricating one.
+//
+// DEVIATION FROM BRIEF (§9): the brief asks for a visible line reading
+// "Uppdaterad {date}" (Swedish for "Updated"). There is no real modified-at
+// value anywhere in the FM data — only `date`, the publish date — so
+// labeling it "Uppdaterad" would tell readers an edit happened after
+// publish when none is known to have. That's a false editorial signal, not
+// just an SEO nicety, so the line below reads "Publicerad {date}"
+// ("Published") instead: same visible dateline the brief wants (helps both
+// readers and crawlers see recency), same date value, honest label. Flagged
+// for the PR description per the brief's own instruction to surface this
+// decision.
+const jsonLd = isoDate
+  ? [
+      breadcrumbs(origin, [
+        { name: "News", path: "/news" },
+        { name: title, path: `/news/${slug}` },
+      ]),
+      newsArticle(origin, {
+        slug,
+        headline: title,
+        author,
+        datePublished: isoDate,
+        image,
+        articleBody: markdownToPlainText(String(post.MessageString ?? post.Message ?? "")),
+      }),
+    ]
+  : [
+      breadcrumbs(origin, [
+        { name: "News", path: "/news" },
+        { name: title, path: `/news/${slug}` },
+      ]),
+    ];
+
+// t() bound to this request (docs/i18n-phase-2-brief.md section 4). `title`/
+// `lede`/`author`/`date`/`category`/`messageHtml` are FM-derived content,
+// not this page's own chrome. "Publicerad" kept as source (see the
+// DEVIATION comment above for why it's Swedish, not "Published" — same
+// choice as the rest of this codebase's sv-sourced strings).
+const t = sharedT(Astro.locals);
+const backToNewsLabel = await t("← News");
+const byLabel = await t("By");
+const publicerad = await t("Publicerad");
+const backToAllStoriesLabel = await t("← Back to all stories");
+
+// Locale-aware dateline (docs/i18n-phase-2-brief.md "Dates" item): replaces
+// the raw FM "MM/DD/YYYY" string this page used to render directly in
+// <time> (the US-format output the design critique flagged). `isoDate`
+// (fmDateToIso, above) still carries the machine-readable `datetime`
+// attribute unchanged — only the human-visible text changes here. Pure
+// Intl formatting, not a translation — does not go through t()/sharedT().
+const dateLang: Lang = (Astro.locals as { lang?: Lang } | undefined)?.lang ?? "sv";
+const displayDate = formatDate(date, dateLang);
+
 ---
 
-<Base title={title} description={lede}>
+<Base title={title} appendSiteName={appendSiteName} description={lede} ogImage={image} ogType="article" jsonLd={jsonLd}>
   <article class="bg-ninetone-paper">
     <header class="mx-auto max-w-4xl px-6 pt-16 md:pt-24">
       <p class="mb-6">
-        <a href={url("/news")} class="kicker text-ninetone-ink/60 hover:text-ninetone-ink">← News</a>
+        <a href={url("/news")} class="kicker text-ninetone-ink/60 hover:text-ninetone-ink">{backToNewsLabel}</a>
       </p>
 
       {(category || date) && (
         <div class="mb-6 flex items-center gap-3 text-[0.6875rem] uppercase tracking-[0.16em] text-ninetone-ink/55">
           {category && <span>{category}</span>}
           {category && date && <span class="opacity-40">·</span>}
-          {date && <time>{date}</time>}
+          {date && <time datetime={isoDate}>{displayDate}</time>}
         </div>
       )}
 
@@ -60,13 +155,19 @@ const ytLinks = [post.ytLinkA, post.ytLinkB, post.ytLinkC, post.ytLinkD]
       )}
 
       {author && (
-        <p class="mt-6 text-xs uppercase tracking-[0.16em] text-ninetone-ink/60">By {author}</p>
+        <p class="mt-6 text-xs uppercase tracking-[0.16em] text-ninetone-ink/60">{byLabel} {author}</p>
+      )}
+
+      {date && (
+        <p class="kicker mt-6 text-ninetone-ink/55">
+          {publicerad} <time datetime={isoDate}>{displayDate}</time>
+        </p>
       )}
     </header>
 
     {image && (
       <div class="mx-auto mt-12 max-w-5xl px-6">
-        <img src={image} alt={title} class="aspect-[16/10] w-full object-cover" />
+        <img src={image} alt={title} class="aspect-[16/10] w-full object-cover" fetchpriority="high" />
       </div>
     )}
 
@@ -92,7 +193,7 @@ const ytLinks = [post.ytLinkA, post.ytLinkB, post.ytLinkC, post.ytLinkD]
       )}
 
       <div class="mt-16 border-t border-ninetone-rule pt-8">
-        <a href={url("/news")} class="kicker text-ninetone-ink/60 hover:text-ninetone-ink">← Back to all stories</a>
+        <a href={url("/news")} class="kicker text-ninetone-ink/60 hover:text-ninetone-ink">{backToAllStoriesLabel}</a>
       </div>
     </div>
   </article>

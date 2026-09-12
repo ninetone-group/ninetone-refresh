@@ -44,6 +44,24 @@ renderer.image = ({ href, title, text }) => {
   const titleAttr = title ? ` title="${escapeHtml(title)}"` : "";
   return `<img src="${escapeHtml(safe)}" alt="${escapeHtml(text)}"${titleAttr}>`;
 };
+// FM prose is always rendered into the body of a page that already has its
+// own <h1> (detail-page hero name, article title, etc.) — never as the
+// page's own heading. Editors write plain markdown (# / ##) without knowing
+// that, so a literal "# Some Heading" in a bio would otherwise emit a second,
+// competing <h1>.
+//
+// CLAMP rather than shift: only h1 is rewritten (to h2); every other level is
+// left alone. Shifting everything down one was the first attempt and it broke
+// long-form hierarchy — renderBio also renders /news/[slug] and /guider/[slug],
+// where an editor's "## Section" is a legitimate h2 under the template's h1.
+// Demoting those to h3 made ~80 article pages jump h1 -> h3 with no h2 in
+// between. Clamping makes a competing h1 impossible while leaving correct
+// headings untouched.
+renderer.heading = function ({ tokens, depth }) {
+  const text = this.parser.parseInline(tokens);
+  const level = depth === 1 ? 2 : depth;
+  return `<h${level}>${text}</h${level}>\n`;
+};
 
 marked.setOptions({
   gfm: true,

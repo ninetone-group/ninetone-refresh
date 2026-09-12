@@ -10,7 +10,17 @@ import { getArtists, getArtistDetailWithReleases, getNewsForArtist, pickRelatedA
 import { resolveChannelId, getYouTubeFeed } from "../../../lib/youtube";
 import { getProducts } from "../../../lib/shopify";
 import { renderBio } from "../../../lib/markdown";
-import { url } from "../../../lib/url";
+import { urlFor } from "../../../lib/url";
+import { pageJsonLdOrigin } from "../../../lib/site";
+import { breadcrumbs, musicGroup, markdownToPlainText, descriptionWithBioFallback, fmDateToIso } from "../../../lib/schema";
+import { notFound } from "../../../lib/not-found";
+import { fmText, sharedT } from "../../../lib/t";
+
+// Locale-bound link builder (i18n Phase 2): every internal href on an
+// English page must keep the /en prefix, or one click drops the visitor
+// back to Swedish. Shadows the plain url() import for this component.
+const url = urlFor(Astro.locals);
+
 
 export async function getStaticPaths() {
   const artists = await getArtists();
@@ -29,9 +39,16 @@ let { artist, allArtists } = Astro.props as {
 if (!artist || !allArtists) {
   allArtists = await getArtists();
   artist = allArtists.find((a) => String(a.SLUG ?? "") === Astro.params.slug);
-  if (!artist) return Astro.rewrite("/404");
+  if (!artist) return notFound(() => Astro.rewrite("/404"));
 }
 const slug = String(artist.SLUG ?? "");
+
+// t() bound to this request (docs/i18n-phase-2-brief.md section 4) — used
+// only for the "More from Records" RosterStrip chrome below. This page has
+// many more hardcoded/FM-mixed strings that are NOT yet converted in this
+// pass (see the PR description's file list); scoped narrowly here rather
+// than left as a silent gap for the one RosterStrip call this file makes.
+const t = sharedT(Astro.locals);
 
 // Discography is core page content — a failed fetch fails the render (the
 // data layer serves last-known-good on transient errors; see lib/cache.ts).
@@ -39,13 +56,47 @@ const detail = await getArtistDetailWithReleases(slug);
 const releases = detail?.releases ?? [];
 
 const name = String(artist["Head Artist"] ?? "");
-const tagline = String(artist["Artist Presentation Title"] ?? "");
-const bioHtml = renderBio(String(artist.artistPresentationString ?? ""));
+
+// FM CONTENT (decision 8 + the Definition of done: "the same artist page at
+// both URLs shows the bio in each language with markdown intact and the
+// artist name untouched").
+//
+// The artist's name goes into `protect` on top of the fixed do-not-translate
+// list (decision 7) — a band called "Styrelsen" or "The S Kid" must come back
+// spelled exactly that way, not helpfully rendered as "The Board". The name
+// itself is never translated; it is rendered from the raw FM value below.
+//
+// The bio is translated as MARKDOWN and only then handed to renderBio, per
+// decision 8's ordering, so links and line breaks survive byte-for-byte.
+const fm = fmText(Astro.locals, { protect: [name] });
+const tagline = await fm(String(artist["Artist Presentation Title"] ?? ""));
+const bioMarkdown = await fm(String(artist.artistPresentationString ?? ""), "markdown");
+const bioHtml = renderBio(bioMarkdown);
+
+// seo-phase-1b-brief.md P1 item 7: the same person can appear on both the
+// Records artist roster and the Management client roster, which would
+// otherwise produce two pages with an identical bare-name <title>. Build a
+// complete, role-disambiguated title here and tell Base not to append its
+// own " | Ninetone Group" suffix on top of it (Base's `appendSiteName` prop
+// — see src/layouts/Base.astro) so no page ends up with two suffixes.
+const pageTitle = `${name} · Artist | Ninetone Records`;
+
+// Item 7 description fallback: when the tagline is under 70 characters (the
+// brief's threshold for a too-short meta description), fall back to the
+// first ~150 characters of the bio, plain text, cut at a word boundary —
+// descriptionWithBioFallback() wraps markdownToPlainText(), which already
+// does the word-boundary-safe truncation.
+const metaDescription = descriptionWithBioFallback(tagline, bioMarkdown);
 const heroImage = artist.artistPicture_big
   ? String(artist.artistPicture_big)
   : artist.artistPicture_small
   ? String(artist.artistPicture_small)
   : undefined;
+// worker-fm-proxy /artist/:slug/big|small are verified fixed sizes
+// (1000×1000 / 500×500) — but which one `heroImage` above resolved to
+// depends on which field this specific FM record has populated, so the
+// intrinsic size must track that choice rather than assume "big".
+const heroImageSize = artist.artistPicture_big ? 1000 : 500;
 const genres = artist.genre ? String(artist.genre).split(/\r|\n/).map((s) => s.trim()).filter(Boolean) : [];
 const aandr = String(artist.internalAandR ?? "");
 const aandrEmail = String(artist["Green_internalAandR::userEmail"] ?? "");
@@ -74,6 +125,17 @@ const spotifyArtistId = spotifyArtistMatch ? spotifyArtistMatch[1] : null;
 let latestNews: Awaited<ReturnType<typeof getNewsForArtist>> = [];
 try {
   latestNews = await getNewsForArtist(name, 4);
+// FM CONTENT (decision 8): the "In the news" cards render FM headlines and
+// excerpts. NewsCard translates only its own chrome labels, so without this
+// the block stayed Swedish on /en/ even though the page's bio above it was
+// English. Pre-resolved here — fm() is async and these render in a .map().
+latestNews = await Promise.all(
+  latestNews.map(async (p) => ({
+    ...p,
+    Title: await fm(String(p.Title ?? "")),
+    shortMessage: await fm(String(p.shortMessage ?? p.Message ?? "")),
+  })),
+);
 } catch (err) {
   console.error(`[artist:${slug}] news strip failed:`, err);
 }
@@ -105,14 +167,66 @@ try {
   const channelId = await resolveChannelId(ytChannelUrl);
   if (channelId) ytFeed = await getYouTubeFeed(channelId);
 } catch {}
+
+// Structured data: breadcrumbs + MusicGroup. Releases are already fetched
+// above for the Discography section — reuse them for the `album` list rather
+// than issuing a new FM read.
+const origin = pageJsonLdOrigin(Astro.request);
+const jsonLd = [
+  breadcrumbs(origin, [
+    { name: "Records", path: "/records" },
+    { name: "Artists", path: "/records/artists" },
+    { name, path: `/records/artists/${slug}` },
+  ]),
+  musicGroup(origin, {
+    slug,
+    name,
+    description: tagline || markdownToPlainText(String(artist.artistPresentationString ?? ""), 200),
+    image: heroImage,
+    socials,
+    albums: releases.map((r) => ({
+      name: r.album,
+      datePublished: fmDateToIso(r.releaseDate),
+      image: r.cover || undefined,
+      url: r.urlRelease || undefined,
+    })),
+  }),
+];
+
+// "More from Records" RosterStrip chrome — resolved here (frontmatter, not
+// inline in the template) because t() is async (src/lib/translate.ts).
+const moreFromRecordsKicker = await t("More from Records");
+const inGoodCompanyHeading = await t("In good company.");
+const allArtistsCta = await t("All artists");
+
+// Second pass (docs/i18n-phase-2-brief.md section 4): the rest of this
+// page's own chrome — first pass covered only the RosterStrip block above.
+const backToArtistsLabel = await t("← Records · Artists");
+const artistKicker = await t("Records — Artist");
+const watchKicker = await t("Watch");
+const onSpotifyKicker = await t("On Spotify");
+const representedByKicker = await t("Represented by");
+const getInTouchLabel = await t("Get in touch");
+const inTheNewsKicker = await t("In the news");
+const merchKicker = await t("Merch");
+const officialSuffix = await t("official.");
+
 ---
 
-<Base title={name} theme="records" description={tagline || `${name} | Ninetone Records`}>
+<Base
+  title={pageTitle}
+  appendSiteName={false}
+  theme="records"
+  description={metaDescription || `${name} | Ninetone Records`}
+  ogImage={heroImage}
+  ogType="profile"
+  jsonLd={jsonLd}
+>
   <!-- Cinematic split hero -->
   <section class="bg-ninetone-paper">
     <div class="mx-auto max-w-7xl px-6 pb-12 pt-12 md:pt-16">
       <p class="mb-8">
-        <a href={url("/records/artists")} class="kicker text-ninetone-ink/55 hover:text-ninetone-ink">← Records · Artists</a>
+        <a href={url("/records/artists")} class="kicker text-ninetone-ink/55 hover:text-ninetone-ink">{backToArtistsLabel}</a>
       </p>
 
       <div class="grid gap-10 md:grid-cols-12 md:gap-16">
@@ -124,7 +238,10 @@ try {
                 <img
                   src={heroImage}
                   alt={name}
+                  width={heroImageSize}
+                  height={heroImageSize}
                   class="fm-img h-full w-full object-cover"
+                  fetchpriority="high"
                   onload="this.classList.add('is-loaded'); this.closest('.fm-img-frame')?.classList.add('is-ready')"
                 />
               )}
@@ -139,7 +256,7 @@ try {
 
         <!-- Right: scrollable content -->
         <div class="md:col-span-7 lg:col-span-7">
-          <span class="kicker text-ninetone-red">Records — Artist</span>
+          <span class="kicker text-ninetone-red">{artistKicker}</span>
           <h1 class="mt-4 font-display text-[clamp(3rem,8vw,7rem)] leading-[0.9] tracking-[-0.045em]">{name}</h1>
 
           {tagline && (
@@ -167,7 +284,7 @@ try {
           <!-- YouTube highlights -->
           {ytLinks.length > 0 && (
             <div class="mt-16 border-t border-ninetone-rule pt-10">
-              <span class="kicker text-ninetone-ink/55">Watch</span>
+              <span class="kicker text-ninetone-ink/55">{watchKicker}</span>
               <div class="mt-6 grid gap-4 sm:grid-cols-2">
                 {ytLinks.map((url) => {
                   const idMatch = url.match(/(?:v=|youtu\.be\/|embed\/)([\w-]{11})/);
@@ -189,7 +306,7 @@ try {
           <!-- Spotify embed -->
           {spotifyArtistId && (
             <div class="mt-16 border-t border-ninetone-rule pt-10">
-              <span class="kicker text-ninetone-red">On Spotify</span>
+              <span class="kicker text-ninetone-red">{onSpotifyKicker}</span>
               <div class="mt-6">
                 <iframe
                   src={`https://open.spotify.com/embed/artist/${spotifyArtistId}?utm_source=generator&theme=0`}
@@ -206,7 +323,7 @@ try {
           <!-- A&R / Inquiries -->
           {(aandr || aandrEmail) && (
             <div class="mt-16 border-t border-ninetone-rule pt-10">
-              <span class="kicker text-ninetone-red">Represented by</span>
+              <span class="kicker text-ninetone-red">{representedByKicker}</span>
               <div class="mt-4 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
                 <div>
                   <p class="font-display text-2xl font-medium leading-tight tracking-tight">{aandr || "Ninetone Records"}</p>
@@ -220,7 +337,7 @@ try {
                   href={url("/records/contact-records")}
                   class="inline-flex items-center gap-2 self-start bg-ninetone-red px-4 py-3 text-sm font-semibold text-ninetone-paper transition-colors hover:bg-ninetone-red-dark"
                 >
-                  Get in touch <span aria-hidden>→</span>
+                  {getInTouchLabel} <span aria-hidden>→</span>
                 </a>
               </div>
             </div>
@@ -229,7 +346,7 @@ try {
           <!-- News mentioning this artist -->
           {latestNews.length > 0 && (
             <div class="mt-16 border-t border-ninetone-rule pt-10">
-              <span class="kicker text-ninetone-ink/55">In the news</span>
+              <span class="kicker text-ninetone-ink/55">{inTheNewsKicker}</span>
               <ul class="mt-6 grid gap-x-8 gap-y-10 md:grid-cols-2">
                 {latestNews.map((p) => (
                   <li>
@@ -263,8 +380,8 @@ try {
       <div class="mx-auto max-w-7xl px-6">
         <div class="mb-10 grid gap-4 md:grid-cols-[1fr_auto] md:items-end">
           <div>
-            <span class="kicker text-ninetone-red">Merch</span>
-            <h2 class="mt-3 font-display text-4xl leading-[1.05] tracking-tight md:text-5xl">{name} — official.</h2>
+            <span class="kicker text-ninetone-red">{merchKicker}</span>
+            <h2 class="mt-3 font-display text-4xl leading-[1.05] tracking-tight md:text-5xl">{name} — {officialSuffix}</h2>
           </div>
         </div>
         <div class="grid grid-cols-2 gap-x-6 gap-y-12 md:grid-cols-3 lg:grid-cols-4">
@@ -279,9 +396,9 @@ try {
     <RosterStrip
       artists={related}
       theme="records"
-      kicker="More from Records"
-      heading="In good company."
-      cta={{ label: "All artists", href: "/records/artists" }}
+      kicker={moreFromRecordsKicker}
+      heading={inGoodCompanyHeading}
+      cta={{ label: allArtistsCta, href: "/records/artists" }}
     />
   )}
 </Base>

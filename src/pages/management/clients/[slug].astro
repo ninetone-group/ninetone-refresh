@@ -9,7 +9,17 @@ import { getClients, getNewsForArtist, pickRelatedArtists } from "../../../lib/n
 import { resolveChannelId, getYouTubeFeed } from "../../../lib/youtube";
 import { getProducts } from "../../../lib/shopify";
 import { renderBio } from "../../../lib/markdown";
-import { url } from "../../../lib/url";
+import { urlFor } from "../../../lib/url";
+import { pageJsonLdOrigin } from "../../../lib/site";
+import { breadcrumbs, person, markdownToPlainText, descriptionWithBioFallback } from "../../../lib/schema";
+import { notFound } from "../../../lib/not-found";
+import { fmText, sharedT } from "../../../lib/t";
+
+// Locale-bound link builder (i18n Phase 2): every internal href on an
+// English page must keep the /en prefix, or one click drops the visitor
+// back to Swedish. Shadows the plain url() import for this component.
+const url = urlFor(Astro.locals);
+
 
 export async function getStaticPaths() {
   const clients = await getClients();
@@ -28,17 +38,40 @@ let { client, allClients } = Astro.props as {
 if (!client || !allClients) {
   allClients = await getClients();
   client = allClients.find((c) => String(c.SLUG ?? "") === Astro.params.slug);
-  if (!client) return Astro.rewrite("/404");
+  if (!client) return notFound(() => Astro.rewrite("/404"));
 }
 
 const name = String(client["Head Artist"] ?? "");
-const tagline = String(client.clientPresentationTitle ?? "");
-const bioHtml = renderBio(String(client.clientPresentationString ?? ""));
+// FM CONTENT (decision 8 / Definition of done). The entity's own name goes
+// into `protect` so it is never "translated" into nonsense, and prose is
+// translated on the `fast` tier — the same tier scripts/translate-warm.mjs
+// used, so these read the already-warmed entries rather than paying again.
+const fm = fmText(Astro.locals, { protect: [name] });
+const tagline = await fm(String(client.clientPresentationTitle ?? ""));
+const bioMarkdown = await fm(String(client.clientPresentationString ?? ""), "markdown");
+const bioHtml = renderBio(bioMarkdown);
+
+// seo-phase-1b-brief.md P1 item 7: the same person can appear on both the
+// Management client roster and the Records artist roster, which would
+// otherwise produce two pages with an identical bare-name <title>. Build a
+// complete, role-disambiguated title here and tell Base not to append its
+// own " | Ninetone Group" suffix on top of it (Base's `appendSiteName` prop
+// — see src/layouts/Base.astro) so no page ends up with two suffixes.
+const pageTitle = `${name} · Client | Ninetone Management`;
+
+// Item 7 description fallback: when the tagline is under 70 characters, fall
+// back to the first ~150 characters of the bio, plain text, cut at a word
+// boundary — descriptionWithBioFallback() wraps markdownToPlainText(), which
+// already does the word-boundary-safe truncation.
+const metaDescription = descriptionWithBioFallback(tagline, bioMarkdown);
 const heroImage = client.artistPicture_big
   ? String(client.artistPicture_big)
   : client.artistPicture_small
   ? String(client.artistPicture_small)
   : undefined;
+// worker-fm-proxy /client/:slug/big|small are verified fixed sizes
+// (1000×1000 / 500×500) — track whichever field heroImage resolved to.
+const heroImageSize = client.artistPicture_big ? 1000 : 500;
 const tags = (client.tags
   ? String(client.tags).split(/\r|\n|,/).map((s) => s.trim()).filter(Boolean)
   : client.genre
@@ -78,6 +111,17 @@ let latestNews: Awaited<ReturnType<typeof getNewsForArtist>> = [];
 try { latestNews = await getNewsForArtist(name, 4); } catch (err) {
   console.error(`[client] news strip failed:`, err);
 }
+// FM CONTENT (decision 8): the "In the news" cards render FM headlines and
+// excerpts. NewsCard translates only its own chrome labels, so without this
+// the block stayed Swedish on /en/ while the bio above it was English.
+// Pre-resolved here — fm() is async and these render in a .map().
+latestNews = await Promise.all(
+  latestNews.map(async (p) => ({
+    ...p,
+    Title: await fm(String(p.Title ?? "")),
+    shortMessage: await fm(String(p.shortMessage ?? p.Message ?? "")),
+  })),
+);
 
 // "In good company" — same-tag clients ranked by overlap, padded with random
 // others if there aren't enough matches.
@@ -98,13 +142,58 @@ try {
   const channelId = await resolveChannelId(ytChannelUrl);
   if (channelId) ytFeed = await getYouTubeFeed(channelId);
 } catch {}
+
+const slug = String(client.SLUG ?? "");
+const origin = pageJsonLdOrigin(Astro.request);
+const jsonLd = [
+  breadcrumbs(origin, [
+    { name: "Management", path: "/management" },
+    { name: "Clients", path: "/management/clients" },
+    { name, path: `/management/clients/${slug}` },
+  ]),
+  person(origin, name, {
+    role: "client",
+    path: `management/clients/${slug}`,
+    image: heroImage,
+    description: tagline || markdownToPlainText(String(client.clientPresentationString ?? ""), 200),
+    socials,
+  }),
+];
+
+// t() bound to this request (docs/i18n-phase-2-brief.md section 4), scoped
+// to the "More from Management" RosterStrip chrome only — see the analogous
+// comment in src/pages/records/artists/[slug].astro.
+const t = sharedT(Astro.locals);
+const moreFromManagementKicker = await t("More from Management");
+const inGoodCompanyHeading = await t("In good company.");
+const allClientsCta = await t("All clients");
+
+// Second pass (docs/i18n-phase-2-brief.md section 4): the rest of this
+// page's own chrome — first pass covered only the RosterStrip block above.
+const backToClientsLabel = await t("← Management · Clients");
+const clientKicker = await t("Management — Client");
+const watchKicker = await t("Watch");
+const representedByKicker = await t("Represented by");
+const getInTouchLabel = await t("Get in touch");
+const inTheNewsKicker = await t("In the news");
+const merchKicker = await t("Merch");
+const officialSuffix = await t("official.");
+
 ---
 
-<Base title={name} theme="management" description={tagline || `${name} | Ninetone Management`}>
+<Base
+  title={pageTitle}
+  appendSiteName={false}
+  theme="management"
+  description={metaDescription || `${name} | Ninetone Management`}
+  ogImage={heroImage}
+  ogType="profile"
+  jsonLd={jsonLd}
+>
   <section class="bg-ninetone-paper">
     <div class="mx-auto max-w-7xl px-6 pb-12 pt-12 md:pt-16">
       <p class="mb-8">
-        <a href={url("/management/clients")} class="kicker text-ninetone-ink/55 hover:text-ninetone-ink">← Management · Clients</a>
+        <a href={url("/management/clients")} class="kicker text-ninetone-ink/55 hover:text-ninetone-ink">{backToClientsLabel}</a>
       </p>
 
       <div class="grid gap-10 md:grid-cols-12 md:gap-16">
@@ -115,7 +204,10 @@ try {
                 <img
                   src={heroImage}
                   alt={name}
+                  width={heroImageSize}
+                  height={heroImageSize}
                   class="fm-img h-full w-full object-cover"
+                  fetchpriority="high"
                   onload="this.classList.add('is-loaded'); this.closest('.fm-img-frame')?.classList.add('is-ready')"
                 />
               )}
@@ -128,7 +220,7 @@ try {
         </aside>
 
         <div class="md:col-span-7 lg:col-span-7">
-          <span class="kicker text-ninetone-navy">Management — Client</span>
+          <span class="kicker text-ninetone-navy">{clientKicker}</span>
           <h1 class="mt-4 font-display text-[clamp(3rem,8vw,7rem)] leading-[0.9] tracking-[-0.045em]">{name}</h1>
 
           {tagline && (
@@ -153,7 +245,7 @@ try {
 
           {ytLinks.length > 0 && (
             <div class="mt-16 border-t border-ninetone-rule pt-10">
-              <span class="kicker text-ninetone-ink/55">Watch</span>
+              <span class="kicker text-ninetone-ink/55">{watchKicker}</span>
               <div class="mt-6 grid gap-4 sm:grid-cols-2">
                 {ytLinks.map((url) => {
                   const idMatch = url.match(/(?:v=|youtu\.be\/|embed\/)([\w-]{11})/);
@@ -168,7 +260,7 @@ try {
 
           {(manager || managerEmail) && (
             <div class="mt-16 border-t border-ninetone-rule pt-10">
-              <span class="kicker text-ninetone-navy">Represented by</span>
+              <span class="kicker text-ninetone-navy">{representedByKicker}</span>
               <div class="mt-4 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
                 <div>
                   <p class="font-display text-2xl font-medium leading-tight tracking-tight">{manager || "Ninetone Management"}</p>
@@ -182,7 +274,7 @@ try {
                   href={url("/management/contact-management")}
                   class="inline-flex items-center gap-2 self-start bg-ninetone-navy px-4 py-3 text-sm font-semibold text-ninetone-paper transition-colors hover:bg-ninetone-navy-dark"
                 >
-                  Get in touch <span aria-hidden>→</span>
+                  {getInTouchLabel} <span aria-hidden>→</span>
                 </a>
               </div>
             </div>
@@ -190,7 +282,7 @@ try {
 
           {latestNews.length > 0 && (
             <div class="mt-16 border-t border-ninetone-rule pt-10">
-              <span class="kicker text-ninetone-ink/55">In the news</span>
+              <span class="kicker text-ninetone-ink/55">{inTheNewsKicker}</span>
               <ul class="mt-6 grid gap-x-8 gap-y-10 md:grid-cols-2">
                 {latestNews.map((p) => (
                   <li>
@@ -219,8 +311,8 @@ try {
     <section class="bg-ninetone-paper-warm py-20">
       <div class="mx-auto max-w-7xl px-6">
         <div class="mb-10">
-          <span class="kicker text-ninetone-navy">Merch</span>
-          <h2 class="mt-3 font-display text-4xl leading-[1.05] tracking-tight md:text-5xl">{name} — official.</h2>
+          <span class="kicker text-ninetone-navy">{merchKicker}</span>
+          <h2 class="mt-3 font-display text-4xl leading-[1.05] tracking-tight md:text-5xl">{name} — {officialSuffix}</h2>
         </div>
         <div class="grid grid-cols-2 gap-x-6 gap-y-12 md:grid-cols-3 lg:grid-cols-4">
           {merch.map((p) => <MerchCard product={p} />)}
@@ -234,9 +326,9 @@ try {
       artists={related}
       theme="management"
       hrefBase="/management/clients"
-      kicker="More from Management"
-      heading="In good company."
-      cta={{ label: "All clients", href: "/management/clients" }}
+      kicker={moreFromManagementKicker}
+      heading={inGoodCompanyHeading}
+      cta={{ label: allClientsCta, href: "/management/clients" }}
     />
   )}
 </Base>

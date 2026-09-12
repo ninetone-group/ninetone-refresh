@@ -4,12 +4,25 @@ import ArtistCard from "../../../../components/ArtistCard.astro";
 import ArtistsTabs from "../../../../components/ArtistsTabs.astro";
 import Pagination from "../../../../components/Pagination.astro";
 import SectionIntro from "../../../../components/SectionIntro.astro";
+import RosterIndex from "../../../../components/RosterIndex.astro";
 import { getArtists, getPreviousArtists, getWebPostSection } from "../../../../lib/ninetone";
-import { displayTitle } from "../../../../lib/display-title";
+import { displayTitle, paginatedTitle } from "../../../../lib/display-title";
+import { PREVIOUS_ARTISTS_PAGE_SIZE } from "../../../../lib/routes";
+import { notFound } from "../../../../lib/not-found";
+import { sectionAccent } from "../../../../lib/sections";
+import { fmText, sharedT } from "../../../../lib/t";
+// FM CONTENT (decision 8): the card blurbs are FM prose, warmed by
+// scripts/translate-warm.mjs and previously rendered raw — so these listings
+// stayed Swedish on /en/. Resolved here in frontmatter because fm() is async
+// and the cards render inside .map().
+const fm = fmText(Astro.locals);
 
-// Exported so the hoisted getStaticPaths and the request-time path below
-// share one definition (only exports are hoisted to module scope in Astro).
-export const PAGE_SIZE = 30;
+
+// Single source of truth lives in src/lib/routes.ts so the sitemap derives the
+// same page count from the same number. Re-exported because only exports are
+// hoisted to module scope in Astro, and the hoisted getStaticPaths below plus
+// the request-time path both need it.
+export const PAGE_SIZE = PREVIOUS_ARTISTS_PAGE_SIZE;
 
 export async function getStaticPaths({ paginate }: { paginate: any }) {
   const artists = await getPreviousArtists();
@@ -29,11 +42,11 @@ type PageShape = {
 let page = (Astro.props as { page?: PageShape }).page;
 if (!page) {
   const raw = String((Astro.params as { page?: string }).page ?? "");
-  if (raw !== "" && !/^\d+$/.test(raw)) return Astro.rewrite("/404");
+  if (raw !== "" && !/^\d+$/.test(raw)) return notFound(() => Astro.rewrite("/404"));
   const currentPage = raw === "" ? 1 : parseInt(raw, 10);
   const all = await getPreviousArtists();
   const lastPage = Math.max(1, Math.ceil(all.length / PAGE_SIZE));
-  if (currentPage < 1 || currentPage > lastPage) return Astro.rewrite("/404");
+  if (currentPage < 1 || currentPage > lastPage) return notFound(() => Astro.rewrite("/404"));
   page = {
     data: all.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE),
     currentPage,
@@ -42,15 +55,59 @@ if (!page) {
   };
 }
 
+// Pre-translate this page's blurbs: fm() is async and the cards render
+// inside a template .map(), which cannot await. Done after `page` is
+// resolved (it arrives either as a prop from getStaticPaths or is built
+// above), so both paths get translated cards.
+page = {
+  ...page,
+  data: await Promise.all(
+    page.data.map(async (a) => ({
+      ...a,
+      artistPresentationShort: await fm(String(a.artistPresentationShort ?? "")),
+    })),
+  ),
+};
+
 // Reuse Records section intro. Both fetches cached, so effectively free.
 const active = await getArtists();
 const introBody = String((active[0] as Record<string, unknown> | undefined)?.readMore ?? "");
 const webPosts = await getWebPostSection("Ninetone Records");
+
+// seo-phase-1b-brief.md P1 item 7: paginated pages 2+ need a distinct
+// <title> from page 1 (and from each other) or they read as duplicates to a
+// crawler. Page 1 (currentPage === 1) is unchanged.
+const pageTitle = paginatedTitle("Previous Artists", page.currentPage, (Astro.locals as { lang?: "sv" | "en" }).lang ?? "sv");
+
+// seo-phase-1b-brief.md P1 item 8: page 1 gets a compact A–Ö index linking
+// every previous-artist detail page, so none sit more than three clicks
+// from home (they'd otherwise be buried up to 12 pagination pages deep).
+// Pages 2+ must not repeat it. `all` is already fetched above for the
+// request-time page-slice path, but getPreviousArtists() is cached
+// (src/lib/filemaker.ts per-call cache) so re-reading it here on the
+// static-build path (where `page` arrives pre-sliced via getStaticPaths
+// props and `all` was never bound) costs no extra FM read either way.
+const allPrevious = page.currentPage === 1 ? await getPreviousArtists() : [];
+const accent = sectionAccent.records;
+
+// t() bound to this request (docs/i18n-phase-2-brief.md section 4). The
+// toggle button's <script> below can't call t() (client-side, no
+// Astro.locals) — its two label states are threaded through as
+// data-i18n-* attributes (bridge pattern, note 4).
+const t = sharedT(Astro.locals);
+const previousArtistsTitle = await t("Previous Artists");
+const showingOfLabel = await t("Showing");
+const ofLabel = await t("of");
+const fullIndexKicker = await t("Full index, A–Ö");
+const everyPreviousArtistLabel = await t("Every previous artist, alphabetically —");
+const inTotalLabel = await t("in total.");
+const showFullIndexLabel = await t("Show full index");
+const hideFullIndexLabel = await t("Hide full index");
 ---
 
-<Base title="Previous Artists" theme="records">
+<Base title={pageTitle} theme="records">
   <SectionIntro
-    title="Previous Artists"
+    title={previousArtistsTitle}
     tagline={displayTitle(webPosts?.title)}
     readMore={introBody}
     theme="records"
@@ -60,10 +117,83 @@ const webPosts = await getWebPostSection("Ninetone Records");
   <section class="bg-ninetone-paper pt-2">
     <div class="mx-auto max-w-7xl px-6">
       <p class="text-xs uppercase tracking-[0.16em] text-ninetone-ink/55">
-        Showing {(page.currentPage - 1) * 30 + 1}–{Math.min(page.currentPage * 30, page.total)} of {page.total}
+        {showingOfLabel} {(page.currentPage - 1) * 30 + 1}–{Math.min(page.currentPage * 30, page.total)} {ofLabel} {page.total}
       </p>
     </div>
   </section>
+
+  {allPrevious.length > 0 && (
+    <section class="bg-ninetone-paper pb-4" data-previous-index>
+      <div class="mx-auto max-w-7xl px-6">
+        <div class="flex items-end justify-between gap-4 border-b border-ninetone-rule pb-4">
+          <div>
+            <span class={`kicker ${accent.text}`}>{fullIndexKicker}</span>
+            <p class="mt-2 max-w-2xl text-sm text-ninetone-ink/65">
+              {everyPreviousArtistLabel} {allPrevious.length} {inTotalLabel}
+            </p>
+          </div>
+          <button
+            type="button"
+            data-previous-index-toggle
+            aria-expanded="false"
+            data-i18n-show={showFullIndexLabel}
+            data-i18n-hide={hideFullIndexLabel}
+            class={`mb-1 inline-flex shrink-0 items-center gap-2 whitespace-nowrap text-xs font-semibold uppercase tracking-[0.16em] ${accent.text}`}
+          >
+            <span data-previous-index-toggle-label>{showFullIndexLabel}</span>
+            <span aria-hidden>↓</span>
+          </button>
+        </div>
+
+        {/* `inert` keeps the 341 collapsed links out of the tab order — without
+            it a keyboard user tabs through 341 targets they cannot see. It is
+            removed on expand. Crawlers ignore both `inert` and max-height, so
+            every link stays in the static HTML and the crawl-depth goal holds. */}
+        <div
+          data-previous-index-panel
+          inert
+          class="max-h-0 overflow-hidden opacity-0 transition-[max-height,opacity] duration-300 ease-out"
+        >
+          <div class="pt-8">
+            <RosterIndex artists={allPrevious} hrefBase="/records/artists/previous/single" visible />
+          </div>
+        </div>
+      </div>
+    </section>
+  )}
+
+  <script>
+    document.querySelectorAll<HTMLElement>("[data-previous-index]").forEach((root) => {
+      const btn = root.querySelector<HTMLButtonElement>("[data-previous-index-toggle]");
+      const label = root.querySelector<HTMLElement>("[data-previous-index-toggle-label]");
+      const panel = root.querySelector<HTMLElement>("[data-previous-index-panel]");
+      if (!btn || !label || !panel) return;
+
+      // Bridge pattern (docs/i18n-phase-2-brief.md section 4, note 4): this
+      // script runs client-side with no Astro.locals, so the two label
+      // states were resolved server-side via t() and threaded through
+      // data-i18n-show / data-i18n-hide on the button itself.
+      const showLabel = btn.dataset.i18nShow || "Show full index";
+      const hideLabel = btn.dataset.i18nHide || "Hide full index";
+
+      btn.addEventListener("click", () => {
+        const open = btn.getAttribute("aria-expanded") === "true";
+        if (open) {
+          panel.style.maxHeight = "0px";
+          panel.style.opacity = "0";
+          label.textContent = showLabel;
+          btn.setAttribute("aria-expanded", "false");
+          panel.setAttribute("inert", "");
+        } else {
+          panel.style.maxHeight = `${panel.scrollHeight}px`;
+          panel.style.opacity = "1";
+          label.textContent = hideLabel;
+          btn.setAttribute("aria-expanded", "true");
+          panel.removeAttribute("inert");
+        }
+      });
+    });
+  </script>
 
   <section class="bg-ninetone-paper pb-20">
     <div class="mx-auto max-w-7xl px-6">
@@ -78,6 +208,8 @@ const webPosts = await getWebPostSection("Ninetone Records");
             slug={String(a.SLUG ?? "")}
             blurb={String(a.artistPresentationShort ?? "")}
             image={a.artistPicture_small ? String(a.artistPicture_small) : undefined}
+            imageWidth={500}
+            imageHeight={500}
             tags={a.genre ? String(a.genre).split(/\r|\n/).filter(Boolean) : []}
             socials={{
               spotify: a.url_spotify ? String(a.url_spotify) : undefined,

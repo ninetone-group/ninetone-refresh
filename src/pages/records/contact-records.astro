@@ -1,30 +1,72 @@
 ---
 import Base from "../../layouts/Base.astro";
 import ContactForm from "../../components/ContactForm.astro";
+import { pageJsonLdOrigin } from "../../lib/site";
+import { contactPage } from "../../lib/schema";
+import { sharedT } from "../../lib/t";
+
+const jsonLd = contactPage(pageJsonLdOrigin(Astro.request), "/records/contact-records");
+
+// t() bound to this request (docs/i18n-phase-2-brief.md section 4). Metric
+// labels/field labels/placeholders here are this PAGE's own chrome (passed
+// as props into ContactForm, a presentation-only component) — translated at
+// this call site, same pattern as MerchSection/SplitPortalHero above.
+const t = sharedT(Astro.locals);
+const pageTitle = await t("Submit a demo");
+const description = await t(
+  "Send the music. We reply with merit — submit your demo to Ninetone Records via Spotify, SoundCloud or direct links.",
+);
+const kicker = await t("Records — Demos");
+const heading = await t("We listen to everything.");
+const tagline = await t("Send the music. We reply with merit.");
+const blurb = await t(
+  "Tell us who you are and where to hear it. Drop SoundCloud, Spotify, or direct download links — no file uploads, please.",
+);
+const metricLabelsSource = ["Active artists", "Alumni", "Years in the room", "Studios"];
+const [activeArtistsLabel, alumniLabel, yearsInTheRoomLabel, studiosLabel] = await Promise.all(
+  metricLabelsSource.map((s) => t(s)),
+);
+const formTitle = await t("We want your music.");
+const formBlurb = await t("Paste links to your tracks. We listen weekly and reply within one business day.");
+const submitLabel = await t("Submit demo");
+const nameLabel = await t("Name");
+const yourNamePlaceholder = await t("Your name");
+const emailLabel = await t("Email");
+const linksToYourMusicLabel = await t("Links to your music");
+const linksPlaceholder = await t("Spotify, SoundCloud, direct links… one per line");
+const aboutYouLabel = await t("About you");
+const aboutYouPlaceholder = await t(
+  "A few lines on who you are, where you're based, what you're working on",
+);
 ---
 
-<Base title="Submit a demo" theme="records">
+<Base
+  title={pageTitle}
+  theme="records"
+  jsonLd={jsonLd}
+  description={description}
+>
   <ContactForm
     theme="records"
     division="records"
-    kicker="Records — Demos"
-    heading="We listen to everything."
-    tagline="Send the music. We reply with merit."
-    blurb="Tell us who you are and where to hear it. Drop SoundCloud, Spotify, or direct download links — no file uploads, please."
+    kicker={kicker}
+    heading={heading}
+    tagline={tagline}
+    blurb={blurb}
     metrics={[
-      { value: "31", label: "Active artists" },
-      { value: "342", label: "Alumni" },
-      { value: "16", label: "Years in the room" },
-      { value: "5", label: "Studios" },
+      { value: "31", label: activeArtistsLabel },
+      { value: "342", label: alumniLabel },
+      { value: "16", label: yearsInTheRoomLabel },
+      { value: "5", label: studiosLabel },
     ]}
-    formTitle="We want your music."
-    formBlurb="Paste links to your tracks. We listen weekly and reply within one business day."
-    submitLabel="Submit demo"
+    formTitle={formTitle}
+    formBlurb={formBlurb}
+    submitLabel={submitLabel}
     fields={[
-      { type: "text", name: "name", label: "Name", placeholder: "Your name", required: true },
-      { type: "email", name: "email", label: "Email", placeholder: "you@email.com", required: true },
-      { type: "textarea", name: "links", label: "Links to your music", placeholder: "Spotify, SoundCloud, direct links… one per line", rows: 4, required: true },
-      { type: "textarea", name: "about", label: "About you", placeholder: "A few lines on who you are, where you're based, what you're working on", rows: 4 },
+      { type: "text", name: "name", label: nameLabel, placeholder: yourNamePlaceholder, required: true },
+      { type: "email", name: "email", label: emailLabel, placeholder: "you@email.com", required: true },
+      { type: "textarea", name: "links", label: linksToYourMusicLabel, placeholder: linksPlaceholder, rows: 4, required: true },
+      { type: "textarea", name: "about", label: aboutYouLabel, placeholder: aboutYouPlaceholder, rows: 4 },
     ]}
   />
 </Base>

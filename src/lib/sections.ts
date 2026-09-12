@@ -81,9 +81,17 @@ export const sectionAccent: Record<SectionTheme, {
   },
 };
 
-export const sectionCta: Record<SectionTheme, { en: string; sv: string; href: string }> = {
-  group: { en: "Demos", sv: "Demos", href: "/records/contact-records" },
-  records: { en: "Demos", sv: "Demos", href: "/records/contact-records" },
-  management: { en: "Ideas", sv: "Idéer", href: "/management/contact-management" },
-  nation: { en: "Booking", sv: "Bokning", href: "/ninetone-nation/booking" },
+/**
+ * The `en` half of this pair was dropped in i18n Phase 2 section 4: Header
+ * now renders `await t(cta.sv)`, so Swedish is the single source string and
+ * English is produced by the translation pipeline like every other piece of
+ * chrome (decision 5). Keeping a stale, unread `en` here would invite
+ * someone to "fix" it back into the `lang === "sv" ? … : …` ternary that
+ * decision 5 exists to remove.
+ */
+export const sectionCta: Record<SectionTheme, { sv: string; href: string }> = {
+  group: { sv: "Demos", href: "/records/contact-records" },
+  records: { sv: "Demos", href: "/records/contact-records" },
+  management: { sv: "Idéer", href: "/management/contact-management" },
+  nation: { sv: "Bokning", href: "/ninetone-nation/booking" },
 };

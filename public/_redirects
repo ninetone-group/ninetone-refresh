@@ -1,4 +1,37 @@
-# Previous Artists moved under Records as a tab
-/previous-artists/single/:slug  /records/artists/previous/single/:slug  301
-/previous-artists/*             /records/artists/previous/:splat        301
-/previous-artists               /records/artists/previous               301
+# Legacy /previous-artists deep links.
+#
+# WHO ACTUALLY SERVES THESE: the Cloudflare static-asset layer, on BOTH
+# targets' behalf — verified on staging, not assumed. A response to
+# /previous-artists/kuokka carries public/_headers' fingerprint
+# (cache-control: max-age=600, x-robots-tag: noindex) rather than the Worker's
+# (x-cache: hit/miss, max-age=60 + a tiered s-maxage), which means the asset
+# layer answered and src/middleware.ts never ran.
+#
+# So THIS FILE is the live mechanism on cf. legacyPreviousArtistTarget() in
+# src/lib/cache-policy.ts is the same logic for any request that does reach the
+# Worker (and is what the unit tests exercise), but it is a backstop, not the
+# primary path. Keep the two in sync — including the `single` guard below.
+#
+# Why not astro.config.mjs's `redirects`: the Cloudflare adapter writes those
+# into this file in static-hosting shape — @astrojs/underscore-redirects
+# appends "/index.html" to every dynamic destination — and that suffix 404s on
+# an SSR Worker (verified: clean path 200, /index.html form 404). Declaring
+# corrected copies alongside the generated ones is rejected outright with
+# "Invalid _redirects configuration: Duplicate rule for path", so the rules are
+# hand-written here and the two dynamic config entries were removed.
+#
+# ORDER MATTERS — Cloudflare matches top-down, first match wins.
+#
+# 1. /previous-artists/single is a LISTING shape, not a slug. Without this
+#    first rule the :slug rule below captures the literal word "single" and
+#    redirects to /records/artists/previous/single/single, which 404s — a
+#    redirect into a 404, worse for crawlers than a plain 404. Send it to the
+#    real listing instead.
+/previous-artists/single        /records/artists/previous                301
+#
+# 2. The later shape the live site also served.
+/previous-artists/single/:slug  /records/artists/previous/single/:slug   301
+#
+# 3. The shape the live site serves today (verified: /previous-artists/kuokka
+#    is 200 there, /previous-artists/single/kuokka 404s).
+/previous-artists/:slug         /records/artists/previous/single/:slug   301
