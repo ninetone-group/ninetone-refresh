@@ -2,7 +2,7 @@
 
 Astro 7 + Tailwind v4 + GitHub Pages. FileMaker-driven content for Ninetone Group's three divisions (Records, Management, Nation) plus team, news, and Shopify-powered merch.
 
-**Live preview:** https://mixxmastermike123.github.io/ninetone-refresh-preview/ (noindexed)
+**Live preview:** https://ninetone-group.github.io/ninetone-refresh/ (noindexed)
 
 ## Stack
 
@@ -92,7 +92,7 @@ One-line summary: editorial-magazine confidence with restraint — paper canvas 
 
 ## Conventions worth knowing
 
-- Internal links use the `url()` helper from [`src/lib/url.ts`](src/lib/url.ts) so the site works under the GH Pages sub-path (`/ninetone-refresh-preview/`). Drop the helper + the `base` config when going public.
+- Internal links use the `url()` helper from [`src/lib/url.ts`](src/lib/url.ts) so the site works under the GH Pages sub-path (`/ninetone-refresh/`). Drop the helper + the `base` config when going public.
 - All FileMaker fetches go through [`src/lib/filemaker.ts`](src/lib/filemaker.ts) which caches the session token + per-call response. On the Worker they also pass through [`src/lib/fm-kv.ts`](src/lib/fm-kv.ts), a 300s KV read-through keyed by the Publish epoch so a cold isolate reads KV instead of waiting seconds on FM.
 - Translations are stored as one bundle per route (`trb:` keys in [`src/lib/translate.ts`](src/lib/translate.ts)) and read in a single KV round trip; leftover individual reads are batched into KV bulk gets. `node scripts/perf-cold-probe.mjs` prints the resulting `Server-Timing` split for staging routes.
 - Any `src/lib` module imported directly by a test needs explicit `.ts` import extensions — the suite runs under plain Node, which won't resolve extensionless specifiers the way Vite does.

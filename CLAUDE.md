@@ -76,7 +76,7 @@ Release bookkeeping lives in `VERSION` (`MAJOR.MINOR.PATCH.MICRO`) and
 
 ## Path-aware URLs
 
-The site is served from a sub-path (`/ninetone-refresh-preview/`) on GH Pages. **Every internal link / image src / fetch URL must go through `url()` from [src/lib/url.ts](src/lib/url.ts)**, OR be rendered by a component that already wraps it (BentoTile, etc.). Plain `href="/foo"` 404s. When going public on the production domain, drop `base` from `astro.config.mjs` and the helper becomes a no-op.
+The site is served from a sub-path (`/ninetone-refresh/`) on GH Pages. **Every internal link / image src / fetch URL must go through `url()` from [src/lib/url.ts](src/lib/url.ts)**, OR be rendered by a component that already wraps it (BentoTile, etc.). Plain `href="/foo"` 404s. When going public on the production domain, drop `base` from `astro.config.mjs` and the helper becomes a no-op.
 
 ## Design system
 

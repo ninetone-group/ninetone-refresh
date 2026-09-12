@@ -25,7 +25,7 @@ const TARGET = process.env.DEPLOY_TARGET === "cf" ? "cf" : "gh";
 const site =
   TARGET === "cf"
     ? process.env.SITE_URL ?? "https://ninetone-site.ninetone.workers.dev"
-    : "https://mixxmastermike123.github.io";
+    : "https://ninetone-group.github.io";
 
 // Adapter is imported lazily so plain `npm run build` (gh) never loads the
 // Cloudflare module graph — it needs Node >=22.15 (module.registerHooks),
@@ -35,7 +35,7 @@ const cloudflare = TARGET === "cf" ? (await import("@astrojs/cloudflare")).defau
 export default defineConfig({
   site,
   // On launch: drop to "/" everywhere (url() becomes a no-op).
-  base: TARGET === "cf" ? "/" : "/ninetone-refresh-preview",
+  base: TARGET === "cf" ? "/" : "/ninetone-refresh",
   output: TARGET === "cf" ? "server" : "static",
   // Image optimization is unused (plain <img> + FM proxy) — passthrough
   // avoids any IMAGES binding expectations on the Worker.

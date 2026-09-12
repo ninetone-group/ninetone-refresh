@@ -94,14 +94,14 @@ export function isProductionShaped(): boolean {
  *
  * Pure and explicit about its inputs (no `import.meta.env`/`Astro` reads)
  * so it's unit-testable without a real Astro render — this is the exact
- * logic that leaked the "/ninetone-refresh-preview" sub-path into
+ * logic that leaked the "/ninetone-refresh" sub-path into
  * production-shaped canonical/OG URLs before it had any test coverage.
  *
  * @param path            Site-relative path, e.g. "/records/artists/anjo/"
  *                        or (on the static target) already-based
- *                        "/ninetone-refresh-preview/records/artists/anjo/".
+ *                        "/ninetone-refresh/records/artists/anjo/".
  * @param basePrefix      The configured base with no trailing slash, e.g.
- *                        "/ninetone-refresh-preview" or "" (CF target).
+ *                        "/ninetone-refresh" or "" (CF target).
  * @param productionShaped Whether siteOrigin() is currently returning the
  *                        production domain (PUBLIC_SITE_ORIGIN is set).
  * @param addBase         The project's url() helper — adds `basePrefix` to a
@@ -134,7 +134,7 @@ export function resolveSitePath(
  * own site-relative paths onto — i.e. `siteOrigin()` with the GH Pages
  * preview sub-path folded in when we're still preview-shaped, so
  * `${jsonLdOrigin}/records/artists/anjo` resolves to a real, reachable URL
- * instead of 404ing under `/ninetone-refresh-preview/`.
+ * instead of 404ing under `/ninetone-refresh/`.
  *
  * schema.ts's builders take a bare `origin` per the brief and do plain
  * string concatenation with paths they're handed — they have no `Astro.url`

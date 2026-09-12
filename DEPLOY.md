@@ -1,6 +1,6 @@
 # Deploy guide — preview environment
 
-**Live preview:** https://mixxmastermike123.github.io/ninetone-refresh-preview/
+**Live preview:** https://ninetone-group.github.io/ninetone-refresh/
 
 Stack:
 - **Build + host:** GitHub Actions builds; GitHub Pages serves the static `dist/`
@@ -42,10 +42,10 @@ Concurrency is `group: pages, cancel-in-progress: false` — new runs cancel que
 
 ## Required repo secrets
 
-Already set on `MixxMasterMike123/ninetone-refresh-preview`. To rotate:
+Already set on `ninetone-group/ninetone-refresh`. To rotate:
 
 ```bash
-gh secret set <NAME> --body "<value>" --repo MixxMasterMike123/ninetone-refresh-preview
+gh secret set <NAME> --body "<value>" --repo ninetone-group/ninetone-refresh
 ```
 
 Required:
@@ -139,7 +139,7 @@ GitHub fires Actions workflows when you POST to its `dispatches` endpoint with t
 > Could you add one script step to the publish/save workflow?
 >
 > Step: **Insert from URL**
-> URL: `https://api.github.com/repos/MixxMasterMike123/ninetone-refresh-preview/dispatches`
+> URL: `https://api.github.com/repos/ninetone-group/ninetone-refresh/dispatches`
 > Method: POST
 > Headers:
 > ```
@@ -156,7 +156,7 @@ GitHub fires Actions workflows when you POST to its `dispatches` endpoint with t
 
 ### Generating the token
 
-GitHub fine-grained PAT scoped to **only** the `ninetone-refresh-preview` repo with **Contents: Read** + **Metadata: Read** + **Actions: Write** permissions. Set expiry to 1 year, store it in the FM admin's password manager. To rotate: regenerate, send the new value, the FM admin updates the script step.
+GitHub fine-grained PAT scoped to **only** the `ninetone-refresh` repo with **Contents: Read** + **Metadata: Read** + **Actions: Write** permissions. Set expiry to 1 year, store it in the FM admin's password manager. To rotate: regenerate, send the new value, the FM admin updates the script step.
 
 Generate at: https://github.com/settings/personal-access-tokens
 
@@ -168,7 +168,7 @@ Generate at: https://github.com/settings/personal-access-tokens
 
 Deferred until needed. When ready, the path is:
 
-1. **Set up Cloudflare DNS for the project** — point a subdomain like `preview.ninetone.com` at GitHub Pages via CNAME `mixxmastermike123.github.io`. Add the custom domain in the GH Pages settings. Drop the `base` from `astro.config.mjs` (now serving from `/`).
+1. **Set up Cloudflare DNS for the project** — point a subdomain like `preview.ninetone.com` at GitHub Pages via CNAME `ninetone-group.github.io`. Add the custom domain in the GH Pages settings. Drop the `base` from `astro.config.mjs` (now serving from `/`).
 2. **Cloudflare → Zero Trust → Access → Applications → Add → Self-hosted.** Domain: `preview.ninetone.com`. Identity provider: One-time PIN (or Google). Policy: allowlist your email(s). Done.
 
 Until this is in place, the site is publicly reachable but **noindexed at three layers**:
@@ -183,7 +183,7 @@ So nothing gets indexed by Google, but anyone with the URL can view. Treat the U
 ## Verify noindex is working
 
 ```bash
-URL="https://mixxmastermike123.github.io/ninetone-refresh-preview/"
+URL="https://ninetone-group.github.io/ninetone-refresh/"
 
 curl -s "$URL" | grep -i 'name="robots"'
 # expect: <meta name="robots" content="noindex, nofollow, noarchive, nosnippet, noimageindex">
@@ -205,7 +205,7 @@ Two questions to answer when you're ready:
 
 Same checklist for any production host:
 
-1. **`astro.config.mjs`:** drop `base: "/ninetone-refresh-preview"`; set `site: "https://www.ninetone.com"`.
+1. **`astro.config.mjs`:** drop `base: "/ninetone-refresh"`; set `site: "https://www.ninetone.com"`.
 2. **Workflow:** flip `PUBLIC_NOINDEX: 'false'` in `.github/workflows/deploy.yml`.
 3. **`public/robots.txt`:** delete (or replace with a real one referencing the real sitemap).
 4. **`public/_headers`:** delete the `X-Robots-Tag` block (or keep on a host that honors `_headers` — see below).
@@ -221,7 +221,7 @@ GH Pages supports custom domains for free. The flow:
 1. In the repo: **Settings → Pages → Custom domain** → enter `www.ninetone.com` → Save. Check "Enforce HTTPS" once DNS is verified (a few minutes after step 2).
 2. At your DNS provider (currently wherever `ninetone.com` lives — Cloudflare, GoDaddy, etc.), set a **CNAME** record:
    ```
-   www → mixxmastermike123.github.io
+   www → ninetone-group.github.io
    ```
    For the apex (`ninetone.com` without the `www`), use **A records** pointing to GitHub's IPs (185.199.108.153, 185.199.109.153, 185.199.110.153, 185.199.111.153) — GitHub publishes these.
 3. Wait for DNS propagation (~minutes). GH Pages auto-provisions a Let's Encrypt cert.
@@ -288,7 +288,7 @@ The repo now has **two build targets** from one codebase (astro.config.mjs):
 | | `npm run build` (gh) | `npm run build:cf` (cf) |
 |---|---|---|
 | Output | static, 540+ pages | `output: "server"`, rendered per request |
-| Host | GH Pages under `/ninetone-refresh-preview/` | Worker `ninetone-site` + Static Assets |
+| Host | GH Pages under `/ninetone-refresh/` | Worker `ninetone-site` + Static Assets |
 | Content | frozen at build | **live from FM**, tiered edge cache |
 | Node | ≥22.19 (`package.json` engines floor) | ≥22.19; the adapter needs `module.registerHooks` |
 
