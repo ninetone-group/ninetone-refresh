@@ -1,0 +1,33 @@
+name: CI
+
+# Tests + the Cloudflare (SSR) build on every pull request and on pushes to
+# main. Needs no secrets: build:cf blanks the FM/Shopify/YouTube variables on
+# purpose, and the test suite never touches the network. The GitHub Pages
+# workflow (deploy.yml) is separate and still runs the static build with
+# real FileMaker data on merge.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.19.0
+          cache: npm
+      - run: npm ci
+      - name: Unit tests
+        run: npm test
+      - name: Cloudflare build
+        run: npm run build:cf
+      - name: Bundle-level entrypoint tests (against the fresh dist/)
+        run: node --experimental-strip-types --test test/publication-worker-entry.test.mjs
