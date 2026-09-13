@@ -4,7 +4,8 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "test": "node --experimental-strip-types --test test/security.test.ts test/cache.test.ts"
+    "test": "node --experimental-strip-types --test test/security.test.ts test/cache.test.ts",
+    "deploy": "wrangler deploy -c wrangler.toml"
   },
   "keywords": [],
   "author": "",

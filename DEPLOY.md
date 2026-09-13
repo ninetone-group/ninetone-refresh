@@ -91,7 +91,7 @@ Lives in [`worker-fm-proxy/`](worker-fm-proxy/). Code reference: [`worker-fm-pro
 | `/team/:slug/big` | `API_USERS` | `userPhoto` |
 | `/team/:slug/small` | `API_USERS` | `userPhotoSmall` |
 
-To add a new image-bearing layout, edit the `ROUTES` table in [`worker-fm-proxy/src/index.ts`](worker-fm-proxy/src/index.ts) AND the `LAYOUT_CONFIG` + `FIELD_TO_VARIANT` maps in [`src/lib/fm-image-mirror.ts`](src/lib/fm-image-mirror.ts), then redeploy both: `cd worker-fm-proxy && npx wrangler deploy` and push the site repo.
+To add a new image-bearing layout, edit the `ROUTES` table in [`worker-fm-proxy/src/index.ts`](worker-fm-proxy/src/index.ts) AND the `LAYOUT_CONFIG` + `FIELD_TO_VARIANT` maps in [`src/lib/fm-image-mirror.ts`](src/lib/fm-image-mirror.ts), then redeploy both: `cd worker-fm-proxy && npm run deploy` (never a bare `wrangler deploy` there — it follows the parent repo's deploy-config redirect and re-deploys the site) and push the site repo.
 
 ### Token + caching behavior
 
