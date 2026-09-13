@@ -234,7 +234,7 @@ const metricsSource = [
   { value: roundedPlus(liveRosterCount(allArtists, allClients, allBooking, prevArtists, prevClients, prevBooking)), label: "Artists, creators and public profiles", note: "Since the start" },
   { value: String(yearsSince()), label: "Years inside music, media and digital culture", note: "Since 2006" },
   { value: "120+", label: "Active campaigns, releases and collaborations", note: "Across music, social, brand and sport" },
-  { value: "1", label: "House built around studios, people and ideas", note: "Sundsvall / Stockholm" },
+  { value: "4", label: "Recording studios", note: "Sundsvall / Stockholm" },
 ];
 const metrics = await Promise.all(
   metricsSource.map(async (m) => ({ ...m, label: await t(m.label), note: await t(m.note) })),
