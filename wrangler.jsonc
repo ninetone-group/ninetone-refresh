@@ -102,9 +102,17 @@
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["NinetonePublicationCoordinator"] }
   ],
-  // Cron goes on THIS Worker, not a second one. Each tick discovers FM edits;
-  // it does not change visitor serving while PUBLICATION_SERVING is absent.
-  "triggers": { "crons": ["* * * * *"] },
+  // Cron goes on THIS Worker, not a second one. Both are dispatched by
+  // `event.cron` in src/worker-entry.ts:
+  //   "* * * * *"   — the (paused) publication tick. Each tick discovers FM
+  //                   edits; it does not change visitor serving while
+  //                   PUBLICATION_SERVING is absent.
+  //   "*/5 * * * *" — the FM warm-up (src/lib/fm-warm.ts): re-runs the page
+  //                   getters in refresh mode so the KV read-through never
+  //                   expires on a quiet host. FM_WARM: "off" in "vars"
+  //                   pauses it from the dashboard; it is deliberately NOT
+  //                   set below (default on).
+  "triggers": { "crons": ["* * * * *", "*/5 * * * *"] },
   //
   // PUBLICATION_SERVING is deliberately ABSENT from "vars". publicationMode()
   // returns "shadow" unless it is exactly "on", so preparation runs and

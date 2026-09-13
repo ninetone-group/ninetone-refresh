@@ -107,8 +107,27 @@ export type FmFindBody = {
   portalLimits?: Record<string, number>;
 };
 
+/**
+ * Per-call options, threaded through every layer of the read path
+ * (in-memory `cached()` → KV read-through → FM). Accepted by the domain
+ * getters in src/lib/ninetone.ts and forwarded unchanged.
+ */
+export type FmFindOptions = {
+  /** Bypass both caches, read FM live, and rewrite the KV entry with the
+   *  warm TTL — the warm-up cron (src/lib/fm-warm.ts). Never set on a
+   *  visitor render. */
+  refresh?: boolean;
+  /** The CACHE_STATE binding to use instead of the one `cloudflare:workers`
+   *  exposes. A request render never needs this; the `scheduled` handler
+   *  receives its bindings as an argument and passes them explicitly, which
+   *  is also what lets test/fm-warm-entry.test.mjs drive the built bundle
+   *  against a fake KV. `null` means "no KV" (a straight FM call). */
+  kv?: KvLike | null;
+};
+
 // Cross-isolate KV read-through for finds — see src/lib/fm-kv.ts.
-async function liveKv(): Promise<KvLike | null> {
+async function liveKv(opts?: FmFindOptions): Promise<KvLike | null> {
+  if (opts?.kv !== undefined) return opts.kv;
   const env = await getCfEnv();
   return env?.CACHE_STATE ?? null;
 }
@@ -116,10 +135,23 @@ async function liveKv(): Promise<KvLike | null> {
 export function fmFind<T = Record<string, unknown>>(
   layout: string,
   body: FmFindBody,
+  opts?: FmFindOptions,
 ): Promise<T[]> {
   return timeServer("fmread", () =>
-    cached(`fm-${layout}`, body, async () =>
-      fmFindViaKv<T>(await liveKv(), layout, body, false, () => fmFindUncached<T>(layout, body)),
+    cached(
+      `fm-${layout}`,
+      body,
+      async () =>
+        fmFindViaKv<T>(
+          await liveKv(opts),
+          layout,
+          body,
+          false,
+          (version) => fmFindUncached<T>(layout, body, version),
+          opts,
+        ),
+      undefined,
+      opts,
     ),
   );
 }
@@ -134,10 +166,23 @@ export type FmRecord<T> = { fieldData: T; portalData?: Record<string, unknown[]>
 export function fmFindWithPortals<T = Record<string, unknown>>(
   layout: string,
   body: FmFindBody,
+  opts?: FmFindOptions,
 ): Promise<FmRecord<T>[]> {
   return timeServer("fmread", () =>
-    cached(`fm-portals-${layout}`, body, async () =>
-      fmFindViaKv<FmRecord<T>>(await liveKv(), layout, body, true, () => fmFindUncachedWithPortals<T>(layout, body)),
+    cached(
+      `fm-portals-${layout}`,
+      body,
+      async () =>
+        fmFindViaKv<FmRecord<T>>(
+          await liveKv(opts),
+          layout,
+          body,
+          true,
+          (version) => fmFindUncachedWithPortals<T>(layout, body, version),
+          opts,
+        ),
+      undefined,
+      opts,
     ),
   );
 }
@@ -214,9 +259,16 @@ async function fmRequestUntimed<T>(
   return json;
 }
 
+/**
+ * `version` is the Publish epoch the KV entry is keyed under (undefined
+ * without a binding — static build, Node dev). It rides along into the image
+ * URLs as `?v=`, so the proxy's edge cache turns over with the same Publish
+ * that invalidates the pages — see src/lib/fm-image-mirror.ts.
+ */
 async function fmFindUncached<T = Record<string, unknown>>(
   layout: string,
   body: FmFindBody,
+  version?: string,
 ): Promise<T[]> {
   const json = await fmRequest<T>(layout, body);
   if (!json) return [];
@@ -227,17 +279,18 @@ async function fmFindUncached<T = Record<string, unknown>>(
   // FM streaming URLs expire with the session token; rewrite them to point at
   // the FM image proxy Worker, which holds a live token and resolves a fresh
   // URL on each request. See src/lib/fm-image-mirror.ts.
-  await mirrorRecordImages(rows, { layout });
+  await mirrorRecordImages(rows, { layout, version });
   return rows;
 }
 
 async function fmFindUncachedWithPortals<T = Record<string, unknown>>(
   layout: string,
   body: FmFindBody,
+  version?: string,
 ): Promise<FmRecord<T>[]> {
   const json = await fmRequest<T>(layout, body);
   if (!json) return [];
   const rows = json.response.data.map((r) => ({ fieldData: r.fieldData, portalData: r.portalData }));
-  await mirrorRecordImages(rows, { layout });
+  await mirrorRecordImages(rows, { layout, version });
   return rows;
 }

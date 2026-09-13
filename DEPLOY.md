@@ -91,13 +91,13 @@ Lives in [`worker-fm-proxy/`](worker-fm-proxy/). Code reference: [`worker-fm-pro
 | `/team/:slug/big` | `API_USERS` | `userPhoto` |
 | `/team/:slug/small` | `API_USERS` | `userPhotoSmall` |
 
-To add a new image-bearing layout, edit the `ROUTES` table in [`worker-fm-proxy/src/index.ts`](worker-fm-proxy/src/index.ts) AND the `LAYOUT_CONFIG` + `FIELD_TO_VARIANT` maps in [`src/lib/fm-image-mirror.ts`](src/lib/fm-image-mirror.ts), then redeploy both: `cd worker-fm-proxy && npx wrangler deploy` and push the site repo.
+To add a new image-bearing layout, edit the `ROUTES` table in [`worker-fm-proxy/src/index.ts`](worker-fm-proxy/src/index.ts) AND the `LAYOUT_CONFIG` + `FIELD_TO_VARIANT` maps in [`src/lib/fm-image-mirror.ts`](src/lib/fm-image-mirror.ts), then redeploy both: `cd worker-fm-proxy && npm run deploy` (never a bare `wrangler deploy` there — it follows the parent repo's deploy-config redirect and re-deploys the site) and push the site repo.
 
 ### Token + caching behavior
 
 - Worker holds the FM session token in module-scope (per-isolate). Refreshes at 12 min (FM expires at 15, leaves 3-min buffer).
 - One auth call per ~12 min per warm isolate. Roughly 5 auth calls per hour per region under continuous traffic, regardless of image volume.
-- Image bytes are CDN-cached at the Cloudflare edge for 1 week (`s-maxage=604800`); browser caches for 1 day. After the first hit per region, subsequent requests are ~30ms.
+- Image bytes are cached at the edge through the Cache API (`caches.default`, `x-fm-status: hit`) for 6 h (`s-maxage=21600`); browsers cache for 1 day. The cache key is the path plus only the `?v=<publish-epoch>` query the site appends, so a Publish is the buster and stray query strings cannot force FM reads. Before 2026-09-13 the header alone was set and nothing cached — every image request went to FileMaker (230–900 ms each).
 - 401-on-find triggers a one-time token refresh + retry (handles the rare clock-drift case where our 12-min cache outlives FM's 15-min server-side expiry).
 
 ### Worker secrets

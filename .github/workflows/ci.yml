@@ -30,4 +30,4 @@ jobs:
       - name: Cloudflare build
         run: npm run build:cf
       - name: Bundle-level entrypoint tests (against the fresh dist/)
-        run: node --experimental-strip-types --test test/publication-worker-entry.test.mjs
+        run: node --experimental-strip-types --test test/publication-worker-entry.test.mjs test/fm-warm-entry.test.mjs

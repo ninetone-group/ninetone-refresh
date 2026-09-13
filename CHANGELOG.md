@@ -3,6 +3,35 @@
 All notable changes to the Ninetone Group site. Versions follow `MAJOR.MINOR.PATCH.MICRO`
 (the number in `VERSION`).
 
+## [0.2.1.0] - 2026-09-13
+
+Page-speed deep dive. Measured first (20 timed reloads of `/`, 20 alternating `/` and
+`/en`, a Fast-3G browser trace of both), then fixed what the numbers pointed at. On
+staging every fifth reload of the homepage was a miss at the 300 s tier and every one of
+those misses paid FileMaker live, because the FM read-through expired on the same clock;
+every image request went to FileMaker because the proxy never used the edge cache.
+
+### Added
+- **FM warm-up cron** (`*/5 * * * *`, `src/lib/fm-warm.ts`): re-runs the nine finds the
+  pages perform, one at a time, in refresh mode, so the KV read-through never expires on
+  a quiet host. ~2,600 FM finds/day against the ~11,500 the paused discovery tick did.
+  `FM_WARM: "off"` in the Worker vars pauses it from the dashboard.
+- **Image proxy edge cache.** `worker-fm-proxy` now serves image bytes through the Cache
+  API (6 h edge, `x-fm-status: hit`), keyed by path plus the new `?v=<publish-epoch>`
+  the site appends to every proxy URL, so a Publish is the cache buster and no other
+  query string can force a FileMaker read.
+- **Shopify products in KV** (1 h, epoch in the key): the last cold-isolate network call
+  on the homepage is gone.
+- `x-translation-bundle: hit; entries=N | miss` on every page-cache miss, so whether the
+  route translation bundle seeded a render is visible in-band.
+
+### Changed
+- Only the Newsreader roman face is preloaded; the italic preload (147 KB, the largest
+  asset on the page) competed with the render-blocking CSS and finished 2 s after first
+  paint anyway.
+- The artist-of-the-week tile no longer carries `fetchpriority="high"`; it sits three
+  viewports below the fold and the LCP element is the h1.
+
 ## [0.2.0.0] - 2026-09-12
 
 The first merge to `main` since the site went server-rendered on Cloudflare. Everything

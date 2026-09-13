@@ -59,7 +59,7 @@ Release bookkeeping lives in `VERSION` (`MAJOR.MINOR.PATCH.MICRO`) and
 - `src/styles/` — Tailwind entrypoints + design tokens
 - `public/` — static assets
 - `_old/` — legacy DivHunt SPA artifacts (ignored — do not edit)
-- `worker-fm-proxy/` — Cloudflare Worker that serves FM images. Has its own `node_modules`. Deploy with `cd worker-fm-proxy && npx wrangler deploy`.
+- `worker-fm-proxy/` — Cloudflare Worker that serves FM images. Has its own `node_modules`. Deploy with `cd worker-fm-proxy && npm run deploy` (= `wrangler deploy -c wrangler.toml`; a bare `wrangler deploy` there follows the parent repo's `.wrangler/deploy/config.json` redirect and deploys the SITE from `dist/` instead — verified 2026-09-13).
 
 ## FM data + image proxy invariants
 

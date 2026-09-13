@@ -15,6 +15,16 @@
  *   GET /healthz               → quick FM session check
  *
  * CORS: open to the GH Pages origin + production domain.
+ *
+ * Caching: image routes sit behind the Cache API (`caches.default`). The key
+ * is the request origin + pathname + ONLY the `v` query param (the site embeds
+ * `?v=<publish-epoch>` on every proxy URL, so a Publish is the cache buster) —
+ * any other query string is dropped so a stray `?foo=bar` cannot mint a fresh
+ * key and force an FM read. Edge TTL is 6 h (`s-maxage=21600`), bounded so a
+ * photo replaced in FM without a Publish still shows within hours; browsers
+ * keep bytes for 24 h because the HTML's `?v=` changes when content does.
+ * Only 200s are stored; errors and /healthz never are. CORS is applied per
+ * request on hits, so the allowed origin is never frozen into the cached copy.
  */
 
 interface Env {
@@ -45,6 +55,10 @@ const UPSTREAM_TIMEOUT_MS = 15_000;
 // Raster images only; this is well above any legitimate artist/cover photo.
 // Caps memory/bandwidth if an upstream response is unexpectedly huge.
 const MAX_IMAGE_BYTES = 15 * 1024 * 1024;
+// Edge TTL is deliberately short of "forever": an image replaced in FM without
+// a Publish (no `?v=` bump) should still surface within a working day.
+const EDGE_TTL_S = 6 * 60 * 60;
+const BROWSER_TTL_S = 24 * 60 * 60;
 
 function upstreamTimeoutMs(env: Env): number {
   const raw = env.UPSTREAM_TIMEOUT_MS ? Number(env.UPSTREAM_TIMEOUT_MS) : NaN;
@@ -322,8 +336,9 @@ function corsHeaders(origin: string | null): Record<string, string> {
  * Standard observability headers attached to every image response. Lets us
  * inspect what the Worker is doing from devtools without log access:
  *   x-fm-route   route kind that served the request, e.g. "artist/big"
- *   x-fm-status  hit | miss | error — kept simple now; expand if/when we
- *                add caches.default in front of FM
+ *   x-fm-status  hit   served from caches.default, no FM round trip
+ *                miss  resolved through FM this request (and stored if 200)
+ *                error not an image response; never cached
  */
 function obsHeaders(route: string, status: "hit" | "miss" | "error" = "miss"): Record<string, string> {
   return {
@@ -393,15 +408,60 @@ async function streamImage(
   }
   const headers = new Headers({ "Content-Type": contentType });
   headers.set("X-Content-Type-Options", "nosniff");
-  headers.set("Cache-Control", "public, max-age=86400, s-maxage=604800, stale-while-revalidate=86400");
+  // s-maxage drives the caches.default TTL (6 h); max-age is the browser's
+  // 24 h. No stale-while-revalidate — the Cache API ignores it.
+  headers.set("Cache-Control", `public, max-age=${BROWSER_TTL_S}, s-maxage=${EDGE_TTL_S}`);
   for (const [k, v] of Object.entries(corsHeaders(origin))) headers.set(k, v);
   for (const [k, v] of Object.entries(obsHeaders(route, "miss"))) headers.set(k, v);
   const body = imgRes.body ? capStream(imgRes.body, MAX_IMAGE_BYTES) : imgRes.body;
   return new Response(body, { headers });
 }
 
+/** Minimal shape of the Workers ExecutionContext we rely on; optional so the
+ * handler also runs under plain Node in tests (no waitUntil → fire-and-forget). */
+interface Ctx {
+  waitUntil?(promise: Promise<unknown>): void;
+}
+
+/** Shape of `caches.default` we use; absent outside the Workers runtime. */
+interface EdgeCache {
+  match(key: Request): Promise<Response | undefined>;
+  put(key: Request, response: Response): Promise<void>;
+}
+
+function edgeCache(): EdgeCache | undefined {
+  return (globalThis as { caches?: { default?: EdgeCache } }).caches?.default;
+}
+
+/**
+ * Canonical cache key: origin + pathname + only the `v` query param. Every
+ * other query string is dropped on purpose — the site adds `?v=<epoch>` as
+ * the deliberate buster, and nothing else may mint a key (and an FM read).
+ */
+function cacheKey(url: URL): Request {
+  const v = url.searchParams.get("v");
+  return new Request(url.origin + url.pathname + (v ? `?v=${encodeURIComponent(v)}` : ""));
+}
+
+/** Only the image routes are cacheable; /healthz and unknown paths never are. */
+function isImageRoute(kind: string | undefined): boolean {
+  return kind === "release" || (kind !== undefined && kind in ROUTES);
+}
+
+/**
+ * Re-wrap a cached copy for THIS request: the stored headers carry the CORS
+ * origin of whoever caused the miss, and the allowed origin depends on the
+ * requester, so it is re-applied here rather than trusted from the cache.
+ */
+function fromCache(hit: Response, origin: string | null): Response {
+  const headers = new Headers(hit.headers);
+  for (const [k, v] of Object.entries(corsHeaders(origin))) headers.set(k, v);
+  headers.set("x-fm-status", "hit");
+  return new Response(hit.body, { status: hit.status, headers });
+}
+
 export default {
-  async fetch(req: Request, env: Env): Promise<Response> {
+  async fetch(req: Request, env: Env, ctx?: Ctx): Promise<Response> {
     const origin = req.headers.get("Origin");
     if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders(origin) });
     if (req.method !== "GET") return new Response("Method not allowed", {
@@ -412,132 +472,161 @@ export default {
     const url = new URL(req.url);
     const parts = url.pathname.split("/").filter(Boolean);
 
-    if (parts[0] === "healthz") {
-      // Beyond a token check, verify FM is actually answering for a route we
-      // know exists. Catches the case where the token is valid but a layout
-      // changed name or permission flipped.
-      const checks: Record<string, unknown> = { tokenCached: !!cachedToken };
-      try {
-        await getToken(env);
-        checks.token = "ok";
-      } catch (err) {
-        checks.token = "failed";
-        return new Response(JSON.stringify({ ok: false, ...checks }), {
-          status: 502,
-          headers: { "Content-Type": "application/json", ...corsHeaders(origin) },
-        });
-      }
-      try {
-        // Cheap representative read — just confirms the API_ARTIST_DETAIL
-        // layout still responds. We don't care which record comes back.
-        const probe = await fmFind(env, "API_ARTIST_DETAIL", { SLUG: "*" });
-        checks.fmFind = probe ? "ok" : "no-records";
-      } catch (err) {
-        checks.fmFind = "failed";
-        return new Response(JSON.stringify({ ok: false, ...checks }), {
-          status: 502,
-          headers: { "Content-Type": "application/json", ...corsHeaders(origin) },
-        });
-      }
-      return new Response(JSON.stringify({ ok: true, ...checks }), {
+    // Under Node (tests) there is no Cache API — behaviour is then exactly the
+    // pre-cache path: every request resolves through FM.
+    const cache = isImageRoute(parts[0]) ? edgeCache() : undefined;
+    const key = cache ? cacheKey(url) : null;
+    if (cache && key) {
+      const hit = await cache.match(key);
+      if (hit) return fromCache(hit, origin);
+    }
+
+    const res = await resolveImage(parts, env, origin);
+
+    // Store only real images. The clone happens before the body is handed to
+    // the client, so both sides read the same tee'd stream; if capStream
+    // errors mid-body the put rejects — log it, never let it surface as an
+    // unhandled rejection or a failed request.
+    if (cache && key && res.status === 200) {
+      const put = cache.put(key, res.clone()).catch((err: unknown) => {
+        console.warn(`[fm-proxy] cache.put failed for ${key.url}:`, err instanceof Error ? err.message : err);
+      });
+      if (ctx?.waitUntil) ctx.waitUntil(put);
+    }
+    return res;
+  },
+};
+
+/**
+ * Everything below the cache shell: /healthz plus the FM lookup + stream for
+ * one image route. Unchanged from before the Cache API layer was added.
+ */
+async function resolveImage(parts: string[], env: Env, origin: string | null): Promise<Response> {
+  if (parts[0] === "healthz") {
+    // Beyond a token check, verify FM is actually answering for a route we
+    // know exists. Catches the case where the token is valid but a layout
+    // changed name or permission flipped.
+    const checks: Record<string, unknown> = { tokenCached: !!cachedToken };
+    try {
+      await getToken(env);
+      checks.token = "ok";
+    } catch (err) {
+      checks.token = "failed";
+      return new Response(JSON.stringify({ ok: false, ...checks }), {
+        status: 502,
         headers: { "Content-Type": "application/json", ...corsHeaders(origin) },
       });
     }
-
-    const [kind, slug, variant, extra] = parts;
-
-    // /release/:artistSlug/by-album/:album — release cover art (current)
-    // /release/:artistSlug/:index         — legacy positional lookup
-    if (kind === "release" && slug && variant) {
-      const safeSlug = decodePathSegment(slug, MAX_SLUG_LENGTH);
-      if (!safeSlug) return new Response("Bad slug", { status: 400, headers: corsHeaders(origin) });
-      const byAlbum = variant === "by-album";
-      const route = byAlbum ? "release/by-album" : `release/${variant}`;
-      let idx = -1;
-      let album = "";
-      if (byAlbum) {
-        if (!extra) {
-          return new Response("Missing album", {
-            status: 400,
-            headers: { ...corsHeaders(origin), ...obsHeaders(route, "error") },
-          });
-        }
-        const decodedAlbum = decodePathSegment(extra, MAX_ALBUM_LENGTH);
-        if (!decodedAlbum) return new Response("Bad album", { status: 400, headers: corsHeaders(origin) });
-        album = decodedAlbum;
-      } else {
-        idx = parseInt(variant, 10);
-        if (!Number.isInteger(idx) || idx < 0 || String(idx) !== variant) {
-          return new Response("Bad index", {
-            status: 400,
-            headers: { ...corsHeaders(origin), ...obsHeaders(route, "error") },
-          });
-        }
-      }
-      let imageUrl: string | null;
-      try {
-        imageUrl = byAlbum
-          ? await fetchReleaseCoverByAlbum(env, safeSlug, album)
-          : await fetchReleaseCoverByIndex(env, safeSlug, idx);
-      } catch (err) {
-        return new Response("FM error", {
-          status: 502,
-          headers: { ...corsHeaders(origin), ...obsHeaders(route, "error") },
-        });
-      }
-      if (!imageUrl) {
-        return new Response("Release not found", {
-          status: 404,
-          headers: { ...corsHeaders(origin), ...obsHeaders(route, "error") },
-        });
-      }
-      return streamImage(imageUrl, env, origin, route);
-    }
-
-    const route = ROUTES[kind];
-    const routeTag = `${kind}/${variant ?? ""}`;
-    if (!route) {
-      return new Response("Not found", {
-        status: 404,
-        headers: { ...corsHeaders(origin), ...obsHeaders(routeTag, "error") },
+    try {
+      // Cheap representative read — just confirms the API_ARTIST_DETAIL
+      // layout still responds. We don't care which record comes back.
+      const probe = await fmFind(env, "API_ARTIST_DETAIL", { SLUG: "*" });
+      checks.fmFind = probe ? "ok" : "no-records";
+    } catch (err) {
+      checks.fmFind = "failed";
+      return new Response(JSON.stringify({ ok: false, ...checks }), {
+        status: 502,
+        headers: { "Content-Type": "application/json", ...corsHeaders(origin) },
       });
     }
-    const fieldName = route.fields[variant];
-    if (!fieldName || !slug) {
-      return new Response("Not found", {
-        status: 404,
-        headers: { ...corsHeaders(origin), ...obsHeaders(routeTag, "error") },
-      });
-    }
+    return new Response(JSON.stringify({ ok: true, ...checks }), {
+      headers: { "Content-Type": "application/json", ...corsHeaders(origin) },
+    });
+  }
+
+  const [kind, slug, variant, extra] = parts;
+
+  // /release/:artistSlug/by-album/:album — release cover art (current)
+  // /release/:artistSlug/:index         — legacy positional lookup
+  if (kind === "release" && slug && variant) {
     const safeSlug = decodePathSegment(slug, MAX_SLUG_LENGTH);
     if (!safeSlug) return new Response("Bad slug", { status: 400, headers: corsHeaders(origin) });
-
-    let record: FmRecord | null;
+    const byAlbum = variant === "by-album";
+    const route = byAlbum ? "release/by-album" : `release/${variant}`;
+    let idx = -1;
+    let album = "";
+    if (byAlbum) {
+      if (!extra) {
+        return new Response("Missing album", {
+          status: 400,
+          headers: { ...corsHeaders(origin), ...obsHeaders(route, "error") },
+        });
+      }
+      const decodedAlbum = decodePathSegment(extra, MAX_ALBUM_LENGTH);
+      if (!decodedAlbum) return new Response("Bad album", { status: 400, headers: corsHeaders(origin) });
+      album = decodedAlbum;
+    } else {
+      idx = parseInt(variant, 10);
+      if (!Number.isInteger(idx) || idx < 0 || String(idx) !== variant) {
+        return new Response("Bad index", {
+          status: 400,
+          headers: { ...corsHeaders(origin), ...obsHeaders(route, "error") },
+        });
+      }
+    }
+    let imageUrl: string | null;
     try {
-      record = await fmFind(env, route.layout, route.query(safeSlug));
+      imageUrl = byAlbum
+        ? await fetchReleaseCoverByAlbum(env, safeSlug, album)
+        : await fetchReleaseCoverByIndex(env, safeSlug, idx);
     } catch (err) {
       return new Response("FM error", {
         status: 502,
-        headers: { ...corsHeaders(origin), ...obsHeaders(routeTag, "error") },
+        headers: { ...corsHeaders(origin), ...obsHeaders(route, "error") },
       });
     }
-    if (!record) {
-      return new Response("Record not found", {
-        status: 404,
-        headers: { ...corsHeaders(origin), ...obsHeaders(routeTag, "error") },
-      });
-    }
-
-    const imageUrl = record.fieldData[fieldName];
     if (!imageUrl) {
-      return new Response("Image field empty", {
+      return new Response("Release not found", {
         status: 404,
-        headers: { ...corsHeaders(origin), ...obsHeaders(routeTag, "error") },
+        headers: { ...corsHeaders(origin), ...obsHeaders(route, "error") },
       });
     }
+    return streamImage(imageUrl, env, origin, route);
+  }
 
-    // Stream the image bytes through. FM URL is fresh — generated this same
-    // request — so it works for the brief moment we need it.
-    return streamImage(imageUrl, env, origin, routeTag);
-  },
-};
+  const route = ROUTES[kind];
+  const routeTag = `${kind}/${variant ?? ""}`;
+  if (!route) {
+    return new Response("Not found", {
+      status: 404,
+      headers: { ...corsHeaders(origin), ...obsHeaders(routeTag, "error") },
+    });
+  }
+  const fieldName = route.fields[variant];
+  if (!fieldName || !slug) {
+    return new Response("Not found", {
+      status: 404,
+      headers: { ...corsHeaders(origin), ...obsHeaders(routeTag, "error") },
+    });
+  }
+  const safeSlug = decodePathSegment(slug, MAX_SLUG_LENGTH);
+  if (!safeSlug) return new Response("Bad slug", { status: 400, headers: corsHeaders(origin) });
+
+  let record: FmRecord | null;
+  try {
+    record = await fmFind(env, route.layout, route.query(safeSlug));
+  } catch (err) {
+    return new Response("FM error", {
+      status: 502,
+      headers: { ...corsHeaders(origin), ...obsHeaders(routeTag, "error") },
+    });
+  }
+  if (!record) {
+    return new Response("Record not found", {
+      status: 404,
+      headers: { ...corsHeaders(origin), ...obsHeaders(routeTag, "error") },
+    });
+  }
+
+  const imageUrl = record.fieldData[fieldName];
+  if (!imageUrl) {
+    return new Response("Image field empty", {
+      status: 404,
+      headers: { ...corsHeaders(origin), ...obsHeaders(routeTag, "error") },
+    });
+  }
+
+  // Stream the image bytes through. FM URL is fresh — generated this same
+  // request — so it works for the brief moment we need it.
+  return streamImage(imageUrl, env, origin, routeTag);
+}
