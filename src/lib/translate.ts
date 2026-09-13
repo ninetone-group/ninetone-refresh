@@ -620,7 +620,19 @@ export interface LocalsWithScheduler {
 export function waitUntilFromLocals(
   locals: LocalsWithScheduler | null | undefined,
 ): ((promise: Promise<unknown>) => void) | undefined {
-  return locals?.cfContext?.waitUntil;
+  // BOUND, never the bare method. `cfContext` is the Workers ExecutionContext,
+  // and its `waitUntil` is a host method that throws "Illegal invocation" when
+  // called without the context as `this`. Returning `cfContext.waitUntil`
+  // detached did exactly that on every translation miss: translate() called
+  // `schedule(job)`, the TypeError was swallowed by the callers' catch-to-
+  // source fallbacks, and no background translation ever ran — every English
+  // render re-reported the same misses forever (found 2026-09-13 via the
+  // cookie banner: six strings stayed Swedish across dozens of renders while
+  // the middleware, which calls `cfContext.waitUntil(...)` as a method, wrote
+  // its cache entries fine). Test fakes with arrow functions never noticed.
+  const ctx = locals?.cfContext;
+  if (!ctx || typeof ctx.waitUntil !== "function") return undefined;
+  return (promise) => ctx.waitUntil!(promise);
 }
 
 // ---------------------------------------------------------------------------
