@@ -465,14 +465,18 @@ const tiktokEnabled = tracking && !isPlaceholder(TIKTOK_PIXEL_ID);
     <link rel="apple-touch-icon" sizes="180x180" href={url("/apple-touch-icon.png")} />
 
     <!-- Self-hosted fonts (SEO Phase 1b P1 §11) — @font-face rules live in
-         src/styles/global.css, files in public/fonts/. Preload only the two
-         Newsreader (display) files the homepage/editorial hero renders above
-         the fold: the h1 (roman) and the italic hero tagline directly under
-         it (e.g. src/pages/index.astro's ".font-display italic" paragraph).
-         Space Grotesk/Space Mono are body/kicker text, not the LCP element,
-         so they load via the ordinary @font-face (no preload needed). -->
+         src/styles/global.css, files in public/fonts/. Preload ONLY the
+         Newsreader roman face: it is the h1, the LCP element on every page.
+         The italic face used to be preloaded too, for the one-line hero
+         tagline. A throttled trace (Fast 3G, 2026-09-13) showed why not:
+         both preloads start at High priority in the same instant as the
+         render-blocking CSS, the italic file is the single largest asset on
+         the page (147 KB, 30% of all bytes), and with font-display: swap it
+         finished 2.2 s AFTER first paint anyway — so it bought nothing for
+         FCP/LCP and cost ~200 ms of CSS delivery. It now loads through the
+         ordinary @font-face rule, like Space Grotesk/Space Mono (body and
+         kicker text, never the LCP element). -->
     <link rel="preload" as="font" type="font/woff2" href={url("/fonts/newsreader-roman.woff2")} crossorigin />
-    <link rel="preload" as="font" type="font/woff2" href={url("/fonts/newsreader-italic.woff2")} crossorigin />
     <meta name="generator" content={Astro.generator} />
     <title>{fullTitle}</title>
 

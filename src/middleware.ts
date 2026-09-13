@@ -457,6 +457,12 @@ export const onRequest = defineMiddleware((context, next) => withServerTiming(as
   );
   res.headers.set("x-cache", "miss");
   res.headers.set("x-cache-ttl", String(effectiveTtl));
+  // Did the route bundle actually seed this render? Observability only: on
+  // staging `wrangler kv key list` cannot be trusted, and a natural miss on
+  // `/` (2026-09-13) showed 87 per-string reads despite `trbundle n=1`, so
+  // whether the bundle loaded — and how much it held — must be visible
+  // in-band, next to the Server-Timing it explains.
+  res.headers.set("x-translation-bundle", bundle ? `hit; entries=${Object.keys(bundle).length}` : "miss");
   if (degraded) res.headers.set("x-translation", `degraded; misses=${misses} refused=${budget?.refusedCount ?? 0}`);
 
   const forVisitor = new Response(body, res);

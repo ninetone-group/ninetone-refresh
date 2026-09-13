@@ -38,6 +38,16 @@
  * ALL LOGIC LIVES IN src/lib/publication/orchestrate.ts, injected. This file
  * only resolves bindings and calls in. Logic written inline here could only be
  * exercised by deploying.
+ *
+ * TWO CRONS, ONE HANDLER. `scheduled` dispatches on `event.cron`. The
+ * five-minute FM_WARM_CRON (src/lib/fm-warm.ts) re-runs the page getters in
+ * refresh mode so the FM KV read-through (src/lib/fm-kv.ts) never expires on
+ * a quiet host — without it the first visitor after a lull pays FM in full
+ * on top of a page-cache miss. It costs ~2,600 FM finds/day (nine finds per
+ * five-minute pass), against the ~11,500 the paused every-minute discovery
+ * tick performed. The publication tick keeps its own minute cron and its own
+ * PUBLICATION_TICK switch; FM_WARM ("off") pauses the warm-up the same way,
+ * from the dashboard.
  */
 
 declare const __BUILD_ID__: string;
@@ -48,6 +58,7 @@ import astro from "@astrojs/cloudflare/entrypoints/server";
 // because the class below is declared at module scope.
 import { DurableObject } from "cloudflare:workers";
 
+import { FM_WARM_CRON, HOMEPAGE_MERCH_LIMIT, warmDisabled, warmReadThrough } from "./lib/fm-warm.ts";
 import { callCoordinator, makeCoordinatorClass } from "./lib/publication/coordinator-do.ts";
 import { consumeJob, runTick } from "./lib/publication/orchestrate.ts";
 import { publicationMode } from "./lib/publication/serving.ts";
@@ -67,6 +78,11 @@ interface PublicationEnv {
    *  and redeploying. Anything else (absent, "on", typos) leaves it running. */
   readonly PUBLICATION_TICK?: string;
   readonly ANTHROPIC_API_KEY?: string;
+  /** Exactly "off" pauses the FM warm-up cron (src/lib/fm-warm.ts). */
+  readonly FM_WARM?: string;
+  /** The homepage's merch collection — the warm-up must fetch the same one
+   *  (src/pages/index.astro reads it from process.env under nodejs_compat). */
+  readonly SHOPIFY_HOMEPAGE_COLLECTION_ID?: string;
 }
 
 /** Is the scheduled tick switched off by the PUBLICATION_TICK var? */
@@ -136,10 +152,80 @@ export default {
    * live output, which is exactly the gap that blocked the first deployment.
    */
   async scheduled(
-    _event: { cron: string; scheduledTime: number },
+    event: { cron: string; scheduledTime: number },
     env: PublicationEnv,
     ctx: ExecutionContextLike,
   ): Promise<void> {
+    // FM warm-up (src/lib/fm-warm.ts) — dispatched by cron expression and
+    // returned from before the publication branch below, which stays exactly
+    // as it was. Same posture as the tick: a var kill switch, then bindings.
+    // No KV means there is nothing to warm (a straight FM call per render
+    // anyway), so bail rather than burn FM finds for nothing.
+    if (event.cron === FM_WARM_CRON) {
+      if (warmDisabled(env)) {
+        console.log("[fm-warm] scheduled: FM_WARM=off; skipping");
+        return;
+      }
+      const kv = env.CACHE_STATE;
+      if (!kv) {
+        console.log("[fm-warm] scheduled: no CACHE_STATE binding; nothing to warm");
+        return;
+      }
+      ctx.waitUntil(
+        (async () => {
+          try {
+            const [nine, shopify] = await Promise.all([
+              import("./lib/ninetone.ts"),
+              import("./lib/shopify.ts"),
+            ]);
+            // `kv` is passed explicitly rather than resolved through
+            // `cloudflare:workers` (the same binding in workerd) so the warm
+            // path is testable against the built bundle with a fake KV.
+            const refresh = { refresh: true, kv };
+            await warmReadThrough({
+              loaders: [
+                // The same getters, with the same bodies, the pages call —
+                // that is what makes the KV keys match (src/lib/fm-kv.ts).
+                { name: "artists", run: () => nine.getArtists(refresh) },
+                { name: "previous-artists", run: () => nine.getPreviousArtists(refresh) },
+                { name: "clients", run: () => nine.getClients(refresh) },
+                { name: "booking-roster", run: () => nine.getBookingRoster(refresh) },
+                { name: "team", run: () => nine.getTeam(refresh) },
+                { name: "news", run: () => nine.getNews(refresh) },
+                { name: "booking-categories", run: () => nine.getBookingCategories(refresh) },
+                { name: "web-posts", run: () => nine.getWebPosts("*", refresh) },
+                // The homepage's one per-slug find (index.astro: artist of the
+                // week → its API_ARTIST_DETAIL record). Runs after "artists"
+                // so the pick reads the roster just refreshed above, not FM.
+                {
+                  name: "artist-of-the-week-detail",
+                  run: async () => {
+                    const a = await nine.getArtistOfTheWeek();
+                    if (a?.SLUG) await nine.getArtistBySlug(String(a.SLUG), refresh);
+                  },
+                },
+                // Same collection and limit as the homepage's MerchSection, or
+                // the Shopify KV key (collection + limit) never matches.
+                {
+                  name: "shopify-products",
+                  run: () =>
+                    shopify.getProductsWithKv(kv, {
+                      collectionId: env.SHOPIFY_HOMEPAGE_COLLECTION_ID,
+                      limit: HOMEPAGE_MERCH_LIMIT,
+                      refresh: true,
+                    }),
+                },
+              ],
+              log: (message, detail) => console.log(message, detail ?? ""),
+            });
+          } catch (error) {
+            console.error("[fm-warm] failed", error);
+          }
+        })(),
+      );
+      return;
+    }
+
     // Kill switch (2026-09-12 review, D1): a dashboard var flip stops the
     // every-minute FM polling immediately, without touching the bindings.
     if (tickDisabled(env)) {

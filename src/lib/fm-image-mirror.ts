@@ -14,8 +14,13 @@
 
 const FM_STREAMING_RE = /^https?:\/\/files\.ninetone\.com\/Streaming_SSL\//i;
 
+// `import.meta.env?.` rather than `import.meta.env.`: under Astro/Vite both
+// spellings are replaced at build time (Astro's env plugin handles a bare
+// `import.meta.env` too — src/middleware.ts already relies on it), but under
+// plain Node `import.meta.env` is undefined and the dotted form throws at
+// module load, which kept this module out of the unit-test suite.
 const PROXY_BASE = (
-  import.meta.env.FM_IMAGE_PROXY_BASE ??
+  import.meta.env?.FM_IMAGE_PROXY_BASE ??
   "https://ninetone-fm-image-proxy.ninetone.workers.dev"
 ).replace(/\/$/, "");
 
@@ -60,10 +65,25 @@ const FIELD_TO_VARIANT: Record<string, string> = {
 interface MirrorContext {
   /** FM layout the records came from. Drives kind + slug field via LAYOUT_CONFIG. */
   layout: string;
+  /**
+   * The Publish epoch ("cache-version") the surrounding KV entry is keyed
+   * under — see src/lib/fm-kv.ts. Undefined on the static (gh) build and in
+   * Node dev, where there is no KV binding and therefore no epoch.
+   */
+  version?: string;
 }
 
-function rewrite(kind: string, slug: string, variant: string): string {
-  return `${PROXY_BASE}/${kind}/${encodeURIComponent(slug)}/${variant}`;
+/**
+ * The `?v=<epoch>` query is the edge-cache buster for worker-fm-proxy (which
+ * caches image bytes per URL, `v` being the only query parameter it keys
+ * on). A Publish bumps the epoch, so every page re-rendered after it embeds
+ * new image URLs and a photo replaced in FM shows after the next Publish —
+ * or after the proxy's own 6 h edge TTL, whichever comes first. Without an
+ * epoch (static build) the bare URL is emitted, exactly as before.
+ */
+function rewrite(kind: string, slug: string, variant: string, version?: string): string {
+  const base = `${PROXY_BASE}/${kind}/${encodeURIComponent(slug)}/${variant}`;
+  return version === undefined ? base : `${base}?v=${encodeURIComponent(version)}`;
 }
 
 /**
@@ -115,7 +135,7 @@ export async function mirrorRecordImages<T>(records: T, ctx: MirrorContext): Pro
       if (typeof v === "string" && FM_STREAMING_RE.test(v)) {
         const variant = FIELD_TO_VARIANT[bareField(k)];
         if (variant && slug) {
-          rec[k] = rewrite(kind, slug, variant);
+          rec[k] = rewrite(kind, slug, variant, ctx.version);
         }
         // Unknown field: leave original URL. Will likely 401 later but won't crash.
       } else if (v && typeof v === "object") {

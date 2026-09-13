@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { fmFindViaKv, fmKvKey } from "../src/lib/fm-kv.ts";
+import { FM_KV_WARM_TTL_SECONDS, fmFindViaKv, fmKvKey } from "../src/lib/fm-kv.ts";
 
 function fakeKv(initial = {}) {
   const store = new Map(Object.entries(initial));
@@ -90,4 +90,48 @@ test("a Publish epoch change is observed on the very next read — no in-isolate
   assert.equal(calls, 1, "the new epoch misses the old entry and re-reads FM");
   assert.deepEqual(rows, [{ v: 2 }]);
   assert.match(kv.puts.at(-1)[0], /^fm:v1:2:/);
+});
+
+// ---------------------------------------------------------------------------
+// Refresh mode — the warm-up cron (src/lib/fm-warm.ts)
+// ---------------------------------------------------------------------------
+
+test("refresh mode skips the KV read, runs the loader, and writes with the 360 s warm TTL", async () => {
+  const kv = fakeKv({ "cache-version": "7" });
+  // Seed a fresh-looking entry under exactly the key a normal read would use.
+  const key = await fmKvKey("7", "API_NEWS", BODY, false);
+  kv.store.set(key, JSON.stringify([{ stale: true }]));
+
+  let calls = 0;
+  const rows = await fmFindViaKv(kv, "API_NEWS", BODY, false, async () => { calls++; return [{ fresh: true }]; }, { refresh: true });
+  assert.deepEqual(rows, [{ fresh: true }], "a refresh never returns the cached entry");
+  assert.equal(calls, 1);
+  assert.ok(!kv.gets.some(([k]) => k === key), "the entry itself is never read in refresh mode");
+  assert.equal(kv.puts.length, 1);
+  assert.equal(kv.puts[0][0], key, "…but it IS overwritten under the same key the render path reads");
+  assert.equal(kv.puts[0][2].expirationTtl, 360, "300 s + 60 s grace so a */5 cron always lands first");
+  assert.equal(FM_KV_WARM_TTL_SECONDS, 360);
+
+  // A normal read afterwards is served from the refreshed entry.
+  const next = await fmFindViaKv(kv, "API_NEWS", BODY, false, async () => { throw new Error("FM must not be called"); });
+  assert.deepEqual(next, [{ fresh: true }]);
+});
+
+test("a normal (non-refresh) read still writes 300 s", async () => {
+  const kv = fakeKv({ "cache-version": "7" });
+  await fmFindViaKv(kv, "API_NEWS", BODY, false, async () => [{ v: 1 }], { refresh: false });
+  assert.equal(kv.puts[0][2].expirationTtl, 300);
+});
+
+test("the loader receives the epoch the key was built with; no KV → undefined", async () => {
+  const kv = fakeKv({ "cache-version": "7" });
+  const seen = [];
+  await fmFindViaKv(kv, "API_ARTIST", BODY, false, async (version) => { seen.push(version); return [{ a: 1 }]; });
+  assert.deepEqual(seen, ["7"], "the image URLs inside an entry must carry the same epoch as its key");
+
+  await fmFindViaKv(kv, "API_ARTIST", { ...BODY, limit: 5 }, false, async (version) => { seen.push(version); return [{ a: 1 }]; }, { refresh: true });
+  assert.deepEqual(seen, ["7", "7"], "refresh mode passes it too");
+
+  await fmFindViaKv(null, "API_ARTIST", BODY, false, async (version) => { seen.push(version); return [{ a: 1 }]; });
+  assert.equal(seen[2], undefined, "no binding means no epoch (static build) — the URL stays bare");
 });

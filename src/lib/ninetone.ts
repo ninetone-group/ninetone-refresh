@@ -5,7 +5,7 @@
  * responses — once we do, replace with strict shapes.
  */
 
-import { fmFind, fmFindWithPortals } from "./filemaker";
+import { fmFind, type FmFindOptions, fmFindWithPortals } from "./filemaker";
 import { isActiveBookingArtist } from "./booking-status";
 
 export type Artist = Record<string, unknown> & {
@@ -43,7 +43,7 @@ export type TeamMember = Record<string, unknown> & {
 };
 
 // API_ARTIST — roster list (Records active artists)
-export function getArtists() {
+export function getArtists(opts?: FmFindOptions) {
   return fmFind<Artist>("API_ARTIST", {
     query: [
       {
@@ -59,15 +59,15 @@ export function getArtists() {
       { fieldName: "Head Artist", sortOrder: "ascend" },
     ],
     limit: 500,
-  });
+  }, opts);
 }
 
 // API_ARTIST_DETAIL — single artist + portal data (releases, etc.)
-export function getArtistBySlug(slug: string) {
+export function getArtistBySlug(slug: string, opts?: FmFindOptions) {
   return fmFind<ArtistDetail>("API_ARTIST_DETAIL", {
     query: [{ filterActive: "==*", SLUG: slug }],
     limit: 1,
-  }).then((rows) => rows[0]);
+  }, opts).then((rows) => rows[0]);
 }
 
 // ---------------------------------------------------------------------------
@@ -169,7 +169,7 @@ export async function getArtistDetailWithReleases(slug: string): Promise<ArtistD
 
 // Previous artists — same layout, "Not Active". 342 records as of writing,
 // so we set a generous ceiling for build-time fetch.
-export function getPreviousArtists() {
+export function getPreviousArtists(opts?: FmFindOptions) {
   return fmFind<ArtistDetail>("API_ARTIST_DETAIL", {
     query: [
       {
@@ -185,7 +185,7 @@ export function getPreviousArtists() {
     limit: 1000,
     // List view never reads releases — skip the portal payload on 340+ records.
     portal: [],
-  });
+  }, opts);
 }
 
 // API_WEBPOSTS — section-level SEO content. Each FM record represents one
@@ -233,7 +233,7 @@ function pickStr(row: Record<string, unknown>, key: string): string {
   return v ? String(v) : "";
 }
 
-export async function getWebPosts(category: string = "*"): Promise<WebPostCategory[]> {
+export async function getWebPosts(category: string = "*", opts?: FmFindOptions): Promise<WebPostCategory[]> {
   const records = await fmFindWithPortals<{ category?: string; title?: string; readMore?: string }>(
     "API_WEBPOSTS",
     {
@@ -245,6 +245,7 @@ export async function getWebPosts(category: string = "*"): Promise<WebPostCatego
       portal: ["webPost"],
       portalLimits: { webPost: 500 },
     },
+    opts,
   );
 
   return records.map((r) => {
@@ -290,12 +291,12 @@ export async function getWebPostSection(category: WebPostSection): Promise<WebPo
 // API_NEWS — news feed for /news, sorted newest-first. 76 posts as of
 // 2026-07-02 — without the explicit limit, FM's default of 100 would start
 // silently dropping the oldest posts (and their pages) at post #101.
-export function getNews() {
+export function getNews(opts?: FmFindOptions) {
   return fmFind<WebPost>("API_NEWS", {
     query: [{ Message: "*" }],
     sort: [{ fieldName: "Date", sortOrder: "descend" }],
     limit: 500,
-  });
+  }, opts);
 }
 
 /**
@@ -315,16 +316,16 @@ export async function getNewsForArtist(artistName: string, limit = 3): Promise<W
 }
 
 // API_USERS — team members
-export function getTeam() {
+export function getTeam(opts?: FmFindOptions) {
   return fmFind<TeamMember>("API_USERS", {
     query: [{ Active: "==Ja", SLUG: "*" }],
     sort: [{ fieldName: "sortOrder", sortOrder: "ascend" }],
     limit: 500,
-  });
+  }, opts);
 }
 
 // API_Management — management clients
-export function getClients() {
+export function getClients(opts?: FmFindOptions) {
   return fmFind<Artist>("API_Management", {
     query: [
       {
@@ -339,11 +340,11 @@ export function getClients() {
       { fieldName: "Head Artist", sortOrder: "ascend" },
     ],
     limit: 500,
-  });
+  }, opts);
 }
 
 // API_Booking — Ninetone Nation entertainers (artists + förläsare)
-export function getBookingRoster() {
+export function getBookingRoster(opts?: FmFindOptions) {
   return fmFind<Artist>("API_Booking", {
     query: [
       {
@@ -355,7 +356,7 @@ export function getBookingRoster() {
       },
     ],
     limit: 500,
-  }).then((rows) => rows.filter(isActiveBookingArtist));
+  }, opts).then((rows) => rows.filter(isActiveBookingArtist));
 }
 
 // ---------------------------------------------------------------------------
@@ -401,7 +402,7 @@ function pickPortal(row: Record<string, unknown>, key: string): string {
   return v ? String(v) : "";
 }
 
-export async function getBookingCategories(): Promise<BookingCategory[]> {
+export async function getBookingCategories(opts?: FmFindOptions): Promise<BookingCategory[]> {
   const records = await fmFindWithPortals<{ tagBooking?: string; breadBooking?: string }>(
     "API_BOOKING_TAG",
     {
@@ -410,6 +411,7 @@ export async function getBookingCategories(): Promise<BookingCategory[]> {
       portal: ["Green HeadArtist"],
       portalLimits: { "Green HeadArtist": 500 },
     },
+    opts,
   );
 
   return records.map((r) => {

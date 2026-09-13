@@ -58,6 +58,13 @@ const [featuredArtists, heroArtist, heroClient, latestNews] = await Promise.all(
 // tile as the page's LCP element. Fetch the real detail record (same
 // API_ARTIST_DETAIL lookup every artist page already uses) to get the
 // genuine 1000×1000 big picture instead of guessing from roster fields.
+//
+// The tile no longer passes `priority` (fetchpriority="high", eager load):
+// a throttled desktop trace (1440×900, Fast 3G, 2026-09-13) put it at
+// y≈3,000 px — three viewports below the fold — while the LCP element was
+// the h1 text. BentoTile's own rule is "only the single true above-the-fold
+// hero tile", and this one is not it; the hint just pulled 55 KB into the
+// critical window ahead of the blocking CSS.
 const heroArtistDetail = heroArtist?.SLUG ? await getArtistBySlug(String(heroArtist.SLUG)) : undefined;
 const heroArtistImage = heroArtistDetail?.artistPicture_big ?? heroArtist?.artistPicture_small;
 const heroArtistImageSize = heroArtistDetail?.artistPicture_big ? 1000 : 500;
@@ -427,7 +434,6 @@ const closingBody = await t(
             heading={heroArtistName}
             blurb={heroArtistBlurb}
             cta={viewProfileCta}
-            priority
           />
         )}
 

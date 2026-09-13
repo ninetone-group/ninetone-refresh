@@ -4,7 +4,7 @@
  * in fm-image-mirror.ts, which reads `import.meta.env` at module load and
  * cannot be imported outside Vite.
  */
-import { kvCached, type KvLike } from "./cache.ts";
+import { type CacheOptions, kvCached, type KvLike, readCacheVersion } from "./cache.ts";
 import type { FmFindBody } from "./filemaker.ts";
 import { sha256Hex } from "./http.ts";
 import { timeServer } from "./server-timing.ts";
@@ -37,43 +37,54 @@ import { timeServer } from "./server-timing.ts";
 const FM_KV_TTL_SECONDS = 300;
 
 /**
- * NO in-isolate memo of the epoch, on purpose. The middleware reads
- * "cache-version" (cacheTtl 60) to build the PAGE cache key; this layer must
- * never see an OLDER epoch than that read did, or a Publish can render old FM
- * data and pin it under the new epoch for the page's full tier (24 h on
- * /team — Codex review, 2026-09-12). Reading the same edge-cached KV entry,
- * in the same colo, milliseconds later gives exactly that guarantee: the
- * value is identical or newer, and "newer FM data under an older page key"
- * is harmless because that key is already dying. A memo broke it. The read
- * is one edge-cached KV get per in-memory miss (per layout per 60 s per
- * isolate), which is cheap.
+ * TTL for entries written by the five-minute warm-up cron (src/lib/fm-warm.ts).
+ *
+ * WHY 360 AND NOT 300. The cron fires every five minutes; a 300 s entry
+ * written at t=0 expires at t=300, and the next warm write lands at t=300
+ * plus cron jitter plus the FM round trip — a gap of seconds to a minute in
+ * which a visitor's miss pays FM in full, which is the exact expiry the cron
+ * exists to prevent (perf handoff 2026-09-13: the read-through expires on a
+ * quiet staging host). 60 s of grace covers that gap. Visitor reads still
+ * write 300 s: nothing is served staler than the shortest page tier allows,
+ * and the cron overwrites the entry (fresh data, fresh TTL) before either
+ * expires.
  */
-async function fmCacheVersion(kv: KvLike): Promise<string> {
-  try {
-    return (await kv.get("cache-version", { cacheTtl: 60 })) ?? "0";
-  } catch {
-    // KV unavailable → still cache under epoch "0"; the edge cache has the
-    // same fallback (src/middleware.ts).
-    return "0";
-  }
-}
+export const FM_KV_WARM_TTL_SECONDS = FM_KV_TTL_SECONDS + 60;
+
+// The epoch read lives in cache.ts (`readCacheVersion`) since the Shopify
+// read-through keys off the same value — see the comment there for why it
+// is deliberately NOT memoized per isolate.
 
 /** Content-addressed find key: epoch + layout + shape + exact query body. */
 export async function fmKvKey(version: string, layout: string, body: FmFindBody, withPortals: boolean): Promise<string> {
   return `fm:v1:${version}:${withPortals ? "p" : "f"}:${layout}:${await sha256Hex(JSON.stringify(body))}`;
 }
 
-/** The read-through itself; `kv` is injected so tests can drive it. */
+/**
+ * The read-through itself; `kv` is injected so tests can drive it.
+ *
+ * The loader receives the epoch string the KV key was built with (undefined
+ * when there is no binding). filemaker.ts threads it into the image-URL
+ * rewrite as `?v=<epoch>`, so the proxy's edge cache (worker-fm-proxy) is
+ * keyed by the same Publish epoch as everything else. It is passed rather
+ * than re-read so the URLs inside an entry always match the key the entry
+ * is stored under.
+ *
+ * `refresh` (the warm-up cron) bypasses the KV read and writes with the
+ * longer `FM_KV_WARM_TTL_SECONDS` — see that constant.
+ */
 export async function fmFindViaKv<T>(
   kv: KvLike | null | undefined,
   layout: string,
   body: FmFindBody,
   withPortals: boolean,
-  loader: () => Promise<T[]>,
+  loader: (version?: string) => Promise<T[]>,
+  opts?: CacheOptions,
 ): Promise<T[]> {
-  if (!kv) return loader();
-  const version = await fmCacheVersion(kv);
+  if (!kv) return loader(undefined);
+  const version = await readCacheVersion(kv);
   const key = await fmKvKey(version, layout, body, withPortals);
-  return timeServer("fmkv", () => kvCached<T[]>(kv, key, FM_KV_TTL_SECONDS, loader));
+  const ttl = opts?.refresh ? FM_KV_WARM_TTL_SECONDS : FM_KV_TTL_SECONDS;
+  return timeServer("fmkv", () => kvCached<T[]>(kv, key, ttl, () => loader(version), opts));
 }
 

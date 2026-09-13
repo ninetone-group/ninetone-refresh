@@ -37,19 +37,37 @@ function key(namespace: string, payload: unknown): string {
 }
 
 /**
+ * Refresh mode (the FM warm-up cron, src/lib/fm-warm.ts): the caller wants
+ * the loader to RUN, not a cached answer. Shared by `cached()` and
+ * `kvCached()` so one option object can be threaded through the whole FM
+ * read path (src/lib/filemaker.ts → fm-kv.ts) without each layer inventing
+ * its own flag.
+ */
+export type CacheOptions = {
+  /** Skip any existing fresh entry and re-run the loader; the result is
+   *  stored as usual so the next normal read is served from it. */
+  refresh?: boolean;
+};
+
+/**
  * Cache a fetch by (namespace, payload). Concurrent callers share the
  * in-flight Promise; the value is reused until the TTL lapses.
+ *
+ * With `refresh`, a fresh entry is ignored and the loader runs anyway. The
+ * entry's last-good value is still carried over, so a refresh that fails
+ * degrades to stale-on-error exactly like an expired-entry refresh does.
  */
 export function cached<T>(
   namespace: string,
   payload: unknown,
   loader: () => Promise<T>,
   ttlMs: number = TTL_MS,
+  opts?: CacheOptions,
 ): Promise<T> {
   const k = key(namespace, payload);
   const now = Date.now();
   const existing = memCache.get(k);
-  if (existing && now < existing.expires) return existing.promise as Promise<T>;
+  if (existing && now < existing.expires && !opts?.refresh) return existing.promise as Promise<T>;
 
   const entry: Entry = {
     promise: Promise.resolve() as Promise<unknown>,
@@ -119,18 +137,24 @@ export async function kvCached<T>(
   key: string,
   ttlSeconds: number,
   fn: () => Promise<T>,
+  opts?: CacheOptions,
 ): Promise<T> {
   if (!kv) {
-    return cached<T>("kv-fallback", key, fn, ttlSeconds * 1000);
+    return cached<T>("kv-fallback", key, fn, ttlSeconds * 1000, opts);
   }
 
-  try {
-    const raw = await kv.get(key);
-    if (raw !== null) {
-      return JSON.parse(raw) as T;
+  // Refresh mode skips the read entirely: the point is to overwrite whatever
+  // KV holds with a fresh value (and a fresh TTL) before it expires, so a
+  // hit would defeat the purpose. See `CacheOptions`.
+  if (!opts?.refresh) {
+    try {
+      const raw = await kv.get(key);
+      if (raw !== null) {
+        return JSON.parse(raw) as T;
+      }
+    } catch (err) {
+      console.error(`[kv-cache] read failed for ${key} — recomputing:`, err);
     }
-  } catch (err) {
-    console.error(`[kv-cache] read failed for ${key} — recomputing:`, err);
   }
 
   const value = await fn();
@@ -144,4 +168,33 @@ export async function kvCached<T>(
   }
 
   return value;
+}
+
+/**
+ * The Publish epoch ("cache-version", bumped by src/pages/api/publish.ts).
+ * Every cross-isolate cache key that carries FM- or Shopify-derived content
+ * embeds it (fm-kv.ts, shopify.ts), so a Publish makes all of them miss once
+ * and re-read live, the same way the edge cache (src/middleware.ts) does.
+ *
+ * NO in-isolate memo of the epoch, on purpose. The middleware reads
+ * "cache-version" (cacheTtl 60) to build the PAGE cache key; the data layers
+ * must never see an OLDER epoch than that read did, or a Publish can render
+ * old data and pin it under the new epoch for the page's full tier (24 h on
+ * /team — Codex review, 2026-09-12). Reading the same edge-cached KV entry,
+ * in the same colo, milliseconds later gives exactly that guarantee: the
+ * value is identical or newer, and "newer data under an older page key" is
+ * harmless because that key is already dying. A memo broke it. The read is
+ * one edge-cached KV get per in-memory miss (per layout per 60 s per
+ * isolate), which is cheap.
+ *
+ * "0" when there is no binding or KV is unavailable — the edge cache has the
+ * same fallback, so the layers stay keyed alike.
+ */
+export async function readCacheVersion(kv: KvLike | null | undefined): Promise<string> {
+  if (!kv) return "0";
+  try {
+    return (await kv.get("cache-version", { cacheTtl: 60 })) ?? "0";
+  } catch {
+    return "0";
+  }
 }

@@ -882,3 +882,50 @@ test("ONE untranslated string (a miss, no refusal) is enough to shorten the TTL"
   assert.equal(response.headers.get("x-cache-ttl"), "60");
   assert.equal(response.headers.get("x-translation"), "degraded; misses=1 refused=0");
 });
+
+// ---------------------------------------------------------------------------
+// 2026-09-13 — in-band bundle observability (x-translation-bundle)
+// ---------------------------------------------------------------------------
+
+test("x-translation-bundle reports a preloaded bundle with its entry count", async () => {
+  const key = await translationKey("Artister", "en", "quality");
+  const other = await translationKey("Nyheter", "en", "quality");
+  const store = new Map([["trb:v1:en:/records/artists", JSON.stringify({ [key]: "Artists", [other]: "News" })]]);
+  const kv = {
+    get: async (k) => (typeof k === "string" && store.has(k) ? store.get(k) : null),
+    put: async () => {},
+  };
+  const runtime = createRuntime({ env: { CACHE_STATE: kv } });
+  const context = {
+    request: new Request("https://ninetone.com/en/records/artists"),
+    url: new URL("https://ninetone.com/en/records/artists"),
+    locals: { cfContext: { waitUntil: (p) => runtime.waits.push(p) } },
+  };
+  const response = await middlewareModule.onRequest(context, async () => {
+    const r = await translate({ text: "Artister", target: "en", tier: "quality", kv, ledger: context.locals.__i18nLedger });
+    return new Response(r.text);
+  });
+  await Promise.all(runtime.waits);
+  assert.equal(response.headers.get("x-cache"), "miss");
+  assert.equal(response.headers.get("x-translation-bundle"), "hit; entries=2");
+  assert.equal(
+    runtime.stored[0].response.headers.get("x-translation-bundle"),
+    "hit; entries=2",
+    "the cached copy carries the same annotation (it is built from the same headers)",
+  );
+});
+
+test("x-translation-bundle is 'miss' when the route has no bundle yet", async () => {
+  const kv = { get: async () => null, put: async () => {} };
+  const runtime = createRuntime({ env: { CACHE_STATE: kv } });
+  const response = await run(new Request("https://ninetone.com/en/news"), async () => new Response("x"), runtime);
+  assert.equal(response.headers.get("x-cache"), "miss");
+  assert.equal(response.headers.get("x-translation-bundle"), "miss");
+});
+
+test("x-translation-bundle is absent on a page-cache HIT (no bundle is read there)", async () => {
+  const runtime = createRuntime({ hit: new Response("cached") });
+  const response = await run(new Request("https://ninetone.com/news"), async () => new Response("x"), runtime);
+  assert.equal(response.headers.get("x-cache"), "hit");
+  assert.equal(response.headers.get("x-translation-bundle"), null);
+});
