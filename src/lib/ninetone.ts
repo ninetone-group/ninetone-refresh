@@ -167,6 +167,22 @@ export async function getArtistDetailWithReleases(slug: string): Promise<ArtistD
   return { fieldData: row.fieldData, releases };
 }
 
+/**
+ * EVERY artist with their full discography portal — for the nightly release
+ * count (src/lib/release-count.ts) ONLY. Measured 2026-09-13: 9.4 s and 6 MB
+ * for 390 artists. Never call this from a page or from the five-minute warm
+ * cron; the caller passes `{ kv: null }` so the 6 MB payload is not written
+ * into the KV read-through either.
+ */
+export function getArtistsWithReleases(opts?: FmFindOptions) {
+  return fmFindWithPortals<ArtistDetail>("API_ARTIST_DETAIL", {
+    query: [{ filterType: "Music", SLUG: "*" }],
+    limit: 1000,
+    portal: ["Green Web Category"],
+    portalLimits: { "Green Web Category": 500 },
+  }, opts);
+}
+
 // Previous artists — same layout, "Not Active". 342 records as of writing,
 // so we set a generous ceiling for build-time fetch.
 export function getPreviousArtists(opts?: FmFindOptions) {

@@ -243,6 +243,36 @@ describeOrSkip("the warm cron runs every page find in refresh mode and writes th
   assert.ok(!kv.gets.some(([key]) => key.startsWith("fm:") || key.startsWith("shopify:")), "no read-before-write in refresh mode");
 });
 
+describeOrSkip("the nightly cron counts releases with ONE portal find and stores metrics:v1:releases", async () => {
+  const calls = stubFetch();
+  const P = "Green Web Category";
+  const original = globalThis.fetch;
+  globalThis.fetch = async (input, init) => {
+    const url = String(input);
+    if (url.includes("/layouts/API_ARTIST_DETAIL/_find")) {
+      calls.push({ url, method: init?.method ?? "GET", body: init?.body ? JSON.parse(init.body) : null });
+      return json({ response: { data: [
+        { fieldData: { SLUG: "a" }, portalData: { [P]: [{ [P + "::Album"]: "One" }, { [P + "::Album"]: "Two" }, { [P + "::Album"]: "Two" }] }, recordId: "1" },
+        { fieldData: { SLUG: "b" }, portalData: { [P]: [{ [P + "::Album"]: "One" }, { [P + "::Album"]: "" }] }, recordId: "2" },
+      ] }, messages: [{ code: "0", message: "OK" }] });
+    }
+    return original(input, init);
+  };
+  const env = warmEnv();
+  const ctx = fakeCtx();
+  await bundle.default.scheduled({ cron: "0 4 * * *", scheduledTime: Date.now() }, env, ctx);
+  await Promise.all(ctx.promises);
+
+  const finds = calls.filter((c) => c.url.includes("/_find"));
+  assert.equal(finds.length, 1, "exactly one FM find");
+  assert.deepEqual(finds[0].body.portal, [P]);
+  assert.equal(finds[0].body.limit, 1000);
+  const stored = env.CACHE_STATE.puts.filter(([key]) => key === "metrics:v1:releases");
+  assert.equal(stored.length, 1);
+  assert.equal(JSON.parse(stored[0][1]).count, 3, "distinct (artist, album) pairs");
+  assert.ok(!env.CACHE_STATE.puts.some(([key]) => key.startsWith("fm:v1:")), "the 6 MB payload is not written into the FM read-through");
+});
+
 describeOrSkip("a failing FM find does not stop the other loaders or reject waitUntil", async () => {
   const calls = stubFetch();
   const inner = globalThis.fetch;

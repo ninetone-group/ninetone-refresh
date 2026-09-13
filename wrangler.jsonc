@@ -118,7 +118,10 @@
   //                   expires on a quiet host. FM_WARM: "off" in "vars"
   //                   pauses it from the dashboard; it is deliberately NOT
   //                   set below (default on).
-  "triggers": { "crons": ["* * * * *", "*/5 * * * *"] },
+  //   "0 4 * * *"   — nightly release count (src/lib/release-count.ts): one
+  //                   9 s / 6 MB FM find storing the homepage's releases
+  //                   figure in KV. Same FM_WARM switch.
+  "triggers": { "crons": ["* * * * *", "*/5 * * * *", "0 4 * * *"] },
   //
   // PUBLICATION_SERVING is deliberately ABSENT from "vars". publicationMode()
   // returns "shadow" unless it is exactly "on", so preparation runs and

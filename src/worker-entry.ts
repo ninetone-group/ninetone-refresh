@@ -59,6 +59,7 @@ import astro from "@astrojs/cloudflare/entrypoints/server";
 import { DurableObject } from "cloudflare:workers";
 
 import { FM_WARM_CRON, HOMEPAGE_MERCH_LIMIT, warmDisabled, warmReadThrough } from "./lib/fm-warm.ts";
+import { RELEASE_COUNT_CRON, refreshReleaseCount } from "./lib/release-count.ts";
 import { callCoordinator, makeCoordinatorClass } from "./lib/publication/coordinator-do.ts";
 import { consumeJob, runTick } from "./lib/publication/orchestrate.ts";
 import { publicationMode } from "./lib/publication/serving.ts";
@@ -222,6 +223,37 @@ export default {
             });
           } catch (error) {
             console.error("[fm-warm] failed", error);
+          }
+        })(),
+      );
+      return;
+    }
+
+    // Nightly release count (src/lib/release-count.ts): ONE heavy FM find a
+    // day, stored in KV for the homepage. Shares the FM_WARM kill switch —
+    // "off" means no scheduled FM reads of any kind.
+    if (event.cron === RELEASE_COUNT_CRON) {
+      if (warmDisabled(env)) {
+        console.log("[release-count] scheduled: FM_WARM=off; skipping");
+        return;
+      }
+      const kv = env.CACHE_STATE;
+      if (!kv) {
+        console.log("[release-count] scheduled: no CACHE_STATE binding; nowhere to store");
+        return;
+      }
+      ctx.waitUntil(
+        (async () => {
+          try {
+            const nine = await import("./lib/ninetone.ts");
+            await refreshReleaseCount({
+              kv,
+              // Straight FM, no in-memory or KV caching of the 6 MB payload.
+              load: () => nine.getArtistsWithReleases({ refresh: true, kv: null }),
+              log: (message) => console.log(message),
+            });
+          } catch (error) {
+            console.error("[release-count] failed", error);
           }
         })(),
       );

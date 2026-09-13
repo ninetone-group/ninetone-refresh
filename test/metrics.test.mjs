@@ -15,12 +15,15 @@ test("liveRosterCount ignores rows without a usable slug", () => {
   assert.equal(liveRosterCount(), 0);
 });
 
-test("roundedPlus rounds DOWN to tens with a plus, exact below ten", () => {
+test("roundedPlus rounds DOWN to tens (hundreds from 1,000) with a plus, exact below ten", () => {
   assert.equal(roundedPlus(87), "80+");
   assert.equal(roundedPlus(90), "90+");
   assert.equal(roundedPlus(342), "340+");
   assert.equal(roundedPlus(9), "9");
   assert.equal(roundedPlus(0), "0");
+  assert.equal(roundedPlus(2152), "2" + String.fromCharCode(0xa0) + "100+", "Swedish grouping (no-break space)");
+  assert.equal(roundedPlus(2152, "en"), "2,100+");
+  assert.equal(roundedPlus(999), "990+");
 });
 
 test("yearsSince counts whole years from 2006 and never goes negative", () => {

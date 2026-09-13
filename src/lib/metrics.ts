@@ -27,10 +27,17 @@ export function liveRosterCount(...rosters: ReadonlyArray<ReadonlyArray<WithSlug
   return slugs.size;
 }
 
-/** "87" → "80+": the panel's rounded-down, never-overstated style. Below 10 the exact figure. */
-export function roundedPlus(n: number): string {
-  if (n < 10) return String(Math.max(0, Math.floor(n)));
-  return `${Math.floor(n / 10) * 10}+`;
+/**
+ * The panel's rounded-down, never-overstated style: 87 → "80+", 2,152 →
+ * "2 100+" (thousands round to hundreds), below 10 the exact figure. Digit
+ * grouping follows the page locale (sv: "2 100", en: "2,100").
+ */
+export function roundedPlus(n: number, locale: string = "sv"): string {
+  const whole = Math.max(0, Math.floor(n));
+  if (whole < 10) return String(whole);
+  const step = whole >= 1000 ? 100 : 10;
+  const rounded = Math.floor(whole / step) * step;
+  return `${new Intl.NumberFormat(locale === "en" ? "en-GB" : "sv-SE").format(rounded)}+`;
 }
 
 export const FOUNDED_YEAR = 2006;

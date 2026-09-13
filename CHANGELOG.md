@@ -3,6 +3,29 @@
 All notable changes to the Ninetone Group site. Versions follow `MAJOR.MINOR.PATCH.MICRO`
 (the number in `VERSION`).
 
+## [0.2.3.0] - 2026-09-13
+
+### Added
+- **Homepage metrics from data.** Profiles = every active and former profile across
+  Records, Management and Nation, merged by slug ("540+ · Sedan starten"); years since
+  2006 computed at render; releases counted nightly by a new `0 4 * * *` cron (one 9 s /
+  6 MB FileMaker find, stored in KV, editorial fallback when absent). "4 recording studios"
+  replaces "1 house". Two new getters (former clients, former booking) are warmed by the
+  FM cron.
+- **Tracker ids carried over** from the old ninetone.com (GA4, Meta Pixel, Microsoft
+  Clarity), pinned by a test; still dormant until `PUBLIC_NOINDEX` is off.
+- **Cookie banner rendered on every page**, trackers or not, so the footer link works and
+  the banner can be reviewed on staging.
+
+### Fixed
+- **Background translation never ran on Cloudflare.** The scheduler was the execution
+  context's `waitUntil` detached from its receiver ("Illegal invocation", swallowed).
+  New strings now translate within about a minute of their first render.
+- Long Swedish compounds overflowing heading columns (headings hyphenate).
+- Swedish overrides: "Teamet", "Vi bygger bron.", the metrics headline, "Sedan starten".
+- Flaky bulk-read test made timing-independent; proxy deploys documented as
+  `npm run deploy` in `worker-fm-proxy/`.
+
 ## [0.2.2.0] - 2026-09-13
 
 ### Added

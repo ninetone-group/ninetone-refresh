@@ -31,6 +31,8 @@ import {
   getNews,
 } from "../lib/ninetone";
 import { liveRosterCount, roundedPlus, yearsSince } from "../lib/metrics";
+import { readReleaseCount } from "../lib/release-count";
+import { getCfEnv } from "../lib/cf";
 
 // t() bound to this request (docs/i18n-phase-2-brief.md section 4). See the
 // PR description's budget note: this page alone, plus the Header/Footer/
@@ -230,10 +232,18 @@ const metricsHeading = await t("Quietly moving attention — and behaviour.");
 // Management and Nation, merged by slug and rounded down (FM 2026-09-13:
 // 33+342 artists, 37+140 clients, 13+17 booking); the years come from the
 // founding year. Campaigns and houses remain editorial copy by decision.
+// Releases: counted nightly by the RELEASE_COUNT_CRON (src/lib/release-count.ts)
+// and read from KV here — one edge-cached get, never the 6 MB FM find. When
+// nothing is stored (static build, first day, a week of failed ticks) the slot
+// keeps its old editorial copy instead of showing a wrong number.
+const releaseCount = await readReleaseCount((await getCfEnv())?.CACHE_STATE);
+const metricLocale = (Astro.locals as { lang?: string }).lang ?? "sv";
 const metricsSource = [
-  { value: roundedPlus(liveRosterCount(allArtists, allClients, allBooking, prevArtists, prevClients, prevBooking)), label: "Artists, creators and public profiles", note: "Since the start" },
+  { value: roundedPlus(liveRosterCount(allArtists, allClients, allBooking, prevArtists, prevClients, prevBooking), metricLocale), label: "Artists, creators and public profiles", note: "Since the start" },
   { value: String(yearsSince()), label: "Years inside music, media and digital culture", note: "Since 2006" },
-  { value: "120+", label: "Active campaigns, releases and collaborations", note: "Across music, social, brand and sport" },
+  releaseCount
+    ? { value: roundedPlus(releaseCount.count, metricLocale), label: "Releases", note: "Since the start" }
+    : { value: "120+", label: "Active campaigns, releases and collaborations", note: "Across music, social, brand and sport" },
   { value: "4", label: "Recording studios", note: "Sundsvall / Stockholm" },
 ];
 const metrics = await Promise.all(
