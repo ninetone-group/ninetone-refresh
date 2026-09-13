@@ -38,6 +38,10 @@ export type RateLimiter = {
 
 export type CfEnv = Record<string, unknown> & {
   CACHE_STATE?: CacheStateKv;
+  /** Self-referential service binding (wrangler.jsonc `services`) — the
+   *  middleware's stale-while-revalidate asks the Worker to re-render a page
+   *  through it. Absent → stale hits render synchronously instead. */
+  SELF?: { fetch(input: Request): Promise<Response> };
   PUBLISH_PASSWORD?: string;
   PUBLISH_RATE_LIMITER?: RateLimiter;
   CONTACT_SUBMISSIONS?: ContactSubmissionsKv;

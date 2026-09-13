@@ -91,6 +91,12 @@
       }
     ]
   },
+  // Self-referential binding: src/middleware.ts serves a page-cache entry
+  // past its tier immediately ("x-cache: stale") and asks THIS Worker,
+  // through SELF, to re-render it in the background. Cloudflare allows a
+  // Worker to bind to itself; without the binding a stale hit renders
+  // synchronously, as it did before 2026-09-13.
+  "services": [{ "binding": "SELF", "service": "ninetone-site" }],
   "durable_objects": {
     "bindings": [
       {

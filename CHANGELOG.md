@@ -3,6 +3,22 @@
 All notable changes to the Ninetone Group site. Versions follow `MAJOR.MINOR.PATCH.MICRO`
 (the number in `VERSION`).
 
+## [0.2.2.0] - 2026-09-13
+
+### Added
+- **Stale-while-revalidate at the edge.** A page-cache entry past its tier is served
+  immediately (`x-cache: stale`) and re-rendered in the background through a
+  self-referential `SELF` service binding; the stored copy lives 7 days with the tier
+  carried as a freshness stamp. The first visitor after hours of quiet, or the first
+  language switch after a lull, no longer waits for a cold render (4–6 s measured).
+  A Publish still changes the cache key, so editorial changes are never served stale.
+  Verified on staging: after the homepage tier lapsed, `/` answered in 443 ms and
+  `/en` in 67 ms as stale, and both were fresh hits 8 s later.
+
+### Fixed
+- "We build the bridge." was served untranslated on the Swedish homepage (override:
+  "Vi bygger bron.").
+
 ## [0.2.1.0] - 2026-09-13
 
 Page-speed deep dive. Measured first (20 timed reloads of `/`, 20 alternating `/` and

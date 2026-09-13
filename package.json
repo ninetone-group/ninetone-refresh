@@ -1,7 +1,7 @@
 {
   "name": "ninetone-refresh",
   "type": "module",
-  "version": "0.2.1.0",
+  "version": "0.2.2.0",
   "description": "Ninetone Group website (Astro + Cloudflare Pages, FileMaker-driven)",
   "engines": {
     "node": ">=22.19.0"
