@@ -45,12 +45,14 @@ function bulkKv(initial = {}) {
 /** KV double WITHOUT bulk support: an array key is just an unknown key. */
 function plainKv(initial = {}) {
   const store = new Map(Object.entries(initial));
-  const calls = { gets: 0 };
+  const calls = { gets: 0, single: 0, probes: 0 };
   return {
     store,
     calls,
     async get(key) {
       calls.gets += 1;
+      if (Array.isArray(key)) calls.probes += 1;
+      else calls.single += 1;
       return typeof key === "string" && store.has(key) ? store.get(key) : null;
     },
     async put(key, value) {
@@ -98,8 +100,12 @@ test("a binding without bulk support falls back to individual reads with identic
   const kv = plainKv(initial);
   const results = await Promise.all(sources.map((text) => translate({ text, target: "en", tier: "fast", kv })));
   assert.deepEqual(results.map((r) => r.text), sources.map((s) => `EN ${s}`));
-  // 1 failed array probe + 12 individual reads.
-  assert.equal(kv.calls.gets, 13);
+  // Every key is read individually exactly once. The number of failed array
+  // probes is NOT pinned: reads requested in the same tick are flushed on a
+  // zero-delay timer, and on a slow runner (CI, 2026-09-13) the twelve
+  // parallel calls can land as two batches — two probes, still 12 reads.
+  assert.equal(kv.calls.single, 12, "12 individual reads");
+  assert.ok(kv.calls.probes >= 1 && kv.calls.probes <= 2, `array probe(s): ${kv.calls.probes}`);
 });
 
 test("a serial chain still reads one key at a time (single-key path, no bulk probe)", async () => {
