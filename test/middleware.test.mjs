@@ -929,3 +929,105 @@ test("x-translation-bundle is absent on a page-cache HIT (no bundle is read ther
   assert.equal(response.headers.get("x-cache"), "hit");
   assert.equal(response.headers.get("x-translation-bundle"), null);
 });
+
+// ---------------------------------------------------------------------------
+// Stale-while-revalidate at the edge (2026-09-13) — see STALE_HARD_TTL_SECONDS
+// in src/middleware.ts.
+// ---------------------------------------------------------------------------
+
+function staleHit({ ageMs, ttl = "300", body = "cached" } = {}) {
+  return new Response(body, {
+    headers: {
+      "content-type": "text/html",
+      "x-cache-ttl": ttl,
+      "x-cache-fresh-until": String(Date.now() - ageMs),
+      "cache-control": "public, s-maxage=604800",
+    },
+  });
+}
+
+function selfBinding() {
+  const calls = [];
+  return {
+    calls,
+    fetch: async (req) => {
+      calls.push({ url: req.url, revalidate: req.headers.get("x-ninetone-revalidate") });
+      return new Response("fresh");
+    },
+  };
+}
+
+test("swr: a stored copy carries the hard TTL and a freshness stamp; the visitor keeps the tier", async () => {
+  const runtime = createRuntime();
+  const before = Date.now();
+  const response = await run(new Request("https://www.ninetone.com/news"), async () => new Response("news"), runtime);
+
+  assert.match(response.headers.get("cache-control"), /max-age=60, s-maxage=900/);
+  assert.equal(response.headers.get("x-cache-fresh-until"), null, "the stamp is internal to the cache copy");
+  const stored = runtime.stored[0].response;
+  assert.equal(stored.headers.get("cache-control"), "public, s-maxage=604800");
+  const freshUntil = Number(stored.headers.get("x-cache-fresh-until"));
+  assert.ok(freshUntil >= before + 900_000 && freshUntil <= Date.now() + 900_000, "fresh-until = now + tier");
+});
+
+test("swr: a hit past its tier is served immediately as stale and revalidated once through SELF", async () => {
+  const self = selfBinding();
+  const runtime = createRuntime({ hit: staleHit({ ageMs: 10_000 }), env: { CACHE_STATE: { get: async () => "7" }, SELF: self } });
+  const response = await run(
+    new Request("https://www.ninetone.com/news?utm_source=x"),
+    async () => { throw new Error("the visitor must never wait for a render on a stale hit"); },
+    runtime,
+  );
+
+  assert.equal(await response.text(), "cached");
+  assert.equal(response.headers.get("x-cache"), "stale");
+  assert.equal(response.headers.get("cache-control"), "public, max-age=60, s-maxage=300, stale-while-revalidate=300");
+  assert.equal(response.headers.get("x-cache-fresh-until"), null);
+  assert.equal(self.calls.length, 1);
+  assert.equal(self.calls[0].url, "https://www.ninetone.com/news", "canonical path, tracking query dropped");
+  assert.equal(self.calls[0].revalidate, "1");
+});
+
+test("swr: a hit inside its tier is a plain hit and never touches SELF", async () => {
+  const self = selfBinding();
+  const runtime = createRuntime({ hit: staleHit({ ageMs: -60_000 }), env: { CACHE_STATE: { get: async () => "7" }, SELF: self } });
+  const response = await run(new Request("https://www.ninetone.com/news"), async () => { throw new Error("no render"); }, runtime);
+
+  assert.equal(response.headers.get("x-cache"), "hit");
+  assert.equal(self.calls.length, 0);
+});
+
+test("swr: without a SELF binding a stale hit renders synchronously, as before", async () => {
+  const runtime = createRuntime({ hit: staleHit({ ageMs: 10_000 }) });
+  let nextCalls = 0;
+  const response = await run(new Request("https://www.ninetone.com/news"), async () => { nextCalls++; return new Response("news"); }, runtime);
+
+  assert.equal(nextCalls, 1);
+  assert.equal(response.headers.get("x-cache"), "miss");
+  assert.equal(runtime.stored.length, 1);
+});
+
+test("swr: a revalidation request skips the cache read, renders, and stores the fresh copy", async () => {
+  const runtime = createRuntime({ hit: staleHit({ ageMs: 10_000 }) });
+  let nextCalls = 0;
+  const response = await run(
+    new Request("https://www.ninetone.com/news", { headers: { "x-ninetone-revalidate": "1" } }),
+    async () => { nextCalls++; return new Response("fresh news"); },
+    runtime,
+  );
+
+  assert.equal(runtime.matched.length, 0, "no cache.match on a revalidation");
+  assert.equal(nextCalls, 1);
+  assert.equal(await response.text(), "fresh news");
+  assert.equal(runtime.stored.length, 1);
+  assert.match(runtime.stored[0].key, /\/news$/);
+});
+
+test("swr: an entry without a freshness stamp (stored before this scheme) counts as fresh", async () => {
+  const self = selfBinding();
+  const runtime = createRuntime({ hit: new Response("cached"), env: { CACHE_STATE: { get: async () => "7" }, SELF: self } });
+  const response = await run(new Request("https://www.ninetone.com/news"), async () => { throw new Error("no render"); }, runtime);
+
+  assert.equal(response.headers.get("x-cache"), "hit");
+  assert.equal(self.calls.length, 0);
+});

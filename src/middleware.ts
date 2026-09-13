@@ -100,6 +100,46 @@ const DEFAULT_TTL = 3600;
 /** KV keys are capped at 512 bytes; leave headroom for multi-byte paths. */
 const MAX_BUNDLE_KEY_LENGTH = 400;
 
+/**
+ * Stale-while-revalidate at the edge (2026-09-13).
+ *
+ * WHY. The Cache API simply expires: after a page's tier the entry is GONE,
+ * and the next visitor waits for a full render. On a quiet host that visitor
+ * is the first one back after hours — and after more than six hours the
+ * route's translation bundle has lapsed too, so that render pays ~90 serial
+ * KV reads: the 4–6 s "I left it for an afternoon and now it is slow" case
+ * (measured 2026-09-13, 6.4 s on `/`). The same on a language switch: the
+ * other locale's entry is the one that lapsed.
+ *
+ * HOW. The stored copy is kept for STALE_HARD_TTL_SECONDS regardless of tier,
+ * with the tier expressed as a timestamp header (FRESH_UNTIL_HEADER). A hit
+ * inside the tier is served as today. A hit past it is served IMMEDIATELY as
+ * `x-cache: stale`, and the Worker asks itself — through the SELF service
+ * binding — to render the page again with REVALIDATE_HEADER set, which skips
+ * the cache read and stores a fresh copy. Nobody waits: the first visitor
+ * after a lull sees a page at most one visit behind, everyone after them sees
+ * the fresh render. A Publish still changes the key (epoch), so editorial
+ * changes are never served stale — they cost one synchronous render, as
+ * before.
+ *
+ * The revalidate header is not a secret, on purpose: an outsider sending it
+ * gets exactly what an unknown query parameter already gives anyone (a
+ * cache-bypassing render), and the copy it stores is the correct current
+ * page. Revalidations are deduplicated per isolate so a burst of stale hits
+ * does not fan out into a burst of renders. Without the SELF binding a stale
+ * hit falls back to today's behaviour (a synchronous render), never to
+ * "stale for a week".
+ */
+const STALE_HARD_TTL_SECONDS = 7 * 24 * 60 * 60;
+const FRESH_UNTIL_HEADER = "x-cache-fresh-until";
+const REVALIDATE_HEADER = "x-ninetone-revalidate";
+const revalidations = new Map<string, Promise<unknown>>();
+
+/** What the VISITOR (and a future CDN in front) is told; the Cache API copy carries its own. */
+function visitorCacheControl(ttl: number | string): string {
+  return `public, max-age=60, s-maxage=${ttl}, stale-while-revalidate=${ttl}`;
+}
+
 function ttlFor(pathname: string): number {
   for (const [re, ttl] of TTL_RULES) {
     if (re.test(pathname)) return ttl;
@@ -351,11 +391,41 @@ export const onRequest = defineMiddleware((context, next) => withServerTiming(as
   // cannot cross hosts either.
   const cacheKey = new Request(edgeCacheKey(url.origin, rawPathname, version, BUILD_ID));
 
-  const hit = await timeServer("cache", () => cacheApi.match(cacheKey));
+  // A revalidation request (see STALE_HARD_TTL_SECONDS) skips the read: its
+  // whole purpose is to render and overwrite the entry.
+  const isRevalidation = request.headers.has(REVALIDATE_HEADER);
+  const self = (env as { SELF?: { fetch(input: Request): Promise<Response> } }).SELF;
+  const cfContext = (locals as { cfContext?: { waitUntil(p: Promise<unknown>): void } }).cfContext;
+  const hit = isRevalidation ? undefined : await timeServer("cache", () => cacheApi.match(cacheKey));
   if (hit) {
-    const res = new Response(hit.body, hit);
-    res.headers.set("x-cache", "hit");
-    return harden(res);
+    // No timestamp (an entry stored before this scheme) counts as fresh —
+    // Number(null) is 0, which would read as "stale since 1970".
+    const stamp = hit.headers.get(FRESH_UNTIL_HEADER);
+    const freshUntil = stamp === null ? Number.NaN : Number(stamp);
+    const stale = Number.isFinite(freshUntil) && Date.now() > freshUntil;
+    const canRevalidate = typeof self?.fetch === "function" && typeof cfContext?.waitUntil === "function";
+    if (!stale || canRevalidate) {
+      const res = new Response(hit.body, hit);
+      res.headers.set("Cache-Control", visitorCacheControl(hit.headers.get("x-cache-ttl") ?? DEFAULT_TTL));
+      res.headers.delete(FRESH_UNTIL_HEADER);
+      res.headers.set("x-cache", stale ? "stale" : "hit");
+      if (stale) {
+        const id = cacheKey.url;
+        if (!revalidations.has(id)) {
+          const job = self!
+            .fetch(new Request(`${url.origin}${rawPathname}`, { headers: { [REVALIDATE_HEADER]: "1" } }))
+            // Consume the body so the inner request runs to completion (and
+            // its own cache write lands) before the job is considered done.
+            .then((r) => r.arrayBuffer())
+            .catch((err) => console.error("[edge-cache] revalidation failed:", err))
+            .finally(() => revalidations.delete(id));
+          revalidations.set(id, job);
+          cfContext!.waitUntil(job);
+        }
+      }
+      return harden(res);
+    }
+    // Stale and no way to revalidate in the background: render now, as before.
   }
 
   // Clone immediately: platform-generated redirects can expose immutable
@@ -451,10 +521,7 @@ export const onRequest = defineMiddleware((context, next) => withServerTiming(as
   // production CDN may serve stale while it revalidates in the background.
   // Set on `res` BEFORE the two responses below are built from it — they
   // copy its headers at construction.
-  res.headers.set(
-    "Cache-Control",
-    `public, max-age=60, s-maxage=${effectiveTtl}, stale-while-revalidate=${effectiveTtl}`,
-  );
+  res.headers.set("Cache-Control", visitorCacheControl(effectiveTtl));
   res.headers.set("x-cache", "miss");
   res.headers.set("x-cache-ttl", String(effectiveTtl));
   // Did the route bundle actually seed this render? Observability only: on
@@ -467,11 +534,15 @@ export const onRequest = defineMiddleware((context, next) => withServerTiming(as
 
   const forVisitor = new Response(body, res);
   const forCache = new Response(body, res);
+  // The Cache API keeps the copy for the HARD TTL; the tier lives on as a
+  // timestamp so a hit can tell fresh from stale (see STALE_HARD_TTL_SECONDS).
+  // The visitor-facing Cache-Control is rebuilt from x-cache-ttl on every hit.
+  forCache.headers.set("Cache-Control", `public, s-maxage=${STALE_HARD_TTL_SECONDS}`);
+  forCache.headers.set(FRESH_UNTIL_HEADER, String(Date.now() + effectiveTtl * 1000));
 
   const store = cacheApi.put(cacheKey, forCache);
   // Never let the cache write block the visitor's response; fall back to
   // inline await if the execution context isn't exposed for some reason.
-  const cfContext = (locals as { cfContext?: { waitUntil(p: Promise<unknown>): void } }).cfContext;
   if (cfContext?.waitUntil) {
     cfContext.waitUntil(store.catch((err) => console.error("[edge-cache] put failed:", err)));
   } else {
