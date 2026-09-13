@@ -36,3 +36,9 @@ test("Consent Mode v2 defaults to denied before any tracker script", () => {
   assert.ok(consentAt > 0 && consentAt < firstTracker, "consent default must precede every tracker");
   assert.match(template.slice(consentAt, consentAt + 400), /analytics_storage: 'denied'/);
 });
+
+test("the consent banner is rendered even while trackers are off (footer reopener must always work)", () => {
+  const template = base.slice(base.indexOf("<!doctype html>"));
+  assert.doesNotMatch(template, /\{tracking && <CookieConsent \/>\}/, "banner must not be gated on tracking");
+  assert.match(template, /<CookieConsent \/>/);
+});

@@ -490,6 +490,12 @@ const tiktokEnabled = tracking && !isPlaceholder(TIKTOK_PIXEL_ID);
     </main>
     <Footer theme={theme} lang={lang} />
     <CommandPalette lang={lang} />
-    {tracking && <CookieConsent />}
+    {/* Always rendered, not gated on `tracking` like the scripts above. The
+        banner loads nothing by itself — every tracker call in it is guarded —
+        so on the preview it simply records a choice for launch. Gating it
+        meant the footer's "Cookie-inställningar" link called an open() that
+        did not exist, and nobody could review the banner before the site went
+        public (2026-09-13). */}
+    <CookieConsent />
   </body>
 </html>
