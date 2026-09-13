@@ -299,6 +299,30 @@ How live data works (see src/middleware.ts + src/lib/cache.ts):
 4. Edge caching is live on `*.workers.dev` too (verified: `x-cache: hit` in ~20ms). Cache keys embed the KV epoch (content invalidation via Publish) AND a per-build id — so every deploy automatically starts a fresh cache generation and old-code pages are never served after a release.
 5. Cold renders read FM through a KV read-through (src/lib/fm-kv.ts, 300s, keyed by the same Publish epoch) and translations as one bundle per route (`trb:` keys), so a recycled isolate does not pay FM or per-string KV in full. `node scripts/perf-cold-probe.mjs` fetches staging routes with a cache-busting query and prints the `Server-Timing` split (`trbundle`, `trnkv`, `fmkv`, `fmnet`) — read-only, no purge, no writes, no model calls.
 
+### The Publish button (for editors and owners)
+
+**URL:** `/admin/publish` on the live site (staging: https://ninetone-site.ninetone.workers.dev/admin/publish).
+**Password:** the `PUBLISH_PASSWORD` Worker secret. Locally it is the same line in `.dev.vars` (gitignored).
+Rotate with `npx wrangler secret put PUBLISH_PASSWORD` from the repo root; takes effect at once, no redeploy.
+
+**What it does:** bumps the cache epoch in KV. That number is part of every cache key, so the next load of
+every page, image URL and FileMaker read-through misses once and re-fetches live. It is the one "everything
+fresh now" control on the site. It does **not** touch FileMaker, run any FM script, or deploy code.
+
+**When to press it:** after editing in FM when you want the change visible immediately rather than at the
+page's own refresh interval. Without it, new FM content still reaches the site on its own (below).
+
+How content reaches the site, slowest to fastest:
+
+| Trigger | Who | Effect |
+|---|---|---|
+| Time | nobody | FM data lands in KV within ~5 min (warm-up cron); each page picks it up at its tier (5 min–24 h), refreshed in the background (stale-while-revalidate, 2026-09-13) |
+| **Publish button** | an editor | everything fresh on the next load; one foreground render per page, once |
+| Code deploy (`npm run deploy:cf`) | a developer | new code, empty cache, every page renders once |
+
+Naming note: the **publication cron** (next section) is unrelated to this button despite the name — it is the
+scanner for the future translate-before-publish flow, currently paused.
+
 Local prod-like run: `npm run preview:cf` (wrangler dev on the built output; secrets from `.dev.vars`, gitignored).
 
 **CI does not deploy the Worker.** `.github/workflows/deploy.yml` builds and publishes the
