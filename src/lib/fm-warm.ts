@@ -9,8 +9,9 @@
  * next visitor then pays FM in full on top of a page-cache miss (perf handoff
  * 2026-09-13). This cron re-runs the same finds the pages run, in refresh
  * mode, every five minutes, so the read-through never expires between
- * visitors. Cost: ~2,600 FM finds/day (nine finds per pass, 288 passes) — under
- * a quarter of the ~11,500 the paused every-minute discovery tick performed.
+ * visitors. Cost: ~3,200 FM finds/day (eleven finds per pass, 288 passes) —
+ * under a third of the ~11,500 the paused every-minute discovery tick
+ * performed.
  *
  * Dependency-light on purpose (`.ts` imports only, nothing from
  * `cloudflare:`): src/worker-entry.ts dispatches to this from `scheduled`,
@@ -60,7 +61,7 @@ export type WarmResult = {
 /**
  * Run the loaders SEQUENTIALLY — one FM find in flight at a time. FM is a
  * production platform doing heavy real-time aggregation (CLAUDE.md); the
- * cron exists to spare it visitor-time load, not to add a burst of nine
+ * cron exists to spare it visitor-time load, not to add a burst of eleven
  * parallel finds every five minutes.
  *
  * Each loader is wrapped so one failure never stops the rest: a single

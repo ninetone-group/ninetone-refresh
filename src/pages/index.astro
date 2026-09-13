@@ -21,6 +21,9 @@ import {
   getArtists,
   getBookingRoster,
   getClients,
+  getPreviousArtists,
+  getPreviousBooking,
+  getPreviousClients,
   getFeaturedArtists,
   getArtistOfTheWeek,
   getArtistBySlug,
@@ -47,18 +50,22 @@ const collectionId =
 // Core homepage content — failures render the error page (never edge-cached)
 // instead of a silently-gutted homepage. Transients are absorbed by lib/cache.ts.
 // The two "in focus" picks share the cached roster fetches — no extra FM calls.
-const [featuredArtists, heroArtist, heroClient, latestNews, allArtists, allClients, allBooking] = await Promise.all([
+const [featuredArtists, heroArtist, heroClient, latestNews, allArtists, allClients, allBooking, prevArtists, prevClients, prevBooking] = await Promise.all([
   getFeaturedArtists(20),
   getArtistOfTheWeek(), // rotates Mondays 00:00 UTC — same artist all week
   getLatestClient(), // newest management addition (FM recordId order)
   getNews().then((p) => p.slice(0, 4)),
-  // The three active rosters, for the live "profiles" figure in the metrics
-  // panel. getArtists/getClients are the same cached queries the two picks
-  // above already ran; getBookingRoster is one more list read, also warmed by
-  // the FM cron. No per-visitor FM cost.
+  // All six rosters — active and former, across Records, Management and
+  // Nation — for the "since the start" figure in the metrics panel.
+  // getArtists/getClients are the same cached queries the two picks above
+  // already ran; the rest are list reads the FM warm-up cron keeps in KV, so
+  // this costs visitors nothing. Decision 2026-09-13: count everyone, ever.
   getArtists(),
   getClients(),
   getBookingRoster(),
+  getPreviousArtists(),
+  getPreviousClients(),
+  getPreviousBooking(),
 ]);
 
 // getArtistOfTheWeek() sources from the API_ARTIST roster layout, which
@@ -217,12 +224,14 @@ const allArtistsCta = await t("All artists");
 const byTheNumbersKicker = await t("By the numbers");
 const metricsHeading = await t("Quietly moving attention — and behaviour.");
 // Two of the four figures are derived (src/lib/metrics.ts) — the roster count
-// used to be a hardcoded "342+" and the years a hardcoded "18+", both already
-// stale by 2026-09-13. The live count is the union of active profiles across
-// Records, Management and Nation, rounded down; the years come from the
+// used to be a hardcoded "342+" (really just the previous Records artists)
+// and the years a hardcoded "18+", both stale by 2026-09-13. The count is now
+// every profile Ninetone has ever had, active or not, across Records,
+// Management and Nation, merged by slug and rounded down (FM 2026-09-13:
+// 33+342 artists, 37+140 clients, 13+17 booking); the years come from the
 // founding year. Campaigns and houses remain editorial copy by decision.
 const metricsSource = [
-  { value: roundedPlus(liveRosterCount(allArtists, allClients, allBooking)), label: "Artists, creators and public profiles", note: "Active across Records, Management and Nation" },
+  { value: roundedPlus(liveRosterCount(allArtists, allClients, allBooking, prevArtists, prevClients, prevBooking)), label: "Artists, creators and public profiles", note: "Since the start" },
   { value: String(yearsSince()), label: "Years inside music, media and digital culture", note: "Since 2006" },
   { value: "120+", label: "Active campaigns, releases and collaborations", note: "Across music, social, brand and sport" },
   { value: "1", label: "House built around studios, people and ideas", note: "Sundsvall / Stockholm" },

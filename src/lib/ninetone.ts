@@ -343,6 +343,38 @@ export function getClients(opts?: FmFindOptions) {
   }, opts);
 }
 
+// Former management clients ("Not Active"). 140 records as of 2026-09-13.
+// Used for the homepage "since the start" figure; a "Tidigare klienter" page
+// could use the same list. Same shape as getClients, only the status differs.
+export function getPreviousClients(opts?: FmFindOptions) {
+  return fmFind<Artist>("API_Management", {
+    query: [
+      {
+        filterActive: "==Not Active",
+        filterTypeCombine: "Management",
+        SLUG: "*",
+        "Head Artist": "*",
+      },
+    ],
+    sort: [{ fieldName: "Head Artist", sortOrder: "ascend" }],
+    limit: 500,
+  }, opts);
+}
+
+// Former Nation booking talent ("Not Active"). 17 records as of 2026-09-13.
+export function getPreviousBooking(opts?: FmFindOptions) {
+  return fmFind<Artist>("API_Booking", {
+    query: [
+      {
+        filterActive: "==Not Active",
+        filterType: "Booking",
+        SLUG: "*",
+      },
+    ],
+    limit: 500,
+  }, opts);
+}
+
 // API_Booking — Ninetone Nation entertainers (artists + förläsare)
 export function getBookingRoster(opts?: FmFindOptions) {
   return fmFind<Artist>("API_Booking", {

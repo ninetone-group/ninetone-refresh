@@ -43,7 +43,7 @@
  * five-minute FM_WARM_CRON (src/lib/fm-warm.ts) re-runs the page getters in
  * refresh mode so the FM KV read-through (src/lib/fm-kv.ts) never expires on
  * a quiet host — without it the first visitor after a lull pays FM in full
- * on top of a page-cache miss. It costs ~2,600 FM finds/day (nine finds per
+ * on top of a page-cache miss. It costs ~3,200 FM finds/day (eleven finds per
  * five-minute pass), against the ~11,500 the paused every-minute discovery
  * tick performed. The publication tick keeps its own minute cron and its own
  * PUBLICATION_TICK switch; FM_WARM ("off") pauses the warm-up the same way,
@@ -189,7 +189,9 @@ export default {
                 { name: "artists", run: () => nine.getArtists(refresh) },
                 { name: "previous-artists", run: () => nine.getPreviousArtists(refresh) },
                 { name: "clients", run: () => nine.getClients(refresh) },
+                { name: "previous-clients", run: () => nine.getPreviousClients(refresh) },
                 { name: "booking-roster", run: () => nine.getBookingRoster(refresh) },
+                { name: "previous-booking", run: () => nine.getPreviousBooking(refresh) },
                 { name: "team", run: () => nine.getTeam(refresh) },
                 { name: "news", run: () => nine.getNews(refresh) },
                 { name: "booking-categories", run: () => nine.getBookingCategories(refresh) },
