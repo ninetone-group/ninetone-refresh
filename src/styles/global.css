@@ -110,6 +110,14 @@ body {
     line-height: 1.05;
     text-wrap: balance;
     font-variation-settings: "opsz" 72;
+    /* Swedish compounds ("Toppmusikproduktion", "Artistvarumärkesbyggande") are
+       routinely wider than a 4-column sticky heading at display size, and FM
+       copy arrives untranslated-length in both locales. Hyphenate with the
+       document language (Base.astro sets <html lang>), and break the word as a
+       last resort so a headline can never run into the neighbouring column
+       (seen on /records "Om", 2026-09-13). */
+    hyphens: auto;
+    overflow-wrap: break-word;
   }
 
   /* Fluid editorial scale — display headlines breathe with the viewport.
