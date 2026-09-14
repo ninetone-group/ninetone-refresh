@@ -16,6 +16,7 @@ import { pageJsonLdOrigin } from "../../../lib/site";
 import { breadcrumbs, person, markdownToPlainText, descriptionWithBioFallback } from "../../../lib/schema";
 import { notFound } from "../../../lib/not-found";
 import { fmText, sharedT } from "../../../lib/t";
+import { withoutPlaceholder } from "../../../lib/fm-placeholder";
 
 // Locale-bound link builder (i18n Phase 2): every internal href on an
 // English page must keep the /en prefix, or one click drops the visitor
@@ -59,9 +60,12 @@ const name = String(client["Head Artist"] ?? "");
 // translated on the `fast` tier — the same tier scripts/translate-warm.mjs
 // used, so these read the already-warmed entries rather than paying again.
 const fm = fmText(Astro.locals, { protect: [name] });
-const tagline = await fm(String(client.clientPresentationTitle ?? ""));
-const bioMarkdown = await fm(String(client.clientPresentationString ?? ""), "markdown");
-const bioHtml = renderBio(bioMarkdown);
+const tagline = await fm(withoutPlaceholder(client.clientPresentationTitle));
+// Placeholder template instead of a bio (src/lib/fm-placeholder.ts): render
+// as if the field were empty.
+const bioSource = withoutPlaceholder(client.clientPresentationString);
+const bioMarkdown = bioSource ? await fm(bioSource, "markdown") : "";
+const bioHtml = bioMarkdown ? renderBio(bioMarkdown) : "";
 
 // seo-phase-1b-brief.md P1 item 7: the same person can appear on both the
 // Management client roster and the Records artist roster, which would
@@ -167,7 +171,7 @@ const jsonLd = [
     role: "client",
     path: `management/clients/${slug}`,
     image: heroImage,
-    description: tagline || markdownToPlainText(String(client.clientPresentationString ?? ""), 200),
+    description: tagline || markdownToPlainText(bioSource, 200),
     socials,
   }),
 ];
@@ -253,7 +257,7 @@ const officialSuffix = await t("official.");
             <StreamingRow socials={socials} />
           </div>
 
-          <div class="mt-12 prose lede max-w-none" set:html={bioHtml}></div>
+          {bioHtml && <div class="mt-12 prose lede max-w-none" set:html={bioHtml}></div>}
 
           {ytLinks.length > 0 && (
             <div class="mt-16 border-t border-ninetone-rule pt-10">

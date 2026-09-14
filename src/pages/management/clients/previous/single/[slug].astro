@@ -15,6 +15,7 @@ import { pageJsonLdOrigin } from "../../../../../lib/site";
 import { breadcrumbs, person, markdownToPlainText, descriptionWithBioFallback } from "../../../../../lib/schema";
 import { notFound } from "../../../../../lib/not-found";
 import { fmText, sharedT } from "../../../../../lib/t";
+import { withoutPlaceholder } from "../../../../../lib/fm-placeholder";
 
 // Former Management client detail (2026-09-14) — the archive counterpart of
 // src/pages/management/clients/[slug].astro, laid out like the previous-
@@ -59,9 +60,12 @@ const name = String(client["Head Artist"] ?? "");
 // translated on the `fast` tier — the same tier scripts/translate-warm.mjs
 // used, so these read the already-warmed entries rather than paying again.
 const fm = fmText(Astro.locals, { protect: [name] });
-const tagline = await fm(String(client.clientPresentationTitle ?? ""));
-const bioMarkdown = await fm(String(client.clientPresentationString ?? ""), "markdown");
-const bioHtml = renderBio(bioMarkdown);
+const tagline = await fm(withoutPlaceholder(client.clientPresentationTitle));
+// Placeholder template instead of a bio (src/lib/fm-placeholder.ts): render
+// as if the field were empty — no bio block, meta description falls back.
+const bioSource = withoutPlaceholder(client.clientPresentationString);
+const bioMarkdown = bioSource ? await fm(bioSource, "markdown") : "";
+const bioHtml = bioMarkdown ? renderBio(bioMarkdown) : "";
 
 // Role-disambiguated <title> (seo-phase-1b P1 item 7) — the same person can
 // exist on the Records roster too. Base's own " | Ninetone Group" suffix is
@@ -147,7 +151,7 @@ const jsonLd = [
     role: "client",
     path: `management/clients/previous/single/${slug}`,
     image: heroImage,
-    description: tagline || markdownToPlainText(String(client.clientPresentationString ?? ""), 200),
+    description: tagline || markdownToPlainText(bioSource, 200),
     socials,
   }),
 ];

@@ -11,6 +11,7 @@ import { PREVIOUS_CLIENTS_PAGE_SIZE } from "../../../../lib/routes";
 import { notFound } from "../../../../lib/not-found";
 import { sectionAccent } from "../../../../lib/sections";
 import { fmText, sharedT } from "../../../../lib/t";
+import { withoutPlaceholder } from "../../../../lib/fm-placeholder";
 // "Tidigare klienter" (2026-09-14) — mirrors src/pages/records/artists/
 // previous/[...page].astro for the Management division. Former clients are
 // filterActive = "Not Active" on API_Management; the list is warmed by the
@@ -61,14 +62,16 @@ if (!page) {
 // Pre-translate this page's blurbs. The cards read clientPresentationString
 // with the artistPresentationShort fallback, exactly like management/
 // clients.astro. Done after `page` is resolved so both paths get translated
-// cards.
+// cards. 64 of these records hold the FM placeholder template instead of a
+// bio (src/lib/fm-placeholder.ts) — blanked BEFORE fm() so the card shows
+// no blurb and no translation call is spent on it.
 page = {
   ...page,
   data: await Promise.all(
     page.data.map(async (c) => ({
       ...c,
       clientPresentationString: await fm(
-        String(c.clientPresentationString ?? c.artistPresentationShort ?? ""),
+        withoutPlaceholder(c.clientPresentationString) || withoutPlaceholder(c.artistPresentationShort),
       ),
     })),
   ),

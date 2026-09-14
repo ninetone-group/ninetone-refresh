@@ -9,6 +9,7 @@ import type { Artist } from "../../lib/ninetone";
 import { getClients, getWebPostSection } from "../../lib/ninetone";
 import { displayTitle } from "../../lib/display-title";
 import { fmText, sharedT } from "../../lib/t";
+import { withoutPlaceholder } from "../../lib/fm-placeholder";
 // FM CONTENT (decision 8): the card blurbs are FM prose, warmed by
 // scripts/translate-warm.mjs and previously rendered raw — so these listings
 // stayed Swedish on /en/. Resolved here in frontmatter because fm() is async
@@ -34,10 +35,11 @@ const clientsRaw = await getClients();
 const clients = await Promise.all(
   clientsRaw.map(async (c): Promise<Artist> => ({
     ...c,
+    // Placeholder template (src/lib/fm-placeholder.ts) counts as empty.
     clientPresentationString: await fm(
-      String(c.clientPresentationString ?? c.artistPresentationShort ?? ""),
+      withoutPlaceholder(c.clientPresentationString) || withoutPlaceholder(c.artistPresentationShort),
     ),
-    artistPresentationShort: await fm(String(c.artistPresentationShort ?? "")),
+    artistPresentationShort: await fm(withoutPlaceholder(c.artistPresentationShort)),
   })),
 );
 const introBody = String((clients[0] as Record<string, unknown> | undefined)?.readMoreClients ?? "");

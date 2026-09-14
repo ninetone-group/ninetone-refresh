@@ -1057,8 +1057,8 @@ test("the previous-clients list sits on the roster tier (21600) and its detail p
     ["/management/clients/previous", "21600"],
     ["/management/clients/previous/3", "21600"],
     ["/en/management/clients/previous", "21600"],
-    ["/management/clients/previous/single/bangarden_customs", "3600"],
-    ["/management/clients/bangarden_customs", "3600"],
+    ["/management/clients/previous/single/raketforskaren", "3600"],
+    ["/management/clients/raketforskaren", "3600"],
     ["/management/clients", "21600"],
   ];
   for (const [path, ttl] of cases) {

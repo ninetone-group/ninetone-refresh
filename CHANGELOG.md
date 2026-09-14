@@ -18,6 +18,11 @@ All notable changes to the Ninetone Group site. Versions follow `MAJOR.MINOR.PAT
   URLs (`bangarden_customs`, `luddze_`) turned out to be old slugs of clients that are
   Active today under `bangarden` / `luddze`; a two-entry alias in the legacy redirect
   table sends them there.
+- **Placeholder bios are hidden.** 64 former-client records hold FileMaker's
+  "-----Placeholder Text-----" template instead of a bio. Client cards and detail pages
+  now treat that template as an empty field (no blurb, no bio, description falls back)
+  and never send it for translation. Real prose replaces it automatically once entered
+  in FM.
 - Sitemap and `llms.txt` list the new pages; middleware caches the list at the roster tier
   (6 h) and the detail pages at 1 h; footer links to the archive; the translation warm
   script covers previous-client prose.
