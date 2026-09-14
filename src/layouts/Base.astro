@@ -518,21 +518,34 @@ const tiktokEnabled = tracking && !isPlaceholder(TIKTOK_PIXEL_ID);
       let navigated = false;
       const reduced = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-      const LOWER = "abcdefghijklmnopqrstuvwxyzåäö";
-      const UPPER = "ABCDEFGHIJKLMNOPQRSTUVWXYZÅÄÖ";
+      // Noise glyphs come from the SAME WIDTH CLASS as the letter they replace
+      // (narrow / regular / wide, per case), so lines keep their length and
+      // the layout does not reflow while the sweep runs (2026-09-14 follow-up:
+      // random widths made the header grow and the text judder).
+      const POOLS = ["iljtfr", "abcdeghknopqsuvxyzåäö", "mw", "IJL", "ABCDEFGHKNOPQRSTUVXYZÅÄÖ", "MW"];
       const DIGIT = "0123456789";
+      const poolFor = (c: string): string => {
+        if (/[iljtfr]/.test(c)) return POOLS[0];
+        if (/[mw]/.test(c)) return POOLS[2];
+        if (/[IJL]/.test(c)) return POOLS[3];
+        if (/[MW]/.test(c)) return POOLS[5];
+        if (/[a-zåäö]/.test(c)) return POOLS[1];
+        if (/[A-ZÅÄÖ]/.test(c)) return POOLS[4];
+        if (/\d/.test(c)) return DIGIT;
+        return "";
+      };
       const glyphFor = (c: string): string => {
-        if (/\s/.test(c)) return c;
-        if (/\d/.test(c)) return DIGIT[(Math.random() * DIGIT.length) | 0];
-        if (!/[a-zåäö]/i.test(c)) return c;
-        const pool = c === c.toUpperCase() ? UPPER : LOWER;
-        return pool[(Math.random() * pool.length) | 0];
+        const pool = poolFor(c);
+        return pool ? pool[(Math.random() * pool.length) | 0] : c;
       };
       const scrambled = (text: string, from: number): string => {
         let out = text.slice(0, from);
         for (let i = from; i < text.length; i++) out += glyphFor(text[i]);
         return out;
       };
+      // Ease-out on the resolve front: the first letters settle quickly, the
+      // tail of each line lands with a soft finish instead of a hard stop.
+      const ease = (p: number) => 1 - Math.pow(1 - p, 3);
 
       document.addEventListener("astro:before-preparation", (e) => {
         const src = (e as unknown as { sourceElement?: Element | null }).sourceElement;
@@ -566,7 +579,9 @@ const tiktokEnabled = tracking && !isPlaceholder(TIKTOK_PIXEL_ID);
             const text = node.nodeValue ?? "";
             if (!text.trim()) return NodeFilter.FILTER_REJECT;
             const el = node.parentElement;
-            if (!el || el.closest("script,style,textarea,input,select,noscript,svg,#cookie-consent,#cmdk,[data-no-scramble]")) return NodeFilter.FILTER_REJECT;
+            // The sticky header stays legible chrome (its short labels wrapped
+            // and grew the bar while scrambled); the sweep is for the page.
+            if (!el || el.closest("script,style,textarea,input,select,noscript,svg,#site-header,#cookie-consent,#cmdk,[data-no-scramble]")) return NodeFilter.FILTER_REJECT;
             const r = el.getBoundingClientRect();
             return r.bottom < 0 || r.top > vh || r.width === 0 ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT;
           },
@@ -591,15 +606,27 @@ const tiktokEnabled = tracking && !isPlaceholder(TIKTOK_PIXEL_ID);
         if (!jobs.length) return;
         const run = jobs;
         jobs = [];
-        const DURATION = 520;
+        const DURATION = 600;
+        const RESHUFFLE_MS = 48; // noise changes ~20×/s, the front still moves every frame
         const start = performance.now();
+        let lastShuffle = -1;
+        const resolvedAt = new Map<Job, number>();
         const frame = (now: number) => {
           let live = false;
+          const reshuffle = now - lastShuffle >= RESHUFFLE_MS;
+          if (reshuffle) lastShuffle = now;
           for (const j of run) {
             const p = (now - start - j.delay) / DURATION;
             if (p >= 1) { if (j.node.data !== j.final) j.node.data = j.final; continue; }
             live = true;
-            j.node.data = scrambled(j.final, p <= 0 ? 0 : Math.floor(p * j.final.length));
+            const from = p <= 0 ? 0 : Math.floor(ease(p) * j.final.length);
+            const prev = resolvedAt.get(j) ?? -1;
+            // Redraw only when the front advanced or it is time to reshuffle the
+            // noise — every other frame leaves the text node untouched.
+            if (from !== prev || reshuffle) {
+              j.node.data = scrambled(j.final, from);
+              resolvedAt.set(j, from);
+            }
           }
           if (live) requestAnimationFrame(frame);
         };
