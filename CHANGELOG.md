@@ -3,6 +3,14 @@
 All notable changes to the Ninetone Group site. Versions follow `MAJOR.MINOR.PATCH.MICRO`
 (the number in `VERSION`).
 
+## [0.2.5.1] - 2026-09-14
+
+### Fixed
+- **Smoother language decode.** Noise letters now come from the same width class as the
+  letter they replace, so lines keep their length and nothing reflows; the noise reshuffles
+  about 20 times a second instead of every frame and the resolve front eases out. The sticky
+  header is excluded from the sweep (its short labels wrapped and grew the bar).
+
 ## [0.2.5.0] - 2026-09-14
 
 ### Added
