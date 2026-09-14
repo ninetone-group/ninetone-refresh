@@ -131,6 +131,36 @@ export function trailingSlashRedirectTarget(pathname: string): string | null {
  *
  * Pure and exported so it can be unit-tested without a build.
  */
+/**
+ * Every legacy deep-link shape of the old ninetone.com → today's path, or
+ * null. Grown from legacyPreviousArtistTarget after probing the old site on
+ * 2026-09-14 for what Google Search Console will still hold at launch:
+ *
+ *   /previous-artists/{slug}, /previous-artists/single/{slug}
+ *       → /records/artists/previous/single/{slug}   (below)
+ *   /blog/{slug}                    → /news/{slug}   (the old blog IS the news;
+ *                                     bare /blog is astro.config's static rule)
+ *   /ninetone-nation/booking/{slug} → /ninetone-nation/{slug}   (old talent
+ *                                     pages hung under the listing; the
+ *                                     listing itself is a real route and is
+ *                                     never rewritten; new category pages live
+ *                                     under /ninetone-nation/kategori/)
+ *
+ * The old current-artist shape /records/artists/{slug} for artists who have
+ * since moved to "Not Active" is NOT a pattern — it needs the roster — and is
+ * handled by the detail route itself (src/lib/roster-redirect.ts).
+ * public/_redirects carries the same rules for the asset layer; keep in sync.
+ */
+export function legacyRedirectTarget(pathname: string): string | null {
+  const previous = legacyPreviousArtistTarget(pathname);
+  if (previous) return previous;
+  const blog = /^\/blog\/([^/]+)\/?$/.exec(pathname);
+  if (blog) return `/news/${blog[1]}`;
+  const booking = /^\/ninetone-nation\/booking\/([^/]+)\/?$/.exec(pathname);
+  if (booking) return `/ninetone-nation/${booking[1]}`;
+  return null;
+}
+
 export function legacyPreviousArtistTarget(pathname: string): string | null {
   const m = /^\/previous-artists\/(?:single\/)?([^/]+)\/?$/.exec(pathname);
   if (!m) return null;

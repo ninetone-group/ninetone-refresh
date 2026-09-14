@@ -1031,3 +1031,18 @@ test("swr: an entry without a freshness stamp (stored before this scheme) counts
   assert.equal(response.headers.get("x-cache"), "hit");
   assert.equal(self.calls.length, 0);
 });
+
+test("legacy /blog/:slug and /ninetone-nation/booking/:slug deep links 301 to today's paths, locale kept (2026-09-14)", async () => {
+  const runtime = createRuntime();
+  const never = async () => { throw new Error("a legacy redirect must never render"); };
+  const blog = await run(new Request("https://www.ninetone.com/blog/ninetone_signar_avdelning?utm=x"), never, runtime);
+  assert.equal(blog.status, 301);
+  assert.equal(blog.headers.get("location"), "/news/ninetone_signar_avdelning?utm=x");
+  const booking = await run(new Request("https://www.ninetone.com/en/ninetone-nation/booking/joakim_lundell"), never, runtime);
+  assert.equal(booking.status, 301);
+  assert.equal(booking.headers.get("location"), "/en/ninetone-nation/joakim_lundell");
+  // The booking LISTING is a real page and renders.
+  let rendered = 0;
+  await run(new Request("https://www.ninetone.com/ninetone-nation/booking"), async () => { rendered++; return new Response("list"); }, runtime);
+  assert.equal(rendered, 1);
+});

@@ -36,7 +36,7 @@ import { getCfEnv } from "./lib/cf";
 import {
   collapseSlashes,
   edgeCacheKey,
-  legacyPreviousArtistTarget,
+  legacyRedirectTarget,
   shouldBypassCache,
   trailingSlashRedirectTarget,
 } from "./lib/cache-policy";
@@ -227,7 +227,7 @@ export const onRequest = defineMiddleware((context, next) => withServerTiming(as
   // Swedish visitor following the same link got a working 301, and the 404
   // was then cached for an hour under the /en/ key.
   const legacyLocale = HAS_RUNTIME ? stripLocale(pathname) : null;
-  const legacyPrevious = legacyLocale ? legacyPreviousArtistTarget(legacyLocale.path) : null;
+  const legacyPrevious = legacyLocale ? legacyRedirectTarget(legacyLocale.path) : null;
   if (legacyPrevious && legacyLocale) {
     const location = `${localizedPath(legacyPrevious, legacyLocale.lang)}${url.search}`;
     return harden(new Response(null, { status: 301, headers: { Location: location } }));

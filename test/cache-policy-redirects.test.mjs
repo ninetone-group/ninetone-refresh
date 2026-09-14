@@ -15,8 +15,29 @@ import test from "node:test";
 import {
   canonicalSearch,
   legacyPreviousArtistTarget,
+  legacyRedirectTarget,
   trailingSlashRedirectTarget,
 } from "../src/lib/cache-policy.ts";
+
+// --- legacyRedirectTarget (all old deep-link shapes, 2026-09-14) -----------
+
+test("legacyRedirectTarget: old blog and Nation booking deep links reach today's paths", () => {
+  assert.equal(legacyRedirectTarget("/blog/ninetone_signar_avdelning"), "/news/ninetone_signar_avdelning");
+  assert.equal(legacyRedirectTarget("/blog/ninetone_signar_avdelning/"), "/news/ninetone_signar_avdelning");
+  assert.equal(legacyRedirectTarget("/ninetone-nation/booking/joakim_lundell"), "/ninetone-nation/joakim_lundell");
+  // Still owns the previous-artist shapes.
+  assert.equal(legacyRedirectTarget("/previous-artists/kuokka"), "/records/artists/previous/single/kuokka");
+});
+
+test("legacyRedirectTarget: real routes and unrelated paths are never rewritten", () => {
+  assert.equal(legacyRedirectTarget("/ninetone-nation/booking"), null, "the booking LISTING is a real page");
+  assert.equal(legacyRedirectTarget("/ninetone-nation/booking/"), null);
+  assert.equal(legacyRedirectTarget("/ninetone-nation/kategori/artist"), null, "new category pages");
+  assert.equal(legacyRedirectTarget("/blog"), null, "astro.config owns the bare /blog");
+  assert.equal(legacyRedirectTarget("/blog/a/b"), null);
+  assert.equal(legacyRedirectTarget("/news/x"), null);
+  assert.equal(legacyRedirectTarget("/records/artists/doug_seegers"), null, "roster-driven, not a pattern");
+});
 
 // --- legacyPreviousArtistTarget -------------------------------------------
 

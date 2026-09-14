@@ -35,3 +35,7 @@
 # 3. The shape the live site serves today (verified: /previous-artists/kuokka
 #    is 200 there, /previous-artists/single/kuokka 404s).
 /previous-artists/:slug         /records/artists/previous/single/:slug   301
+# Old blog article URLs — the blog IS the news section (bare /blog is astro.config's rule).
+/blog/:slug                     /news/:slug                              301
+# Old Nation talent pages hung under the booking listing; the listing itself is a real route.
+/ninetone-nation/booking/:slug  /ninetone-nation/:slug                   301
