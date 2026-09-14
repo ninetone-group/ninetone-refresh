@@ -6,6 +6,7 @@
  */
 
 import { fmFind, type FmFindOptions, fmFindWithPortals } from "./filemaker";
+import { hasProfileImage } from "./profile-image";
 import { isActiveBookingArtist } from "./booking-status";
 
 export type Artist = Record<string, unknown> & {
@@ -359,11 +360,16 @@ export function getClients(opts?: FmFindOptions) {
   }, opts);
 }
 
-// Former management clients ("Not Active"). 140 records as of 2026-09-13.
-// Used for the homepage "since the start" figure; a "Tidigare klienter" page
-// could use the same list. Same shape as getClients, only the status differs.
-export function getPreviousClients(opts?: FmFindOptions) {
-  return fmFind<Artist>("API_Management", {
+// Former management clients ("Not Active"). 140 records as of 2026-09-13,
+// of which 20 are test-like rows with no usable picture (an "[MBS] Invalid
+// image reference" error in both picture fields) — those are dropped here,
+// after the fetch, so the KV/in-memory caches stay query-shaped and every
+// consumer (the "Tidigare klienter" pages, sitemap, llms.txt, the cross-roster
+// redirect and the homepage "since the start" figure) sees the same 120.
+// See src/lib/profile-image.ts. Same shape as getClients, only the status
+// differs.
+export async function getPreviousClients(opts?: FmFindOptions) {
+  const rows = await fmFind<Artist>("API_Management", {
     query: [
       {
         filterActive: "==Not Active",
@@ -375,6 +381,7 @@ export function getPreviousClients(opts?: FmFindOptions) {
     sort: [{ fieldName: "Head Artist", sortOrder: "ascend" }],
     limit: 500,
   }, opts);
+  return rows.filter(hasProfileImage);
 }
 
 // Former Nation booking talent ("Not Active"). 17 records as of 2026-09-13.

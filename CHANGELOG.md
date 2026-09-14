@@ -3,6 +3,16 @@
 All notable changes to the Ninetone Group site. Versions follow `MAJOR.MINOR.PATCH.MICRO`
 (the number in `VERSION`).
 
+## [0.2.4.1] - 2026-09-14
+
+### Fixed
+- **Former clients without a picture are no longer listed.** 20 of the 140 "Not Active"
+  Management records hold a FileMaker plugin error ("[MBS] Invalid image reference") in
+  both picture fields and rendered as empty cards; they read as test entries. The list
+  now drops any row without a URL-shaped picture, so the archive shows 120 clients and
+  the sitemap, llms.txt, redirects and homepage "since the start" figure agree. A row
+  returns by itself once FM holds a real image.
+
 ## [0.2.4.0] - 2026-09-14
 
 ### Fixed
