@@ -3,6 +3,12 @@
 All notable changes to the Ninetone Group site. Versions follow `MAJOR.MINOR.PATCH.MICRO`
 (the number in `VERSION`).
 
+## [0.2.5.2] - 2026-09-14
+
+### Fixed
+- The header no longer settles from full to shrunk height after a language switch made
+  while scrolled: the shrink state is applied before the swapped-in page's first paint.
+
 ## [0.2.5.1] - 2026-09-14
 
 ### Fixed

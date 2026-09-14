@@ -339,13 +339,17 @@ const otherLangCode = lang === "sv" ? "en" : "sv";
   }
 
   let shrunk = false;
-  const updateShrink = () => {
+  // `snap`: apply the state without the padding/height transition. Used right
+  // after a client-side swap, where the router has already laid the new
+  // header out at full height, so a plain class flip would animate 77→61 px.
+  const updateShrink = (snap = false) => {
     const inner = document.getElementById("site-header-inner");
     const logo = document.getElementById("site-header-logo");
     if (!inner || !logo) return;
     const next = window.scrollY > 24;
     if (next === shrunk) return;
     shrunk = next;
+    if (snap) { inner.style.transition = "none"; logo.style.transition = "none"; }
     if (shrunk) {
       inner.classList.replace("py-4", "py-2");
       logo.classList.replace("h-10", "h-8");
@@ -353,12 +357,29 @@ const otherLangCode = lang === "sv" ? "en" : "sv";
       inner.classList.replace("py-2", "py-4");
       logo.classList.replace("h-8", "h-10");
     }
+    if (snap) {
+      void inner.offsetHeight; // commit the snapped state before transitions return
+      requestAnimationFrame(() => { inner.style.transition = ""; logo.style.transition = ""; });
+    }
   };
-  window.addEventListener("scroll", updateShrink, { passive: true });
+  window.addEventListener("scroll", () => updateShrink(), { passive: true }); // never pass the Event as `snap`
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape") return;
     const navPanel = document.getElementById("mobile-nav-panel");
     if (navPanel && !navPanel.classList.contains("hidden")) closeMobileNav();
+  });
+  // Scrolled below the shrink threshold, the swapped-in header arrives at
+  // full height and would only shrink at astro:page-load — a visible
+  // 77→61 px settle on every language switch (measured 2026-09-14).
+  // after-swap runs before the new DOM's first paint, so it lands shrunk.
+  document.addEventListener("astro:after-swap", () => {
+    // Microtask: the router has just scrolled to the top, and the language
+    // switch's scroll restore (Base.astro) runs in a later listener of this
+    // same event. A microtask lands after both, still before first paint.
+    queueMicrotask(() => {
+      shrunk = false;
+      updateShrink(true);
+    });
   });
   document.addEventListener("astro:page-load", initHeader);
 </script>
