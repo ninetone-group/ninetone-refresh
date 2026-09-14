@@ -5,6 +5,10 @@ All notable changes to the Ninetone Group site. Versions follow `MAJOR.MINOR.PAT
 
 ## [0.2.4.0] - 2026-09-14
 
+### Fixed
+- The Swedish previous-artists list carried an English `<title>` ("Previous Artists");
+  both paginated archive lists now build `<title>` from the translated heading.
+
 ### Added
 - **Tidigare klienter (previous clients).** New Management archive mirroring the
   previous-artists pages: paginated list at `/management/clients/previous` (30 per page,

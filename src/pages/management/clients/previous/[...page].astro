@@ -82,10 +82,6 @@ const active = await getClients();
 const introBody = String((active[0] as Record<string, unknown> | undefined)?.readMoreClients ?? "");
 const webPosts = await getWebPostSection("Ninetone Management");
 
-// Paginated pages 2+ need a distinct <title> from page 1 (and from each
-// other) or they read as duplicates to a crawler.
-const pageTitle = paginatedTitle("Previous Clients", page.currentPage, (Astro.locals as { lang?: "sv" | "en" }).lang ?? "sv");
-
 // Page 1 gets a compact A–Ö index linking every previous-client detail page,
 // so none sit more than three clicks from home. Pages 2+ must not repeat it.
 // getPreviousClients() is cached per call, so this is not a second FM read.
@@ -106,6 +102,11 @@ function tagsOf(c: Record<string, unknown>): string[] {
 // data-i18n-* attributes (bridge pattern, note 4).
 const t = sharedT(Astro.locals);
 const previousClientsTitle = await t("Previous Clients");
+// Paginated pages 2+ need a distinct <title> from page 1 (and from each
+// other) or they read as duplicates to a crawler. Built from the translated
+// heading, so the Swedish page's <title> is Swedish too (verified live
+// 2026-09-14: the raw English source string had reached <title> on /sv).
+const pageTitle = paginatedTitle(previousClientsTitle, page.currentPage, (Astro.locals as { lang?: "sv" | "en" }).lang ?? "sv");
 // Whole sentences, never fragments (2026-09-13 lesson on the previous-artists
 // page). The numbers ride on placeholders swapped in AFTER translation.
 const fill = (s: string, values: Record<string, string | number>) =>

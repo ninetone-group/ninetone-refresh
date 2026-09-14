@@ -77,7 +77,6 @@ const webPosts = await getWebPostSection("Ninetone Records");
 // seo-phase-1b-brief.md P1 item 7: paginated pages 2+ need a distinct
 // <title> from page 1 (and from each other) or they read as duplicates to a
 // crawler. Page 1 (currentPage === 1) is unchanged.
-const pageTitle = paginatedTitle("Previous Artists", page.currentPage, (Astro.locals as { lang?: "sv" | "en" }).lang ?? "sv");
 
 // seo-phase-1b-brief.md P1 item 8: page 1 gets a compact A–Ö index linking
 // every previous-artist detail page, so none sit more than three clicks
@@ -96,6 +95,9 @@ const accent = sectionAccent.records;
 // data-i18n-* attributes (bridge pattern, note 4).
 const t = sharedT(Astro.locals);
 const previousArtistsTitle = await t("Previous Artists");
+// <title> from the translated heading (2026-09-14) — the raw English source
+// string had been reaching the Swedish page's <title>.
+const pageTitle = paginatedTitle(previousArtistsTitle, page.currentPage, (Astro.locals as { lang?: "sv" | "en" }).lang ?? "sv");
 // Whole sentences, never fragments: "in total." on its own came back from the
 // model as a request for context (2026-09-13) and stitched into the page.
 // The numbers ride on placeholders swapped in AFTER translation.
