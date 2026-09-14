@@ -34,6 +34,15 @@ interface Env {
   FM_PASS: string;
   /** Overridable for tests; production uses the UPSTREAM_TIMEOUT_MS default. */
   UPSTREAM_TIMEOUT_MS?: string;
+  /**
+   * The site's CACHE_STATE KV namespace (read-only use here): its
+   * `cache-version` key is the Publish epoch the site embeds as `?v=`. Only
+   * that value is honoured as a cache buster — security audit 2026-09-14.
+   */
+  CACHE_STATE?: { get(key: string, opts?: { cacheTtl?: number }): Promise<string | null> };
+  /** Cloudflare rate-limit binding, applied per hashed client IP on cache
+   *  misses only (a miss is an FM lookup + upstream fetch). */
+  IMAGE_RATE_LIMITER?: { limit(opts: { key: string }): Promise<{ success: boolean }> };
 }
 
 const ALLOWED_ORIGINS = new Set([
@@ -434,13 +443,84 @@ function edgeCache(): EdgeCache | undefined {
 }
 
 /**
- * Canonical cache key: origin + pathname + only the `v` query param. Every
- * other query string is dropped on purpose — the site adds `?v=<epoch>` as
- * the deliberate buster, and nothing else may mint a key (and an FM read).
+ * Canonical cache key: origin + pathname + `v` ONLY when it is the current
+ * Publish epoch. Every other query string is dropped on purpose — the site
+ * adds `?v=<epoch>` as the deliberate buster, and nothing else may mint a
+ * key (and an FM read). Security audit 2026-09-14: an arbitrary `v` was an
+ * unlimited cache-busting input, so it is now validated against the epoch
+ * the site itself reads (CACHE_STATE `cache-version`); any other value
+ * collapses onto the bare key. No binding (tests, misconfiguration) means
+ * no `v` is ever honoured — fail closed on the buster, not on the image.
  */
-function cacheKey(url: URL): Request {
+function cacheKey(url: URL, epoch: string | null): Request {
   const v = url.searchParams.get("v");
-  return new Request(url.origin + url.pathname + (v ? `?v=${encodeURIComponent(v)}` : ""));
+  const keep = v !== null && epoch !== null && v === epoch;
+  return new Request(url.origin + url.pathname + (keep ? `?v=${encodeURIComponent(v)}` : ""));
+}
+
+/** Per-isolate memo of the Publish epoch so a burst of image requests costs
+ *  one KV read a minute, not one per image. */
+let epochMemo: { value: string | null; until: number } = { value: null, until: 0 };
+async function currentEpoch(env: Env): Promise<string | null> {
+  if (!env.CACHE_STATE) return null;
+  if (Date.now() < epochMemo.until) return epochMemo.value;
+  let value: string | null = null;
+  try {
+    value = await env.CACHE_STATE.get("cache-version", { cacheTtl: 60 });
+  } catch (err) {
+    console.warn("[fm-proxy] epoch read failed:", err instanceof Error ? err.message : err);
+  }
+  epochMemo = { value, until: Date.now() + 60_000 };
+  return value;
+}
+
+/**
+ * Exact route arity (security audit 2026-09-14). `/artist/x/big/anything`
+ * used to resolve like `/artist/x/big` while minting its own cache entry and
+ * FM lookup; every image route now has one canonical shape and everything
+ * else is a 404 before the cache or FM is touched.
+ *
+ *   /healthz                              1 segment
+ *   /{kind}/{slug}/{variant}              3 segments   (kind in ROUTES)
+ *   /release/{slug}/{index}               3 segments
+ *   /release/{slug}/by-album/{album}      4 segments
+ */
+function hasCanonicalArity(parts: string[]): boolean {
+  const [kind, , variant] = parts;
+  if (kind === "healthz") return parts.length === 1;
+  if (kind === "release") return variant === "by-album" ? parts.length === 4 : parts.length === 3;
+  if (kind !== undefined && kind in ROUTES) return parts.length === 3;
+  return false;
+}
+
+async function sha256Hex(value: string): Promise<string> {
+  const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(bytes), (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/**
+ * Per-client budget for cache MISSES — the requests that cost an
+ * authenticated FM find plus an upstream image fetch. Hits are free and
+ * unmetered. Same fail-closed shape as the site's Publish/contact limiters:
+ * over budget → 429, limiter unavailable → 503. A missing binding (tests, a
+ * config regression) is logged once and passes, so images never depend on
+ * a binding the config forgot — the audit's concern was unlimited FM load,
+ * and the binding is part of wrangler.toml.
+ */
+let warnedNoLimiter = false;
+async function missAllowed(req: Request, env: Env): Promise<"ok" | "limited" | "unavailable"> {
+  const limiter = env.IMAGE_RATE_LIMITER;
+  if (!limiter) {
+    if (!warnedNoLimiter) { warnedNoLimiter = true; console.warn("[fm-proxy] IMAGE_RATE_LIMITER binding missing — misses are unmetered"); }
+    return "ok";
+  }
+  const key = await sha256Hex(req.headers.get("cf-connecting-ip") ?? "unknown");
+  try {
+    return (await limiter.limit({ key })).success ? "ok" : "limited";
+  } catch (err) {
+    console.error("[fm-proxy] rate limiter failed:", err instanceof Error ? err.message : err);
+    return "unavailable";
+  }
 }
 
 /** Only the image routes are cacheable; /healthz and unknown paths never are. */
@@ -472,13 +552,30 @@ export default {
     const url = new URL(req.url);
     const parts = url.pathname.split("/").filter(Boolean);
 
+    // Wrong shape → 404 before the cache, the limiter or FM see it. The
+    // pathname must also be the canonical spelling of its segments: a
+    // trailing slash or a doubled slash would otherwise mint its own cache
+    // entry for the same image.
+    if (!hasCanonicalArity(parts) || url.pathname !== `/${parts.join("/")}`) {
+      return new Response("Not found", { status: 404, headers: corsHeaders(origin) });
+    }
+
     // Under Node (tests) there is no Cache API — behaviour is then exactly the
     // pre-cache path: every request resolves through FM.
     const cache = isImageRoute(parts[0]) ? edgeCache() : undefined;
-    const key = cache ? cacheKey(url) : null;
+    const key = cache ? cacheKey(url, await currentEpoch(env)) : null;
     if (cache && key) {
       const hit = await cache.match(key);
       if (hit) return fromCache(hit, origin);
+    }
+
+    // A miss costs FM: meter it per client.
+    const verdict = await missAllowed(req, env);
+    if (verdict === "limited") {
+      return new Response("Too many requests", { status: 429, headers: { "Retry-After": "60", ...corsHeaders(origin) } });
+    }
+    if (verdict === "unavailable") {
+      return new Response("Image proxy protection unavailable", { status: 503, headers: { "Retry-After": "30", ...corsHeaders(origin) } });
     }
 
     const res = await resolveImage(parts, env, origin);

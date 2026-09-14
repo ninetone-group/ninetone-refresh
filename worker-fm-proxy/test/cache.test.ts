@@ -6,11 +6,14 @@ import worker from "../src/index.ts";
 // installs a Map-backed fake and removes it in `finally` — security.test.ts
 // keeps covering the "no Cache API → resolve through FM every time" path.
 
+// CACHE_STATE mirrors the site's KV: the current Publish epoch is "7", so
+// `?v=7` is the one buster the proxy honours (security audit 2026-09-14).
 const env = {
   FM_HOST: "files.ninetone.com",
   FM_DB: "Ninetone Group AB",
   FM_USER: "user",
   FM_PASS: "pass",
+  CACHE_STATE: { get: async (key: string) => (key === "cache-version" ? "7" : null) },
 };
 
 const IMAGE_BYTES = [1, 2, 3];
@@ -163,7 +166,7 @@ test("never stores errors: 404 (no record) and 502 (upstream failure) leave the 
   }
 });
 
-test("the v param is part of the key: /artist/safe/big and ?v=8 are distinct entries", async () => {
+test("only the current epoch is a buster: ?v=8 (not the epoch) collapses onto the bare key, ?v=7 does not", async () => {
   const originalFetch = globalThis.fetch;
   const { impl, calls } = fmFetch();
   globalThis.fetch = impl;
@@ -171,17 +174,98 @@ test("the v param is part of the key: /artist/safe/big and ?v=8 are distinct ent
   const restore = installCaches(cache);
   const { ctx, settle } = fakeCtx();
   try {
-    const a = await worker.fetch(request("/artist/safe/big"), env, ctx);
-    assert.equal(a.headers.get("x-fm-status"), "miss");
+    const bare = await worker.fetch(request("/artist/safe/big"), env, ctx);
+    assert.equal(bare.status, 200);
     await settle();
-    const b = await worker.fetch(request("/artist/safe/big?v=8"), env, ctx);
-    assert.equal(b.headers.get("x-fm-status"), "miss", "a new epoch must bust the cache");
+    const wrongEpoch = await worker.fetch(request("/artist/safe/big?v=8"), env, ctx);
+    assert.equal(wrongEpoch.headers.get("x-fm-status"), "hit", "a foreign v must not mint a key or an FM read");
+    const junk = await worker.fetch(request("/artist/safe/big?v=../../etc"), env, ctx);
+    assert.equal(junk.headers.get("x-fm-status"), "hit");
+    const epoch = await worker.fetch(request("/artist/safe/big?v=7"), env, ctx);
+    assert.equal(epoch.headers.get("x-fm-status"), "miss", "the real epoch is still a deliberate buster");
     await settle();
-    assert.deepEqual(puts, ["https://proxy.example/artist/safe/big", "https://proxy.example/artist/safe/big?v=8"]);
-    assert.equal(calls.filter((u) => u.includes("/Streaming_SSL/")).length, 2);
+    assert.deepEqual(puts, ["https://proxy.example/artist/safe/big", "https://proxy.example/artist/safe/big?v=7"]);
+    assert.equal(calls.filter((u) => u.includes("/_find")).length, 2);
   } finally {
-    globalThis.fetch = originalFetch;
     restore();
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("without a CACHE_STATE binding no v is ever honoured", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = fmFetch().impl;
+  const { cache, puts } = fakeCache();
+  const restore = installCaches(cache);
+  const { ctx, settle } = fakeCtx();
+  try {
+    const { CACHE_STATE: _omit, ...noKv } = env;
+    await worker.fetch(request("/artist/safe/big?v=7"), noKv, ctx);
+    await settle();
+    assert.deepEqual(puts, ["https://proxy.example/artist/safe/big"]);
+  } finally {
+    restore();
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("surplus path segments are a 404 before the cache or FM: /artist/safe/big/extra never resolves", async () => {
+  const originalFetch = globalThis.fetch;
+  const { impl, calls } = fmFetch();
+  globalThis.fetch = impl;
+  const { cache, puts } = fakeCache();
+  const restore = installCaches(cache);
+  const { ctx, settle } = fakeCtx();
+  try {
+    for (const path of ["/artist/safe/big/extra?v=7", "/artist/safe/big/", "/release/safe/by-album/Debut/more", "/release/safe/0/x", "/healthz/x", "/artist/safe", "/artist//safe/big", "//artist/safe/big"]) {
+      const res = await worker.fetch(request(path), env, ctx);
+      assert.equal(res.status, 404, path);
+    }
+    await settle();
+    assert.deepEqual(puts, []);
+    assert.equal(calls.length, 0, "no FM session, find or stream for a malformed path");
+  } finally {
+    restore();
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("cache misses are metered per client IP: over budget → 429, limiter failure → 503, hits are never metered", async () => {
+  const originalFetch = globalThis.fetch;
+  const { impl, calls } = fmFetch();
+  globalThis.fetch = impl;
+  const { cache } = fakeCache();
+  const restore = installCaches(cache);
+  const { ctx, settle } = fakeCtx();
+  try {
+    const seen: string[] = [];
+    let allow = true;
+    const limited = { ...env, IMAGE_RATE_LIMITER: { limit: async ({ key }: { key: string }) => { seen.push(key); return { success: allow }; } } };
+    const withIp = (path: string) => new Request(`https://proxy.example${path}`, { headers: { "cf-connecting-ip": "203.0.113.9" } });
+
+    const miss = await worker.fetch(withIp("/artist/safe/big"), limited, ctx);
+    assert.equal(miss.status, 200);
+    await settle();
+    assert.equal(seen.length, 1);
+    assert.notEqual(seen[0], "203.0.113.9", "the IP is hashed, never used raw as a key");
+
+    const hit = await worker.fetch(withIp("/artist/safe/big"), limited, ctx);
+    assert.equal(hit.headers.get("x-fm-status"), "hit");
+    assert.equal(seen.length, 1, "a hit does not touch the limiter");
+
+    allow = false;
+    const over = await worker.fetch(withIp("/artist/other/big"), limited, ctx);
+    assert.equal(over.status, 429);
+    assert.equal(over.headers.get("Retry-After"), "60");
+    const findsBefore = calls.filter((u) => u.includes("/_find")).length;
+    assert.equal(findsBefore, 1, "a limited miss never reaches FM");
+
+    const broken = { ...env, IMAGE_RATE_LIMITER: { limit: async () => { throw new Error("binding down"); } } };
+    const unavailable = await worker.fetch(withIp("/artist/third/big"), broken, ctx);
+    assert.equal(unavailable.status, 503, "fail closed when the limiter itself fails");
+  } finally {
+    restore();
+    globalThis.fetch = originalFetch;
   }
 });
 

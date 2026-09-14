@@ -3,6 +3,26 @@
 All notable changes to the Ninetone Group site. Versions follow `MAJOR.MINOR.PATCH.MICRO`
 (the number in `VERSION`).
 
+## [0.2.4.2] - 2026-09-14
+
+Security audit follow-up (`docs/security-audit-2026-09-14.md`).
+
+### Fixed
+- **Withdrawn pages no longer outlive their cache entry.** A stale-while-revalidate
+  re-render that comes back 404, as a redirect, or as an uncacheable response now
+  evicts the stored copy at once instead of leaving it servable for the seven-day hard
+  TTL. Transient failures still keep the last good copy.
+- **Image proxy cache-busting closed.** `?v=` is honoured only when it equals the
+  current Publish epoch (read from the site's `CACHE_STATE` KV); any other value
+  collapses onto the canonical key. Every route has one exact shape; surplus path
+  segments are a 404 before the cache or FileMaker is touched. Cache misses, the requests
+  that cost an FM find, are rate-limited per client IP (120/min, hashed IP), 429 over
+  budget and 503 if the limiter fails; hits are unmetered.
+- **Old Gmail-account Workers decommissioned.** `ninetone-site` and
+  `ninetone-fm-image-proxy` on the personal account (their FM credentials and cron
+  triggers with them) are deleted; only the Ninetone-account deployments remain.
+- Wrangler 4.131.2 in both trees and `npm audit fix`: root tree reports 0 advisories.
+
 ## [0.2.4.1] - 2026-09-14
 
 ### Fixed

@@ -10,3 +10,17 @@ compatibility_date = "2025-09-01"
 [vars]
 FM_HOST = "files.ninetone.com"
 FM_DB = "Ninetone Group AB"
+
+# Security audit 2026-09-14.
+# CACHE_STATE is the SITE's KV namespace (wrangler.jsonc, same id): the proxy
+# only READS its `cache-version` key, to honour `?v=` solely when it equals the
+# current Publish epoch. IMAGE_RATE_LIMITER meters cache misses per client IP
+# (a miss = one authenticated FM find + one upstream fetch); hits are free.
+[[kv_namespaces]]
+binding = "CACHE_STATE"
+id = "1772c36b9dc24447b58e0625859dc056"
+
+[[ratelimits]]
+name = "IMAGE_RATE_LIMITER"
+namespace_id = "2001"
+simple = { limit = 120, period = 60 }

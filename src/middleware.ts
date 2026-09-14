@@ -418,7 +418,20 @@ export const onRequest = defineMiddleware((context, next) => withServerTiming(as
             .fetch(new Request(`${url.origin}${rawPathname}`, { headers: { [REVALIDATE_HEADER]: "1" } }))
             // Consume the body so the inner request runs to completion (and
             // its own cache write lands) before the job is considered done.
-            .then((r) => r.arrayBuffer())
+            .then(async (r) => {
+              await r.arrayBuffer();
+              // Security audit 2026-09-14 (P2): the inner render is the
+              // authority. A 404/410, a redirect, or a response the inner
+              // middleware refused to cache (x-cache: bypass — private,
+              // no-store, set-cookie) means the stored 200 must go NOW, not
+              // at the seven-day hard expiry — otherwise a profile withdrawn
+              // in FM stays publicly retrievable for a week. Transient
+              // failures never reach here: a thrown fetch lands in catch()
+              // below and the stale copy is kept (stale-on-error).
+              if (r.status !== 200 || r.headers.get("x-cache") === "bypass") {
+                await cacheApi.delete(cacheKey);
+              }
+            })
             .catch((err) => console.error("[edge-cache] revalidation failed:", err))
             .finally(() => revalidations.delete(id));
           revalidations.set(id, job);
@@ -473,6 +486,13 @@ export const onRequest = defineMiddleware((context, next) => withServerTiming(as
     /(?:^|,)\s*(?:private|no-store|no-cache)\b/i.test(responseCacheControl)
   ) {
     res.headers.set("x-cache", "bypass");
+    // A stale copy that could not be revalidated in the background was
+    // re-rendered here and turned out withdrawn: drop it, same rule as the
+    // SELF path above (security audit 2026-09-14). `hit` is only set on
+    // that fall-through; a plain miss has nothing to evict.
+    if (hit) {
+      try { await cacheApi.delete(cacheKey); } catch (err) { console.error("[edge-cache] evict failed:", err); }
+    }
     return harden(res);
   }
 
