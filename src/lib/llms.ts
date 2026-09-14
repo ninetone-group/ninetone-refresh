@@ -133,6 +133,15 @@ export function clientLine(c: Artist, origin: string): string | null {
   return entityLine(name, `/management/clients/${slug}`, origin, factualDetail([category, tagline || undefined]));
 }
 
+/** Former Management client — real route is /management/clients/previous/single/{slug}. */
+export function previousClientLine(c: Artist, origin: string): string | null {
+  const slug = String(c.SLUG ?? "");
+  const name = String(c["Head Artist"] ?? "");
+  if (!slug || !name) return null;
+  const category = splitGenre(c.tags ?? c.genre);
+  return entityLine(name, `/management/clients/previous/single/${slug}`, origin, factualDetail([category, "previous client"]));
+}
+
 export function teamLine(m: TeamMember, origin: string): string | null {
   const slug = String(m.SLUG ?? "");
   const name = String(m.userNameCalc ?? "");
@@ -199,6 +208,9 @@ export interface LlmsTxtData {
   artists: Artist[];
   previousArtists: Artist[];
   clients: Artist[];
+  /** Former Management clients — optional so older callers/tests without the
+   *  list still build; rendered under "## Ninetone Management". */
+  previousClients?: Artist[];
   team: TeamMember[];
   news: WebPost[];
   /** Pre-expanded ("- [Name](url): detail") lines — see bookingTalentLines(). */
@@ -234,6 +246,7 @@ export const LLMS_CHROME_STRINGS: readonly string[] = [
   "## Ninetone Management",
   "Clients",
   "managed artists and creators",
+  "Previous clients",
   "Contact Management",
   "## Ninetone Nation",
   "Booking",
@@ -293,6 +306,7 @@ export const LLMS_CHROME_SV: LlmsChromeTable = {
   "demo submissions": "demoinskick",
   Clients: "Klienter",
   "managed artists and creators": "artister och kreatörer under management",
+  "Previous clients": "Tidigare klienter",
   "Contact Management": "Kontakta Management",
   Booking: "Bokning",
   "bookable talent by category": "bokningsbara talanger per kategori",
@@ -349,6 +363,9 @@ export function buildLlmsTxt(siteOrigin: string, data: LlmsTxtData, opts?: Build
     .map((a) => previousArtistLine(a, origin))
     .filter((l): l is string => !!l);
   const clientLines = data.clients.map((c) => clientLine(c, origin)).filter((l): l is string => !!l);
+  const previousClientLines = (data.previousClients ?? [])
+    .map((c) => previousClientLine(c, origin))
+    .filter((l): l is string => !!l);
   const teamLines = data.team.map((m) => teamLine(m, origin)).filter((l): l is string => !!l);
   const newsLines = data.news.map((p) => newsLine(p, origin)).filter((l): l is string => !!l);
 
@@ -396,6 +413,10 @@ export function buildLlmsTxt(siteOrigin: string, data: LlmsTxtData, opts?: Build
         chromeText("managed artists and creators"),
       ),
       ...clientLines,
+      // Bare /management/clients/previous — paginate() emits page 1
+      // unsuffixed, same as the previous-artists list above.
+      entityLine(chromeText("Previous clients"), "/management/clients/previous", origin),
+      ...previousClientLines,
       entityLine(chromeText("Contact Management"), "/management/contact-management", origin),
     ].join("\n"),
   );

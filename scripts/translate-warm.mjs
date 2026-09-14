@@ -294,10 +294,14 @@ register(`data:text/javascript,${encodeURIComponent(PLAIN_NODE_TS_LOADER_SOURCE)
 const { translationKey, TRANSLATION_KEY_VERSION, callWithGuard, buildProtectedTerms } = await import(
   "../src/lib/translate.ts"
 );
+// Placeholder-template guard (2026-09-14) — same dynamic-import path as the
+// helpers above, for the same plain-Node reason.
+const { withoutPlaceholder } = await import("../src/lib/fm-placeholder.ts");
 const {
   getArtists,
   getPreviousArtists,
   getClients,
+  getPreviousClients,
   getTeam,
   getBookingCategories,
   getBookingRoster,
@@ -544,10 +548,11 @@ function voiceFieldJobs({ artists, clients, bookingCategories, webPostsBySection
 
 async function collectEntityJobs() {
   console.log("Fetching FM entities...");
-  const [artists, previousArtists, clients, team, bookingCategories, bookingRoster, news] = await Promise.all([
+  const [artists, previousArtists, clients, previousClients, team, bookingCategories, bookingRoster, news] = await Promise.all([
     getArtists(),
     getPreviousArtists(),
     getClients(),
+    getPreviousClients(),
     getTeam(),
     getBookingCategories(),
     getBookingRoster(),
@@ -590,6 +595,16 @@ async function collectEntityJobs() {
     // clients.astro falls back to artistPresentationShort when the client
     // variant is empty, so warm whichever the page would actually render.
     jobs.push(job(c.artistPresentationShort, "fast", "plain"));
+  }
+  // Previous clients (management/clients/previous/*) render the same client
+  // fields, so warm them the same way.
+  // The FM placeholder template (src/lib/fm-placeholder.ts) is never
+  // rendered, so never warmed either.
+  for (const c of previousClients) {
+    jobs.push(job(withoutPlaceholder(c.clientPresentationTitle), "fast", "title"));
+    jobs.push(job(withoutPlaceholder(c.clientPresentationString), "fast", "markdown"));
+    jobs.push(job(withoutPlaceholder(c.clientPresentationShort), "fast", "plain"));
+    jobs.push(job(withoutPlaceholder(c.artistPresentationShort), "fast", "plain"));
   }
   // Booking talent bios (bookingPresentationTitle/String) — bookingCategories'
   // portal rows carry the resolved tagline/blurb; the detail page

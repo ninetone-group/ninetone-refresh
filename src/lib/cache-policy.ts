@@ -151,9 +151,26 @@ export function trailingSlashRedirectTarget(pathname: string): string | null {
  * handled by the detail route itself (src/lib/roster-redirect.ts).
  * public/_redirects carries the same rules for the asset layer; keep in sync.
  */
+/**
+ * Old client slugs that FileMaker no longer uses (GSC audit 2026-09-14). The
+ * cross-roster 301 in src/pages/management/clients/[slug].astro covers a
+ * client who moved to "Not Active" under the SAME slug; these two are
+ * different — the record was re-slugged (bangarden_customs → bangarden,
+ * luddze_ → luddze) and is Active today, so nothing data-driven can find
+ * them. Hand-maintained on purpose: two entries, verified against FM.
+ */
+export const LEGACY_CLIENT_SLUG_ALIASES: Readonly<Record<string, string>> = {
+  bangarden_customs: "bangarden",
+  luddze_: "luddze",
+};
+
 export function legacyRedirectTarget(pathname: string): string | null {
   const previous = legacyPreviousArtistTarget(pathname);
   if (previous) return previous;
+  const client = /^\/management\/clients\/([^/]+)\/?$/.exec(pathname);
+  if (client && Object.hasOwn(LEGACY_CLIENT_SLUG_ALIASES, client[1])) {
+    return `/management/clients/${LEGACY_CLIENT_SLUG_ALIASES[client[1]]}`;
+  }
   const blog = /^\/blog\/([^/]+)\/?$/.exec(pathname);
   if (blog) return `/news/${blog[1]}`;
   const booking = /^\/ninetone-nation\/booking\/([^/]+)\/?$/.exec(pathname);

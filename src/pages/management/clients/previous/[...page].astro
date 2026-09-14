@@ -5,16 +5,20 @@ import ArtistsTabs from "../../../../components/ArtistsTabs.astro";
 import Pagination from "../../../../components/Pagination.astro";
 import SectionIntro from "../../../../components/SectionIntro.astro";
 import RosterIndex from "../../../../components/RosterIndex.astro";
-import { getArtists, getPreviousArtists, getWebPostSection } from "../../../../lib/ninetone";
+import { getClients, getPreviousClients, getWebPostSection } from "../../../../lib/ninetone";
 import { displayTitle, paginatedTitle } from "../../../../lib/display-title";
-import { PREVIOUS_ARTISTS_PAGE_SIZE } from "../../../../lib/routes";
+import { PREVIOUS_CLIENTS_PAGE_SIZE } from "../../../../lib/routes";
 import { notFound } from "../../../../lib/not-found";
 import { sectionAccent } from "../../../../lib/sections";
 import { fmText, sharedT } from "../../../../lib/t";
-// FM CONTENT (decision 8): the card blurbs are FM prose, warmed by
-// scripts/translate-warm.mjs and previously rendered raw — so these listings
-// stayed Swedish on /en/. Resolved here in frontmatter because fm() is async
-// and the cards render inside .map().
+import { withoutPlaceholder } from "../../../../lib/fm-placeholder";
+// "Tidigare klienter" (2026-09-14) — mirrors src/pages/records/artists/
+// previous/[...page].astro for the Management division. Former clients are
+// filterActive = "Not Active" on API_Management; the list is warmed by the
+// 5-minute FM cron, so this page costs no FM find of its own.
+//
+// FM CONTENT (decision 8): the card blurbs are FM prose. Resolved here in
+// frontmatter because fm() is async and the cards render inside .map().
 const fm = fmText(Astro.locals);
 
 
@@ -22,15 +26,15 @@ const fm = fmText(Astro.locals);
 // same page count from the same number. Re-exported because only exports are
 // hoisted to module scope in Astro, and the hoisted getStaticPaths below plus
 // the request-time path both need it.
-export const PAGE_SIZE = PREVIOUS_ARTISTS_PAGE_SIZE;
+export const PAGE_SIZE = PREVIOUS_CLIENTS_PAGE_SIZE;
 
 export async function getStaticPaths({ paginate }: { paginate: any }) {
-  const artists = await getPreviousArtists();
-  return paginate(artists, { pageSize: PAGE_SIZE });
+  const clients = await getPreviousClients();
+  return paginate(clients, { pageSize: PAGE_SIZE });
 }
 
 type PageShape = {
-  data: Awaited<ReturnType<typeof getPreviousArtists>>;
+  data: Awaited<ReturnType<typeof getPreviousClients>>;
   currentPage: number;
   lastPage: number;
   total: number;
@@ -44,7 +48,7 @@ if (!page) {
   const raw = String((Astro.params as { page?: string }).page ?? "");
   if (raw !== "" && !/^\d+$/.test(raw)) return notFound(() => Astro.rewrite("/404"));
   const currentPage = raw === "" ? 1 : parseInt(raw, 10);
-  const all = await getPreviousArtists();
+  const all = await getPreviousClients();
   const lastPage = Math.max(1, Math.ceil(all.length / PAGE_SIZE));
   if (currentPage < 1 || currentPage > lastPage) return notFound(() => Astro.rewrite("/404"));
   page = {
@@ -55,75 +59,79 @@ if (!page) {
   };
 }
 
-// Pre-translate this page's blurbs: fm() is async and the cards render
-// inside a template .map(), which cannot await. Done after `page` is
-// resolved (it arrives either as a prop from getStaticPaths or is built
-// above), so both paths get translated cards.
+// Pre-translate this page's blurbs. The cards read clientPresentationString
+// with the artistPresentationShort fallback, exactly like management/
+// clients.astro. Done after `page` is resolved so both paths get translated
+// cards. 64 of these records hold the FM placeholder template instead of a
+// bio (src/lib/fm-placeholder.ts) — blanked BEFORE fm() so the card shows
+// no blurb and no translation call is spent on it.
 page = {
   ...page,
   data: await Promise.all(
-    page.data.map(async (a) => ({
-      ...a,
-      artistPresentationShort: await fm(String(a.artistPresentationShort ?? "")),
+    page.data.map(async (c) => ({
+      ...c,
+      clientPresentationString: await fm(
+        withoutPlaceholder(c.clientPresentationString) || withoutPlaceholder(c.artistPresentationShort),
+      ),
     })),
   ),
 };
 
-// Reuse Records section intro. Both fetches cached, so effectively free.
-const active = await getArtists();
-const introBody = String((active[0] as Record<string, unknown> | undefined)?.readMore ?? "");
-const webPosts = await getWebPostSection("Ninetone Records");
+// Reuse the Management section intro. Both fetches cached, so effectively free.
+const active = await getClients();
+const introBody = String((active[0] as Record<string, unknown> | undefined)?.readMoreClients ?? "");
+const webPosts = await getWebPostSection("Ninetone Management");
 
-// seo-phase-1b-brief.md P1 item 7: paginated pages 2+ need a distinct
-// <title> from page 1 (and from each other) or they read as duplicates to a
-// crawler. Page 1 (currentPage === 1) is unchanged.
+// Page 1 gets a compact A–Ö index linking every previous-client detail page,
+// so none sit more than three clicks from home. Pages 2+ must not repeat it.
+// getPreviousClients() is cached per call, so this is not a second FM read.
+// Handed to RosterIndex UNTRANSLATED on purpose — it is a different array
+// from the page slice above, and the component translates its own inputs
+// (see test/roster-index-contract.test.mjs).
+const allPrevious = page.currentPage === 1 ? await getPreviousClients() : [];
+const accent = sectionAccent.management;
 
-// seo-phase-1b-brief.md P1 item 8: page 1 gets a compact A–Ö index linking
-// every previous-artist detail page, so none sit more than three clicks
-// from home (they'd otherwise be buried up to 12 pagination pages deep).
-// Pages 2+ must not repeat it. `all` is already fetched above for the
-// request-time page-slice path, but getPreviousArtists() is cached
-// (src/lib/filemaker.ts per-call cache) so re-reading it here on the
-// static-build path (where `page` arrives pre-sliced via getStaticPaths
-// props and `all` was never bound) costs no extra FM read either way.
-const allPrevious = page.currentPage === 1 ? await getPreviousArtists() : [];
-const accent = sectionAccent.records;
+function tagsOf(c: Record<string, unknown>): string[] {
+  const raw = (c.tags ?? c.genre ?? "") as string;
+  return String(raw).split(/\r|\n|,/).map((s) => s.trim()).filter(Boolean);
+}
 
 // t() bound to this request (docs/i18n-phase-2-brief.md section 4). The
 // toggle button's <script> below can't call t() (client-side, no
 // Astro.locals) — its two label states are threaded through as
 // data-i18n-* attributes (bridge pattern, note 4).
 const t = sharedT(Astro.locals);
-const previousArtistsTitle = await t("Previous Artists");
-// <title> from the translated heading (2026-09-14) — the raw English source
-// string had been reaching the Swedish page's <title>.
-const pageTitle = paginatedTitle(previousArtistsTitle, page.currentPage, (Astro.locals as { lang?: "sv" | "en" }).lang ?? "sv");
-// Whole sentences, never fragments: "in total." on its own came back from the
-// model as a request for context (2026-09-13) and stitched into the page.
-// The numbers ride on placeholders swapped in AFTER translation.
+const previousClientsTitle = await t("Previous Clients");
+// Paginated pages 2+ need a distinct <title> from page 1 (and from each
+// other) or they read as duplicates to a crawler. Built from the translated
+// heading, so the Swedish page's <title> is Swedish too (verified live
+// 2026-09-14: the raw English source string had reached <title> on /sv).
+const pageTitle = paginatedTitle(previousClientsTitle, page.currentPage, (Astro.locals as { lang?: "sv" | "en" }).lang ?? "sv");
+// Whole sentences, never fragments (2026-09-13 lesson on the previous-artists
+// page). The numbers ride on placeholders swapped in AFTER translation.
 const fill = (s: string, values: Record<string, string | number>) =>
   s.replace(/\{(\w+)\}/g, (m, k) => (k in values ? String(values[k]) : m));
 const showingRangeLabel = fill(await t("Showing {from}–{to} of {total}"), {
-  from: (page.currentPage - 1) * 30 + 1,
-  to: Math.min(page.currentPage * 30, page.total),
+  from: (page.currentPage - 1) * PAGE_SIZE + 1,
+  to: Math.min(page.currentPage * PAGE_SIZE, page.total),
   total: page.total,
 });
 const fullIndexKicker = await t("Full index, A–Ö");
-const everyPreviousArtistLabel = fill(await t("Every previous artist, alphabetically — {count} in total."), {
+const everyPreviousClientLabel = fill(await t("Every previous client, alphabetically — {count} in total."), {
   count: allPrevious.length,
 });
 const showFullIndexLabel = await t("Show full index");
 const hideFullIndexLabel = await t("Hide full index");
 ---
 
-<Base title={pageTitle} theme="records">
+<Base title={pageTitle} theme="management">
   <SectionIntro
-    title={previousArtistsTitle}
+    title={previousClientsTitle}
     tagline={displayTitle(webPosts?.title)}
     readMore={introBody}
-    theme="records"
-    logo="/images/recordsLogo.png"
-    logoAlt="Ninetone Records"
+    theme="management"
+    logo="/images/managementLogo.png"
+    logoAlt="Ninetone Management"
   />
   <section class="bg-ninetone-paper pt-2">
     <div class="mx-auto max-w-7xl px-6">
@@ -140,7 +148,7 @@ const hideFullIndexLabel = await t("Hide full index");
           <div>
             <span class={`kicker ${accent.text}`}>{fullIndexKicker}</span>
             <p class="mt-2 max-w-2xl text-sm text-ninetone-ink/65">
-              {everyPreviousArtistLabel}
+              {everyPreviousClientLabel}
             </p>
           </div>
           <button
@@ -156,17 +164,17 @@ const hideFullIndexLabel = await t("Hide full index");
           </button>
         </div>
 
-        {/* `inert` keeps the 341 collapsed links out of the tab order — without
-            it a keyboard user tabs through 341 targets they cannot see. It is
-            removed on expand. Crawlers ignore both `inert` and max-height, so
-            every link stays in the static HTML and the crawl-depth goal holds. */}
+        {/* `inert` keeps the collapsed links out of the tab order — without it
+            a keyboard user tabs through every hidden target. Removed on
+            expand. Crawlers ignore both `inert` and max-height, so every link
+            stays in the static HTML and the crawl-depth goal holds. */}
         <div
           data-previous-index-panel
           inert
           class="max-h-0 overflow-hidden opacity-0 transition-[max-height,opacity] duration-300 ease-out"
         >
           <div class="pt-8">
-            <RosterIndex artists={allPrevious} hrefBase="/records/artists/previous/single" visible />
+            <RosterIndex artists={allPrevious} hrefBase="/management/clients/previous/single" visible />
           </div>
         </div>
       </div>
@@ -208,24 +216,26 @@ const hideFullIndexLabel = await t("Hide full index");
 
   <section class="bg-ninetone-paper pb-20">
     <div class="mx-auto max-w-7xl px-6">
-      <ArtistsTabs active="previous" />
+      <ArtistsTabs active="previous" division="management" />
 
       <div class="grid grid-cols-2 gap-x-6 gap-y-12 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-        {page.data.map((a) => (
+        {page.data.map((c) => (
           <ArtistCard
-            theme="records"
-            href={`/records/artists/previous/single/${String(a.SLUG ?? "")}`}
-            name={String(a["Head Artist"] ?? "")}
-            slug={String(a.SLUG ?? "")}
-            blurb={String(a.artistPresentationShort ?? "")}
-            image={a.artistPicture_small ? String(a.artistPicture_small) : undefined}
+            theme="management"
+            href={`/management/clients/previous/single/${String(c.SLUG ?? "")}`}
+            name={String(c["Head Artist"] ?? "")}
+            slug={String(c.SLUG ?? "")}
+            blurb={String(c.clientPresentationString ?? "")}
+            image={c.artistPicture_small ? String(c.artistPicture_small) : undefined}
             imageWidth={500}
             imageHeight={500}
-            tags={a.genre ? String(a.genre).split(/\r|\n/).filter(Boolean) : []}
+            tags={tagsOf(c)}
             socials={{
-              spotify: a.url_spotify ? String(a.url_spotify) : undefined,
-              apple: a.url_applemusic ? String(a.url_applemusic) : undefined,
-              instagram: a.url_instagram ? String(a.url_instagram) : undefined,
+              instagram: c.url_instagram ? String(c.url_instagram) : undefined,
+              tiktok: c.url_tiktok_artist ? String(c.url_tiktok_artist) : undefined,
+              twitter: c.url_twitter ? String(c.url_twitter) : undefined,
+              facebook: c.url_facebook ? String(c.url_facebook) : undefined,
+              youtube: c.url_youtube_link ? String(c.url_youtube_link) : undefined,
             }}
           />
         ))}
@@ -234,7 +244,7 @@ const hideFullIndexLabel = await t("Hide full index");
       <Pagination
         currentPage={page.currentPage}
         lastPage={page.lastPage}
-        baseUrl="/records/artists/previous"
+        baseUrl="/management/clients/previous"
       />
     </div>
   </section>

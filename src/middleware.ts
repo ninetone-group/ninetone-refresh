@@ -92,6 +92,8 @@ const TTL_RULES: Array<[RegExp, number]> = [
   [/^\/records\/artists\/previous\/single\//, 3600], // previous-artist detail
   [/^\/records\/artists\/previous(\/|$)/, 21600], // previous roster (paginated)
   [/^\/records\/artists\//, 3600], // artist detail
+  [/^\/management\/clients\/previous\/single\//, 3600], // previous-client detail
+  [/^\/management\/clients\/previous(\/|$)/, 21600], // previous clients (paginated)
   [/^\/management\/clients\//, 3600], // client detail
   [/^\/ninetone-nation\//, 3600], // nation detail + contact
 ];

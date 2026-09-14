@@ -1,6 +1,7 @@
 ---
 import { urlFor } from "../lib/url";
 import { sharedT } from "../lib/t";
+import { sectionAccent } from "../lib/sections";
 
 // Locale-bound link builder (i18n Phase 2): every internal href on an
 // English page must keep the /en prefix, or one click drops the visitor
@@ -10,18 +11,29 @@ const url = urlFor(Astro.locals);
 
 interface Props {
   active: "current" | "previous";
+  /** Which roster pair the tabs switch between. Records (artists) by default;
+   *  Management renders the clients / previous-clients pair with the navy
+   *  accent (2026-09-14). */
+  division?: "records" | "management";
 }
 
-const { active } = Astro.props as Props;
+const { active, division = "records" } = Astro.props as Props;
 
 const t = sharedT(Astro.locals);
-const tabsSource: { key: "current" | "previous"; label: string; href: string }[] = [
-  { key: "current", label: "Artists", href: "/records/artists" },
-  { key: "previous", label: "Previous Artists", href: "/records/artists/previous" },
-];
+const tabsByDivision: Record<"records" | "management", { key: "current" | "previous"; label: string; href: string }[]> = {
+  records: [
+    { key: "current", label: "Artists", href: "/records/artists" },
+    { key: "previous", label: "Previous Artists", href: "/records/artists/previous" },
+  ],
+  management: [
+    { key: "current", label: "Clients", href: "/management/clients" },
+    { key: "previous", label: "Previous Clients", href: "/management/clients/previous" },
+  ],
+};
 const tabs = await Promise.all(
-  tabsSource.map(async (tb) => ({ ...tb, label: await t(tb.label) })),
+  tabsByDivision[division].map(async (tb) => ({ ...tb, label: await t(tb.label) })),
 );
+const activeBorder = sectionAccent[division].border;
 
 ---
 
@@ -33,7 +45,7 @@ const tabs = await Promise.all(
         href={url(tab.href)}
         class={
           isActive
-            ? "relative -mb-3 border-b-2 border-ninetone-red pb-3 text-sm font-semibold text-ninetone-ink"
+            ? `relative -mb-3 border-b-2 ${activeBorder} pb-3 text-sm font-semibold text-ninetone-ink`
             : "relative -mb-3 border-b-2 border-transparent pb-3 text-sm font-medium text-ninetone-ink/55 hover:text-ninetone-ink"
         }
         aria-current={isActive ? "page" : undefined}

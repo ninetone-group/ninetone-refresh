@@ -29,7 +29,7 @@
  * src/lib/i18n.ts's `localizedPath` — never reimplemented here.
  */
 
-import { PREVIOUS_ARTISTS_PAGE_SIZE, type StaticRoute } from "./routes.ts";
+import { PREVIOUS_ARTISTS_PAGE_SIZE, PREVIOUS_CLIENTS_PAGE_SIZE, type StaticRoute } from "./routes.ts";
 import { slugifyTag } from "./booking-slug.ts";
 import { hasEnglishVersion, localizedPath } from "./i18n.ts";
 import type { Lang } from "./translate.ts";
@@ -112,17 +112,41 @@ export function detailPageEntries(
  * getPreviousArtists() call the sitemap endpoint already makes — no new FM
  * read, and the page count self-maintains as the roster grows or shrinks.
  */
+/**
+ * Pages 2..N of a paginated list whose page 1 is the bare `basePath` (already
+ * listed as a static route). Nothing for page 1, nothing when the list fits
+ * on one page.
+ */
+export function paginationEntries(
+  origin: string,
+  basePath: string,
+  total: number,
+  pageSize: number,
+  changefreq: SitemapEntry["changefreq"] = "monthly",
+): SitemapEntry[] {
+  const base = basePath.replace(/\/$/, "");
+  const lastPage = Math.max(1, Math.ceil(total / pageSize));
+  const out: SitemapEntry[] = [];
+  for (let n = 2; n <= lastPage; n++) {
+    out.push({ loc: joinPath(origin, `${base}/${n}`), changefreq });
+  }
+  return out;
+}
+
 export function previousArtistsPaginationEntries(
   origin: string,
   totalPreviousArtists: number,
   pageSize: number = PREVIOUS_ARTISTS_PAGE_SIZE,
 ): SitemapEntry[] {
-  const lastPage = Math.max(1, Math.ceil(totalPreviousArtists / pageSize));
-  const out: SitemapEntry[] = [];
-  for (let n = 2; n <= lastPage; n++) {
-    out.push({ loc: joinPath(origin, `/records/artists/previous/${n}`), changefreq: "monthly" });
-  }
-  return out;
+  return paginationEntries(origin, "/records/artists/previous", totalPreviousArtists, pageSize);
+}
+
+export function previousClientsPaginationEntries(
+  origin: string,
+  totalPreviousClients: number,
+  pageSize: number = PREVIOUS_CLIENTS_PAGE_SIZE,
+): SitemapEntry[] {
+  return paginationEntries(origin, "/management/clients/previous", totalPreviousClients, pageSize);
 }
 
 /**
@@ -185,6 +209,9 @@ export function buildSitemapEntries(
     artists: SlugSource[];
     previousArtists: SlugSource[];
     clients: SlugSource[];
+    /** Former Management clients (getPreviousClients) — optional so older
+     *  callers/tests without the list still build. */
+    previousClients?: SlugSource[];
     team: SlugSource[];
     bookingTalent: SlugSource[];
     bookingCategories: BookingCategoryLike[];
@@ -200,6 +227,8 @@ export function buildSitemapEntries(
     ...previousArtistsPaginationEntries(origin, input.previousArtists.length),
     ...detailPageEntries(origin, input.previousArtists, "/records/artists/previous/single", "yearly"),
     ...detailPageEntries(origin, input.clients, "/management/clients", "weekly"),
+    ...previousClientsPaginationEntries(origin, (input.previousClients ?? []).length),
+    ...detailPageEntries(origin, input.previousClients ?? [], "/management/clients/previous/single", "yearly"),
     ...detailPageEntries(origin, input.team, "/team", "monthly"),
     ...detailPageEntries(origin, input.bookingTalent, "/ninetone-nation", "weekly"),
     ...bookingCategoryEntries(origin, input.bookingCategories),
