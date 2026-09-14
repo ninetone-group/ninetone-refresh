@@ -426,6 +426,15 @@ const ALL_LANGUAGE_LABEL_NAMES_ALT = ALL_LANGUAGE_LABEL_NAMES.join("|");
 const HERE_PREAMBLE_RE = /^here.{0,20}?translat/i;
 const SV_PREAMBLE_RE = /^här är.{0,20}?översätt/i;
 const LABEL_PREAMBLE_RE = /^(translation|översättning)\s*:/i;
+// The model talking about the request instead of answering it. Seen live
+// (2026-09-13, /records/artists/previous): the fragment "in total." came back
+// as "I need more context to translate this properly. However, \"in total\"
+// translates to Swedish as: totalt" — and, because nothing here caught it,
+// was cached and rendered into the page. Anchored at the start, like the
+// preambles above, so ordinary copy that merely contains "sorry" or "I can"
+// forty words in is untouched.
+const META_RESPONSE_RE =
+  /^(i need more|i need (the|some|additional)|i cannot|i can't|i'm (sorry|unable|not able)|i am (sorry|unable|not able)|sorry,|unfortunately,? i|as an ai|could you (please )?(provide|clarify|share)|please provide|jag behöver mer|jag kan inte|tyvärr kan jag|kan du (ge|förtydliga))/i;
 
 /**
  * Output-contract guard (decision 10). Anthropic's own text response is
@@ -457,6 +466,7 @@ export function violatesOutputContract(response: string): boolean {
   const trimmed = response.trim();
   if (!trimmed) return true;
   if (HERE_PREAMBLE_RE.test(trimmed) || SV_PREAMBLE_RE.test(trimmed) || LABEL_PREAMBLE_RE.test(trimmed)) return true;
+  if (META_RESPONSE_RE.test(trimmed)) return true;
 
   // "contain the source language name as a label" (brief, decision 10) —
   // read narrowly as a label-shaped prefix ("Swedish:", "(English)") rather

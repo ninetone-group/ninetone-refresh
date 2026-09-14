@@ -96,11 +96,20 @@ const accent = sectionAccent.records;
 // data-i18n-* attributes (bridge pattern, note 4).
 const t = sharedT(Astro.locals);
 const previousArtistsTitle = await t("Previous Artists");
-const showingOfLabel = await t("Showing");
-const ofLabel = await t("of");
+// Whole sentences, never fragments: "in total." on its own came back from the
+// model as a request for context (2026-09-13) and stitched into the page.
+// The numbers ride on placeholders swapped in AFTER translation.
+const fill = (s: string, values: Record<string, string | number>) =>
+  s.replace(/\{(\w+)\}/g, (m, k) => (k in values ? String(values[k]) : m));
+const showingRangeLabel = fill(await t("Showing {from}–{to} of {total}"), {
+  from: (page.currentPage - 1) * 30 + 1,
+  to: Math.min(page.currentPage * 30, page.total),
+  total: page.total,
+});
 const fullIndexKicker = await t("Full index, A–Ö");
-const everyPreviousArtistLabel = await t("Every previous artist, alphabetically —");
-const inTotalLabel = await t("in total.");
+const everyPreviousArtistLabel = fill(await t("Every previous artist, alphabetically — {count} in total."), {
+  count: allPrevious.length,
+});
 const showFullIndexLabel = await t("Show full index");
 const hideFullIndexLabel = await t("Hide full index");
 ---
@@ -117,7 +126,7 @@ const hideFullIndexLabel = await t("Hide full index");
   <section class="bg-ninetone-paper pt-2">
     <div class="mx-auto max-w-7xl px-6">
       <p class="text-xs uppercase tracking-[0.16em] text-ninetone-ink/55">
-        {showingOfLabel} {(page.currentPage - 1) * 30 + 1}–{Math.min(page.currentPage * 30, page.total)} {ofLabel} {page.total}
+        {showingRangeLabel}
       </p>
     </div>
   </section>
@@ -129,7 +138,7 @@ const hideFullIndexLabel = await t("Hide full index");
           <div>
             <span class={`kicker ${accent.text}`}>{fullIndexKicker}</span>
             <p class="mt-2 max-w-2xl text-sm text-ninetone-ink/65">
-              {everyPreviousArtistLabel} {allPrevious.length} {inTotalLabel}
+              {everyPreviousArtistLabel}
             </p>
           </div>
           <button

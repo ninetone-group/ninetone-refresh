@@ -36,5 +36,13 @@
   "d0db0c657fc93e1c7ba52427ee0076992e67eed204a934231ae555036df50d6b": {
     "sv": "Sedan starten",
     "en": "Since the start"
+  },
+  "c329279d15073dad1bc65385c436f29e06cede16d9a32284e134a85f91a682d0": {
+    "sv": "Visar {from}–{to} av {total}",
+    "en": "Showing {from}–{to} of {total}"
+  },
+  "806d82aeea25df265c6fa1e5233c75f33e36d7a92daf91fee0b0196a858319cc": {
+    "sv": "Varje tidigare artist i bokstavsordning – {count} totalt.",
+    "en": "Every previous artist, alphabetically — {count} in total."
   }
 }

@@ -206,6 +206,19 @@ test("violatesOutputContract: clean translated text passes", () => {
   assert.equal(violatesOutputContract("Hej världen"), false);
 });
 
+test("violatesOutputContract: rejects the model answering ABOUT the request instead of translating (live 2026-09-13)", () => {
+  assert.equal(
+    violatesOutputContract("I need more context to translate this properly. However, \"in total\" translates to Swedish as: totalt"),
+    true,
+  );
+  assert.equal(violatesOutputContract("I'm sorry, but I need the full sentence."), true);
+  assert.equal(violatesOutputContract("Sorry, could you provide more context?"), true);
+  assert.equal(violatesOutputContract("Jag behöver mer sammanhang för att översätta detta."), true);
+  // …but ordinary copy that merely contains such words further in is fine.
+  assert.equal(violatesOutputContract("Vi är ledsna att meddela att turnén ställs in."), false);
+  assert.equal(violatesOutputContract("Fans who say sorry never mean it, the band jokes."), false);
+});
+
 test("violatesOutputContract: rejects a 'Here is the translation' preamble", () => {
   assert.equal(violatesOutputContract("Here is the translation: Hello world"), true);
   assert.equal(violatesOutputContract("Here's the translated text"), true);
