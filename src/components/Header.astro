@@ -360,5 +360,13 @@ const otherLangCode = lang === "sv" ? "en" : "sv";
     const navPanel = document.getElementById("mobile-nav-panel");
     if (navPanel && !navPanel.classList.contains("hidden")) closeMobileNav();
   });
+  // Scrolled below the shrink threshold, the swapped-in header arrives at
+  // full height and would only shrink at astro:page-load — a visible
+  // 77→61 px settle on every language switch (measured 2026-09-14).
+  // after-swap runs before the new DOM's first paint, so it lands shrunk.
+  document.addEventListener("astro:after-swap", () => {
+    shrunk = false;
+    updateShrink();
+  });
   document.addEventListener("astro:page-load", initHeader);
 </script>
