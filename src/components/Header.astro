@@ -362,7 +362,7 @@ const otherLangCode = lang === "sv" ? "en" : "sv";
       requestAnimationFrame(() => { inner.style.transition = ""; logo.style.transition = ""; });
     }
   };
-  window.addEventListener("scroll", updateShrink, { passive: true });
+  window.addEventListener("scroll", () => updateShrink(), { passive: true }); // never pass the Event as `snap`
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape") return;
     const navPanel = document.getElementById("mobile-nav-panel");
