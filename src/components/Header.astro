@@ -373,8 +373,13 @@ const otherLangCode = lang === "sv" ? "en" : "sv";
   // 77→61 px settle on every language switch (measured 2026-09-14).
   // after-swap runs before the new DOM's first paint, so it lands shrunk.
   document.addEventListener("astro:after-swap", () => {
-    shrunk = false;
-    updateShrink(true);
+    // Microtask: the router has just scrolled to the top, and the language
+    // switch's scroll restore (Base.astro) runs in a later listener of this
+    // same event. A microtask lands after both, still before first paint.
+    queueMicrotask(() => {
+      shrunk = false;
+      updateShrink(true);
+    });
   });
   document.addEventListener("astro:page-load", initHeader);
 </script>
