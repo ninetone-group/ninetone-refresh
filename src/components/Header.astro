@@ -208,6 +208,7 @@ const otherLangCode = lang === "sv" ? "en" : "sv";
           lang={otherLangCode}
           class="hidden md:inline-flex min-h-11 min-w-11 items-center justify-center px-2 text-xs font-semibold text-ninetone-ink/65 hover:text-ninetone-ink"
           aria-label={lang === "en" ? "Switch to Swedish" : "Switch to English"}
+          data-lang-switch
         >
           {lang === "en" ? "SV" : "EN"}
         </a>
@@ -288,6 +289,7 @@ const otherLangCode = lang === "sv" ? "en" : "sv";
           hreflang={otherLangCode}
           lang={otherLangCode}
           class="kicker self-start text-ninetone-ink/55 hover:text-ninetone-ink"
+          data-lang-switch
         >
           {lang === "en" ? "Svenska →" : "English →"}
         </a>
@@ -297,59 +299,66 @@ const otherLangCode = lang === "sv" ? "en" : "sv";
 </div>
 
 <script>
-  // Search button → open command palette (managed by CommandPalette.astro,
-  // which exposes window.ninetoneCmdK as a bridge).
-  const toggle = document.getElementById("search-toggle");
-  toggle?.addEventListener("click", () => {
-    const open = (window as unknown as { ninetoneCmdK?: () => void }).ninetoneCmdK;
-    open?.();
-  });
+  // Client router (2026-09-14): hoisted scripts run ONCE per full load; each
+  // client-side navigation swaps the DOM and fires astro:page-load. Element
+  // bindings live in initHeader(); the two document/window listeners are
+  // registered once and look their elements up at event time.
+  const closeMobileNav = () => {
+    const navToggle = document.getElementById("mobile-nav-toggle");
+    const navPanel = document.getElementById("mobile-nav-panel");
+    if (!navPanel) return;
+    navPanel.classList.add("hidden");
+    navPanel.classList.remove("flex");
+    navToggle?.setAttribute("aria-expanded", "false");
+    document.body.style.overflow = "";
+  };
 
-  // Mobile nav: hamburger opens, X closes, ESC closes, click on any nav link
-  // closes (so navigating to the same page doesn't leave the panel open).
-  const navToggle = document.getElementById("mobile-nav-toggle");
-  const navClose = document.getElementById("mobile-nav-close");
-  const navPanel = document.getElementById("mobile-nav-panel");
-  if (navToggle && navClose && navPanel) {
-    const open = () => {
-      navPanel.classList.remove("hidden");
-      navPanel.classList.add("flex");
-      navToggle.setAttribute("aria-expanded", "true");
-      document.body.style.overflow = "hidden";
-    };
-    const close = () => {
-      navPanel.classList.add("hidden");
-      navPanel.classList.remove("flex");
-      navToggle.setAttribute("aria-expanded", "false");
-      document.body.style.overflow = "";
-    };
-    navToggle.addEventListener("click", open);
-    navClose.addEventListener("click", close);
-    navPanel.querySelectorAll("a").forEach((a) => a.addEventListener("click", close));
-    document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape" && !navPanel.classList.contains("hidden")) close();
+  function initHeader() {
+    document.getElementById("search-toggle")?.addEventListener("click", () => {
+      const open = (window as unknown as { ninetoneCmdK?: () => void }).ninetoneCmdK;
+      open?.();
     });
+
+    const navToggle = document.getElementById("mobile-nav-toggle");
+    const navClose = document.getElementById("mobile-nav-close");
+    const navPanel = document.getElementById("mobile-nav-panel");
+    if (navToggle && navClose && navPanel) {
+      navToggle.addEventListener("click", () => {
+        navPanel.classList.remove("hidden");
+        navPanel.classList.add("flex");
+        navToggle.setAttribute("aria-expanded", "true");
+        document.body.style.overflow = "hidden";
+      });
+      navClose.addEventListener("click", closeMobileNav);
+      navPanel.querySelectorAll("a").forEach((a) => a.addEventListener("click", closeMobileNav));
+    }
+
+    // A fresh header always renders un-shrunk; re-derive from the scroll position.
+    shrunk = false;
+    updateShrink();
   }
 
-  // Sticky scroll-shrink — logo and padding compress past 24px
-  const header = document.getElementById("site-header");
-  const inner = document.getElementById("site-header-inner");
-  const logo = document.getElementById("site-header-logo");
-  if (header && inner && logo) {
-    let shrunk = false;
-    const update = () => {
-      const next = window.scrollY > 24;
-      if (next === shrunk) return;
-      shrunk = next;
-      if (shrunk) {
-        inner.classList.replace("py-4", "py-2");
-        logo.classList.replace("h-10", "h-8");
-      } else {
-        inner.classList.replace("py-2", "py-4");
-        logo.classList.replace("h-8", "h-10");
-      }
-    };
-    update();
-    window.addEventListener("scroll", update, { passive: true });
-  }
+  let shrunk = false;
+  const updateShrink = () => {
+    const inner = document.getElementById("site-header-inner");
+    const logo = document.getElementById("site-header-logo");
+    if (!inner || !logo) return;
+    const next = window.scrollY > 24;
+    if (next === shrunk) return;
+    shrunk = next;
+    if (shrunk) {
+      inner.classList.replace("py-4", "py-2");
+      logo.classList.replace("h-10", "h-8");
+    } else {
+      inner.classList.replace("py-2", "py-4");
+      logo.classList.replace("h-8", "h-10");
+    }
+  };
+  window.addEventListener("scroll", updateShrink, { passive: true });
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    const navPanel = document.getElementById("mobile-nav-panel");
+    if (navPanel && !navPanel.classList.contains("hidden")) closeMobileNav();
+  });
+  document.addEventListener("astro:page-load", initHeader);
 </script>

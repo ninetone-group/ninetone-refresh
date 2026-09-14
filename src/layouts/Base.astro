@@ -1,5 +1,6 @@
 ---
 import "../styles/global.css";
+import { ClientRouter } from "astro:transitions";
 import Header from "../components/Header.astro";
 import Footer from "../components/Footer.astro";
 import PromoBar from "../components/PromoBar.astro";
@@ -313,7 +314,7 @@ const tiktokEnabled = tracking && !isPlaceholder(TIKTOK_PIXEL_ID);
 ---
 
 <!doctype html>
-<html lang={lang}>
+<html lang={lang} transition:animate="none">
   <head>
     {tracking && (
       <>
@@ -427,6 +428,13 @@ const tiktokEnabled = tracking && !isPlaceholder(TIKTOK_PIXEL_ID);
 
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    {/* Client-side navigation (2026-09-14). Pages swap in place instead of
+        reloading; the language switch keeps the reader's place and plays the
+        decode sweep (script at the end of <body>). The page-level fade is off
+        (transition:animate="none" on <html>) — surgical motion, DESIGN.md §1.
+        Every hoisted <script> re-binds on astro:page-load; inline behaviour
+        scripts carry data-astro-rerun. See CLAUDE.md "Client router". */}
+    <ClientRouter />
     <meta name="description" content={metaDescription} />
     {noindex && <meta name="robots" content="noindex, nofollow, noarchive, nosnippet, noimageindex" />}
     {!omitCanonical && <link rel="canonical" href={canonicalUrl} />}
@@ -497,5 +505,106 @@ const tiktokEnabled = tracking && !isPlaceholder(TIKTOK_PIXEL_ID);
         did not exist, and nobody could review the banner before the site went
         public (2026-09-13). */}
     <CookieConsent />
+
+    <script>
+      // Language switch on the client router (2026-09-14): stay where the
+      // reader is, and resolve the new language with a top-to-bottom decode
+      // sweep over the viewport ("1984" scramble). Everything else navigates
+      // with a plain in-place swap. Reduced motion: plain swap, position kept.
+      type Pending = { sectionIndex: number; offset: number; y: number };
+      type Job = { node: Text; final: string; delay: number };
+      let pending: Pending | null = null;
+      let jobs: Job[] = [];
+      let navigated = false;
+      const reduced = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+      const LOWER = "abcdefghijklmnopqrstuvwxyzåäö";
+      const UPPER = "ABCDEFGHIJKLMNOPQRSTUVWXYZÅÄÖ";
+      const DIGIT = "0123456789";
+      const glyphFor = (c: string): string => {
+        if (/\s/.test(c)) return c;
+        if (/\d/.test(c)) return DIGIT[(Math.random() * DIGIT.length) | 0];
+        if (!/[a-zåäö]/i.test(c)) return c;
+        const pool = c === c.toUpperCase() ? UPPER : LOWER;
+        return pool[(Math.random() * pool.length) | 0];
+      };
+      const scrambled = (text: string, from: number): string => {
+        let out = text.slice(0, from);
+        for (let i = from; i < text.length; i++) out += glyphFor(text[i]);
+        return out;
+      };
+
+      document.addEventListener("astro:before-preparation", (e) => {
+        const src = (e as unknown as { sourceElement?: Element | null }).sourceElement;
+        if (!(src instanceof Element) || !src.closest("[data-lang-switch]")) { pending = null; return; }
+        // Both locales render the same section sequence, so "n-th section in
+        // <main>, this far below its top" survives the swap even when the
+        // other language runs a few lines longer or shorter.
+        const sections = Array.from(document.querySelectorAll("main section"));
+        let sectionIndex = -1;
+        let offset = 0;
+        for (let i = 0; i < sections.length; i++) {
+          const r = sections[i].getBoundingClientRect();
+          if (r.bottom > 0) { sectionIndex = i; offset = -r.top; break; }
+        }
+        pending = { sectionIndex, offset, y: window.scrollY };
+      });
+
+      document.addEventListener("astro:after-swap", () => {
+        navigated = true;
+        if (!pending) return;
+        const sections = document.querySelectorAll("main section");
+        const target = pending.sectionIndex >= 0 ? sections[pending.sectionIndex] : null;
+        const top = target ? window.scrollY + target.getBoundingClientRect().top + pending.offset : pending.y;
+        window.scrollTo({ top, left: 0, behavior: "instant" as ScrollBehavior });
+        if (reduced()) return;
+        // Before first paint: every visible text node starts as noise, so the
+        // reader sees the page decode rather than flash into the new language.
+        const vh = window.innerHeight;
+        const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+          acceptNode(node) {
+            const text = node.nodeValue ?? "";
+            if (!text.trim()) return NodeFilter.FILTER_REJECT;
+            const el = node.parentElement;
+            if (!el || el.closest("script,style,textarea,input,select,noscript,svg,#cookie-consent,#cmdk,[data-no-scramble]")) return NodeFilter.FILTER_REJECT;
+            const r = el.getBoundingClientRect();
+            return r.bottom < 0 || r.top > vh || r.width === 0 ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT;
+          },
+        });
+        jobs = [];
+        let chars = 0;
+        for (let n = walker.nextNode() as Text | null; n; n = walker.nextNode() as Text | null) {
+          const top = Math.max(0, n.parentElement!.getBoundingClientRect().top);
+          jobs.push({ node: n, final: n.data, delay: (top / vh) * 450 });
+          chars += n.data.length;
+          if (jobs.length >= 400 || chars > 16000) break;
+        }
+        for (const j of jobs) j.node.data = scrambled(j.final, 0);
+      });
+
+      document.addEventListener("astro:page-load", () => {
+        if (navigated) {
+          const w = window as unknown as { gtag?: (...a: unknown[]) => void };
+          if (typeof w.gtag === "function") w.gtag("event", "page_view", { page_location: location.href, page_title: document.title });
+        }
+        pending = null;
+        if (!jobs.length) return;
+        const run = jobs;
+        jobs = [];
+        const DURATION = 520;
+        const start = performance.now();
+        const frame = (now: number) => {
+          let live = false;
+          for (const j of run) {
+            const p = (now - start - j.delay) / DURATION;
+            if (p >= 1) { if (j.node.data !== j.final) j.node.data = j.final; continue; }
+            live = true;
+            j.node.data = scrambled(j.final, p <= 0 ? 0 : Math.floor(p * j.final.length));
+          }
+          if (live) requestAnimationFrame(frame);
+        };
+        requestAnimationFrame(frame);
+      });
+    </script>
   </body>
 </html>

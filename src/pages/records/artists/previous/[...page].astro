@@ -174,36 +174,43 @@ const hideFullIndexLabel = await t("Hide full index");
   )}
 
   <script>
-    document.querySelectorAll<HTMLElement>("[data-previous-index]").forEach((root) => {
-      const btn = root.querySelector<HTMLButtonElement>("[data-previous-index-toggle]");
-      const label = root.querySelector<HTMLElement>("[data-previous-index-toggle-label]");
-      const panel = root.querySelector<HTMLElement>("[data-previous-index-panel]");
-      if (!btn || !label || !panel) return;
+    // Client router (2026-09-14): hoisted scripts run ONCE per full load; every
+    // client-side navigation swaps the DOM and fires astro:page-load instead. All
+    // bindings live in init() so the fresh elements are wired after each swap;
+    // the old ones left with the old DOM, so nothing double-binds.
+    function initPreviousIndex() {
+      document.querySelectorAll<HTMLElement>("[data-previous-index]").forEach((root) => {
+        const btn = root.querySelector<HTMLButtonElement>("[data-previous-index-toggle]");
+        const label = root.querySelector<HTMLElement>("[data-previous-index-toggle-label]");
+        const panel = root.querySelector<HTMLElement>("[data-previous-index-panel]");
+        if (!btn || !label || !panel) return;
 
-      // Bridge pattern (docs/i18n-phase-2-brief.md section 4, note 4): this
-      // script runs client-side with no Astro.locals, so the two label
-      // states were resolved server-side via t() and threaded through
-      // data-i18n-show / data-i18n-hide on the button itself.
-      const showLabel = btn.dataset.i18nShow || "Show full index";
-      const hideLabel = btn.dataset.i18nHide || "Hide full index";
+        // Bridge pattern (docs/i18n-phase-2-brief.md section 4, note 4): this
+        // script runs client-side with no Astro.locals, so the two label
+        // states were resolved server-side via t() and threaded through
+        // data-i18n-show / data-i18n-hide on the button itself.
+        const showLabel = btn.dataset.i18nShow || "Show full index";
+        const hideLabel = btn.dataset.i18nHide || "Hide full index";
 
-      btn.addEventListener("click", () => {
-        const open = btn.getAttribute("aria-expanded") === "true";
-        if (open) {
-          panel.style.maxHeight = "0px";
-          panel.style.opacity = "0";
-          label.textContent = showLabel;
-          btn.setAttribute("aria-expanded", "false");
-          panel.setAttribute("inert", "");
-        } else {
-          panel.style.maxHeight = `${panel.scrollHeight}px`;
-          panel.style.opacity = "1";
-          label.textContent = hideLabel;
-          btn.setAttribute("aria-expanded", "true");
-          panel.removeAttribute("inert");
-        }
+        btn.addEventListener("click", () => {
+          const open = btn.getAttribute("aria-expanded") === "true";
+          if (open) {
+            panel.style.maxHeight = "0px";
+            panel.style.opacity = "0";
+            label.textContent = showLabel;
+            btn.setAttribute("aria-expanded", "false");
+            panel.setAttribute("inert", "");
+          } else {
+            panel.style.maxHeight = `${panel.scrollHeight}px`;
+            panel.style.opacity = "1";
+            label.textContent = hideLabel;
+            btn.setAttribute("aria-expanded", "true");
+            panel.removeAttribute("inert");
+          }
+        });
       });
-    });
+    }
+    document.addEventListener("astro:page-load", initPreviousIndex);
   </script>
 
   <section class="bg-ninetone-paper pb-20">

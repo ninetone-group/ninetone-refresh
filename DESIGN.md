@@ -83,6 +83,11 @@ Almost universally **square** (`rounded-none` is the default — Tailwind v4 bas
 - **Snap transitions:** 150ms (color overlay flips on portal hover — must precede text color change to avoid contrast bugs).
 - **Hover-text-color discipline:** When text changes color on hover and sits over an animated background, **delay the text transition** (`delay-100`) and snap the bg color first. Otherwise mid-transition you get white-on-near-white. See [src/pages/index.astro](src/pages/index.astro) portal pattern.
 - `prefers-reduced-motion: reduce` disables marquee animations.
+- **Page transitions:** none. The client router swaps pages in place with no fade
+  (`transition:animate="none"`). The one exception is the **language switch**, which keeps
+  the reader's place and resolves the new language with a top-to-bottom decode sweep over
+  the viewport (letters settle from noise, ~0.5 s per line, staggered by position). Off under
+  `prefers-reduced-motion`.
 - **Card hover signature:** the `h-1 w-12 bg-accent` mark in the top-left grows to `w-full` on `group-hover` over 300ms. Used on every image-led card (artist, news, merch, team). Do not break this convention.
 
 ---

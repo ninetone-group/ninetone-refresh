@@ -122,102 +122,109 @@ const ofLabel = await t("of");
 </div>
 
 <script>
-  type RosterRoot = HTMLElement & { dataset: { rosterRoot?: string } };
+  // Client router (2026-09-14): hoisted scripts run ONCE per full load; every
+  // client-side navigation swaps the DOM and fires astro:page-load instead. All
+  // bindings live in init() so the fresh elements are wired after each swap;
+  // the old ones left with the old DOM, so nothing double-binds.
+  function initRosterFilters() {
+    type RosterRoot = HTMLElement & { dataset: { rosterRoot?: string } };
 
-  document.querySelectorAll<HTMLElement>("[data-roster-filters]").forEach((filtersEl) => {
-    const accent = filtersEl.dataset.accent || "#0a1420";
-    const root = (filtersEl.parentElement?.querySelector<HTMLElement>("[data-roster-grid]") ?? null) as HTMLElement | null;
-    const indexRoot = (filtersEl.parentElement?.querySelector<HTMLElement>("[data-roster-index]") ?? null) as HTMLElement | null;
-    const countEl = filtersEl.querySelector<HTMLElement>("[data-roster-count]");
-    const searchEl = filtersEl.querySelector<HTMLInputElement>("[data-roster-search]");
-    // Bridge pattern (docs/i18n-phase-2-brief.md section 4, note 4): "of" is
-    // resolved server-side via t() and threaded through data-i18n-of, since
-    // this script runs client-side with no Astro.locals to call t() with.
-    const ofLabel = filtersEl.dataset.i18nOf || "of";
-    if (!root) return;
+    document.querySelectorAll<HTMLElement>("[data-roster-filters]").forEach((filtersEl) => {
+      const accent = filtersEl.dataset.accent || "#0a1420";
+      const root = (filtersEl.parentElement?.querySelector<HTMLElement>("[data-roster-grid]") ?? null) as HTMLElement | null;
+      const indexRoot = (filtersEl.parentElement?.querySelector<HTMLElement>("[data-roster-index]") ?? null) as HTMLElement | null;
+      const countEl = filtersEl.querySelector<HTMLElement>("[data-roster-count]");
+      const searchEl = filtersEl.querySelector<HTMLInputElement>("[data-roster-search]");
+      // Bridge pattern (docs/i18n-phase-2-brief.md section 4, note 4): "of" is
+      // resolved server-side via t() and threaded through data-i18n-of, since
+      // this script runs client-side with no Astro.locals to call t() with.
+      const ofLabel = filtersEl.dataset.i18nOf || "of";
+      if (!root) return;
 
-    const items = Array.from(root.querySelectorAll<HTMLElement>("[data-roster-item]"));
-    const total = items.length;
+      const items = Array.from(root.querySelectorAll<HTMLElement>("[data-roster-item]"));
+      const total = items.length;
 
-    const state = { tag: "", letter: "", search: "" };
+      const state = { tag: "", letter: "", search: "" };
 
-    function apply() {
-      let visible = 0;
-      const needle = state.search.trim().toLowerCase();
-      for (const el of items) {
-        const tags = (el.dataset.tags || "").toLowerCase();
-        const name = (el.dataset.name || "").toLowerCase();
-        const letter = (el.dataset.letter || "").toLowerCase();
-        const tagOK = !state.tag || tags.includes(state.tag.toLowerCase());
-        const letterOK = !state.letter || letter === state.letter;
-        const searchOK = !needle || name.includes(needle);
-        const show = tagOK && letterOK && searchOK;
-        el.style.display = show ? "" : "none";
-        if (show) visible++;
+      function apply() {
+        let visible = 0;
+        const needle = state.search.trim().toLowerCase();
+        for (const el of items) {
+          const tags = (el.dataset.tags || "").toLowerCase();
+          const name = (el.dataset.name || "").toLowerCase();
+          const letter = (el.dataset.letter || "").toLowerCase();
+          const tagOK = !state.tag || tags.includes(state.tag.toLowerCase());
+          const letterOK = !state.letter || letter === state.letter;
+          const searchOK = !needle || name.includes(needle);
+          const show = tagOK && letterOK && searchOK;
+          el.style.display = show ? "" : "none";
+          if (show) visible++;
+        }
+        if (countEl) countEl.textContent = `${visible} ${ofLabel} ${total}`;
       }
-      if (countEl) countEl.textContent = `${visible} ${ofLabel} ${total}`;
-    }
 
-    function setActive(group: string, value: string) {
-      filtersEl.querySelectorAll<HTMLButtonElement>(`[data-roster-${group}]`).forEach((btn) => {
-        const isActive = (btn.dataset[`roster${group.charAt(0).toUpperCase()}${group.slice(1)}` as keyof DOMStringMap] || "") === value;
-        btn.setAttribute("aria-pressed", String(isActive));
-        if (group === "tag") {
-          if (isActive) {
-            btn.style.backgroundColor = accent;
-            btn.style.borderColor = accent;
-            btn.style.color = "#f5f3ee";
-          } else {
-            btn.style.backgroundColor = "";
-            btn.style.borderColor = "";
-            btn.style.color = "";
+      function setActive(group: string, value: string) {
+        filtersEl.querySelectorAll<HTMLButtonElement>(`[data-roster-${group}]`).forEach((btn) => {
+          const isActive = (btn.dataset[`roster${group.charAt(0).toUpperCase()}${group.slice(1)}` as keyof DOMStringMap] || "") === value;
+          btn.setAttribute("aria-pressed", String(isActive));
+          if (group === "tag") {
+            if (isActive) {
+              btn.style.backgroundColor = accent;
+              btn.style.borderColor = accent;
+              btn.style.color = "#f5f3ee";
+            } else {
+              btn.style.backgroundColor = "";
+              btn.style.borderColor = "";
+              btn.style.color = "";
+            }
+          } else if (group === "letter") {
+            btn.style.color = isActive ? accent : "";
+            btn.style.fontWeight = isActive ? "700" : "";
           }
-        } else if (group === "letter") {
-          btn.style.color = isActive ? accent : "";
-          btn.style.fontWeight = isActive ? "700" : "";
-        }
-      });
-    }
-
-    filtersEl.querySelectorAll<HTMLButtonElement>("[data-roster-tag]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        state.tag = btn.dataset.rosterTag || "";
-        setActive("tag", state.tag);
-        apply();
-      });
-    });
-    filtersEl.querySelectorAll<HTMLButtonElement>("[data-roster-letter]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        state.letter = btn.dataset.rosterLetter || "";
-        setActive("letter", state.letter);
-        apply();
-      });
-    });
-    searchEl?.addEventListener("input", () => {
-      state.search = searchEl.value;
-      apply();
-    });
-
-    // Layout switch
-    const layoutBtns = filtersEl.querySelectorAll<HTMLButtonElement>("[data-layout]");
-    layoutBtns.forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const layout = btn.dataset.layout;
-        layoutBtns.forEach((b) => {
-          const active = b === btn;
-          b.setAttribute("aria-pressed", String(active));
-          b.classList.toggle("bg-ninetone-ink", active);
-          b.classList.toggle("text-ninetone-paper", active);
-          b.classList.toggle("text-ninetone-ink/60", !active);
         });
-        if (layout === "index" && indexRoot) {
-          root.style.display = "none";
-          indexRoot.style.display = "";
-        } else {
-          root.style.display = "";
-          if (indexRoot) indexRoot.style.display = "none";
-        }
+      }
+
+      filtersEl.querySelectorAll<HTMLButtonElement>("[data-roster-tag]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          state.tag = btn.dataset.rosterTag || "";
+          setActive("tag", state.tag);
+          apply();
+        });
+      });
+      filtersEl.querySelectorAll<HTMLButtonElement>("[data-roster-letter]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          state.letter = btn.dataset.rosterLetter || "";
+          setActive("letter", state.letter);
+          apply();
+        });
+      });
+      searchEl?.addEventListener("input", () => {
+        state.search = searchEl.value;
+        apply();
+      });
+
+      // Layout switch
+      const layoutBtns = filtersEl.querySelectorAll<HTMLButtonElement>("[data-layout]");
+      layoutBtns.forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const layout = btn.dataset.layout;
+          layoutBtns.forEach((b) => {
+            const active = b === btn;
+            b.setAttribute("aria-pressed", String(active));
+            b.classList.toggle("bg-ninetone-ink", active);
+            b.classList.toggle("text-ninetone-paper", active);
+            b.classList.toggle("text-ninetone-ink/60", !active);
+          });
+          if (layout === "index" && indexRoot) {
+            root.style.display = "none";
+            indexRoot.style.display = "";
+          } else {
+            root.style.display = "";
+            if (indexRoot) indexRoot.style.display = "none";
+          }
+        });
       });
     });
-  });
+  }
+  document.addEventListener("astro:page-load", initRosterFilters);
 </script>

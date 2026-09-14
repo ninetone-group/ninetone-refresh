@@ -60,7 +60,7 @@ import { url } from "../../lib/url";
       </p>
     </main>
 
-    <script define:vars={{ endpoint: url("/api/publish") }}>
+    <script data-astro-rerun define:vars={{ endpoint: url("/api/publish") }}>
       const form = document.getElementById("publish-form");
       const status = document.getElementById("status");
       form.addEventListener("submit", async (e) => {

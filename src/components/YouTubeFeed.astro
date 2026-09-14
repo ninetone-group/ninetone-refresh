@@ -232,7 +232,7 @@ function formatViews(n: number | undefined): string {
       }
     </style>
 
-    <script is:inline>
+    <script is:inline data-astro-rerun>
       // Defer until DOM is ready, then wire all yt-feed containers on the page.
       document.querySelectorAll(".yt-feed").forEach((root) => {
         const tabs = root.querySelectorAll("[data-yt-tab]");
