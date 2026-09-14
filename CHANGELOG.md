@@ -3,6 +3,25 @@
 All notable changes to the Ninetone Group site. Versions follow `MAJOR.MINOR.PATCH.MICRO`
 (the number in `VERSION`).
 
+## [0.2.4.4] - 2026-09-14
+
+Lighthouse follow-up (mobile and desktop).
+
+### Fixed
+- **Fonts were cached for 10 minutes.** The static-asset header file ended with an HTML
+  catch-all rule; Workers Static Assets appends every matching rule instead of stopping at
+  the first, so every asset carried two `Cache-Control` values and the fonts (391 KiB,
+  no rule of their own) got only the catch-all's 10 minutes. The catch-all is gone (HTML
+  gets its headers from the Worker) and `/fonts/*` is cached for a year. Replacing a font
+  now requires a new file name, documented in `public/_headers`.
+
+### Changed
+- **Stylesheets are inlined** into every page: the two CSS files were the only
+  render-blocking requests.
+- **The search palette loads fuse.js on first use** instead of on every page.
+- The cookie banner focuses its first button one frame after appearing, removing a forced
+  layout during load; the header and footer logos declare their dimensions.
+
 ## [0.2.4.3] - 2026-09-14
 
 ### Fixed

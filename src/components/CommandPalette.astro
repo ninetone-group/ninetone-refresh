@@ -116,7 +116,11 @@ const noResultsLabel = await t("Inga träffar för");
   // reach for inside a single file conversion pass. Flagged here rather than
   // silently left as an untranslated gap; see the PR description's
   // "could not follow as written" list.
-  import Fuse from "fuse.js";
+  // fuse.js (~9.5 KiB) used to ride the critical request chain of EVERY
+  // page as a static import (Lighthouse 2026-09-14). The palette is used by
+  // a minority of visits, so the library is imported on first open — Vite
+  // splits it into its own chunk that nobody downloads until ⌘K.
+  import type Fuse from "fuse.js";
 
   type SearchSection = "records" | "previous" | "management" | "nation" | "team" | "news";
   type SearchEntry = {
@@ -165,10 +169,9 @@ const noResultsLabel = await t("Inga träffar för");
   function ensureIndex(): Promise<SearchEntry[]> {
     if (!indexPromise) {
       const base = import.meta.env.BASE_URL.replace(/\/$/, "");
-      indexPromise = fetch(`${base}/search-index.json`)
-        .then((r) => r.json())
-        .then((data: SearchEntry[]) => {
-          fuse = new Fuse(data, {
+      indexPromise = Promise.all([import("fuse.js"), fetch(`${base}/search-index.json`).then((r) => r.json())])
+        .then(([{ default: FuseCtor }, data]: [{ default: typeof Fuse }, SearchEntry[]]) => {
+          fuse = new FuseCtor(data, {
             keys: [
               { name: "name", weight: 0.85 },
               { name: "tags", weight: 0.1 },
