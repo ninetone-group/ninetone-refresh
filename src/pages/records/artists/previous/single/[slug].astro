@@ -5,7 +5,9 @@ import MerchCard from "../../../../../components/MerchCard.astro";
 import NewsCard from "../../../../../components/NewsCard.astro";
 import Discography from "../../../../../components/Discography.astro";
 import YouTubeFeed from "../../../../../components/YouTubeFeed.astro";
-import { getPreviousArtists, getArtistDetailWithReleases, getNewsForArtist } from "../../../../../lib/ninetone";
+import { getArtists, getPreviousArtists, getArtistDetailWithReleases, getNewsForArtist } from "../../../../../lib/ninetone";
+import { crossRosterTarget } from "../../../../../lib/roster-redirect";
+import { localizedPath } from "../../../../../lib/i18n";
 import { resolveChannelId, getYouTubeFeed } from "../../../../../lib/youtube";
 import { getProducts } from "../../../../../lib/shopify";
 import { renderBio } from "../../../../../lib/markdown";
@@ -37,7 +39,13 @@ let artist = (Astro.props as { artist?: Record<string, unknown> }).artist;
 if (!artist) {
   const artists = await getPreviousArtists();
   artist = artists.find((a) => String(a.SLUG ?? "") === Astro.params.slug);
-  if (!artist) return notFound(() => Astro.rewrite("/404"));
+  if (!artist) {
+    // Re-signed artist: the previous-artist URL now belongs to the current
+    // detail page (src/lib/roster-redirect.ts).
+    const target = crossRosterTarget(String(Astro.params.slug ?? ""), "previous", await getArtists());
+    if (target) return Astro.redirect(localizedPath(target, (Astro.locals as { lang?: "sv" | "en" }).lang ?? "sv"), 301);
+    return notFound(() => Astro.rewrite("/404"));
+  }
 }
 const slug = String(artist.SLUG ?? "");
 

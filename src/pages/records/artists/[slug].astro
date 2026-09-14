@@ -6,7 +6,7 @@ import NewsCard from "../../../components/NewsCard.astro";
 import RosterStrip from "../../../components/RosterStrip.astro";
 import Discography from "../../../components/Discography.astro";
 import YouTubeFeed from "../../../components/YouTubeFeed.astro";
-import { getArtists, getArtistDetailWithReleases, getNewsForArtist, pickRelatedArtists } from "../../../lib/ninetone";
+import { getArtists, getArtistDetailWithReleases, getNewsForArtist, pickRelatedArtists, getPreviousArtists } from "../../../lib/ninetone";
 import { resolveChannelId, getYouTubeFeed } from "../../../lib/youtube";
 import { getProducts } from "../../../lib/shopify";
 import { renderBio } from "../../../lib/markdown";
@@ -14,6 +14,8 @@ import { urlFor } from "../../../lib/url";
 import { pageJsonLdOrigin } from "../../../lib/site";
 import { breadcrumbs, musicGroup, markdownToPlainText, descriptionWithBioFallback, fmDateToIso } from "../../../lib/schema";
 import { notFound } from "../../../lib/not-found";
+import { crossRosterTarget } from "../../../lib/roster-redirect";
+import { localizedPath } from "../../../lib/i18n";
 import { fmText, sharedT } from "../../../lib/t";
 
 // Locale-bound link builder (i18n Phase 2): every internal href on an
@@ -39,7 +41,15 @@ let { artist, allArtists } = Astro.props as {
 if (!artist || !allArtists) {
   allArtists = await getArtists();
   artist = allArtists.find((a) => String(a.SLUG ?? "") === Astro.params.slug);
-  if (!artist) return notFound(() => Astro.rewrite("/404"));
+  if (!artist) {
+    // The old site served every artist here for as long as they were
+    // current; once they move to "Not Active" those URLs must land on the
+    // previous-artist page, not a 404 (src/lib/roster-redirect.ts). A cached
+    // list read, locale kept.
+    const target = crossRosterTarget(String(Astro.params.slug ?? ""), "current", await getPreviousArtists());
+    if (target) return Astro.redirect(localizedPath(target, (Astro.locals as { lang?: "sv" | "en" }).lang ?? "sv"), 301);
+    return notFound(() => Astro.rewrite("/404"));
+  }
 }
 const slug = String(artist.SLUG ?? "");
 
