@@ -48,6 +48,7 @@ async function loadMiddleware() {
 function createRuntime({ hit, env = { CACHE_STATE: { get: async () => "7" } } } = {}) {
   const matched = [];
   const stored = [];
+  const deleted = [];
   const waits = [];
   globalThis.__middlewareTestEnv = Promise.resolve(env);
   globalThis.caches = {
@@ -57,9 +58,10 @@ function createRuntime({ hit, env = { CACHE_STATE: { get: async () => "7" } } } 
         return hit;
       },
       put: async (key, response) => { stored.push({ key: key.url, response }); },
+      delete: async (key) => { deleted.push(key.url); return true; },
     },
   };
-  return { matched, stored, waits };
+  return { matched, stored, deleted, waits };
 }
 
 async function run(request, next, runtime) {
@@ -1070,4 +1072,66 @@ test("the previous-clients list sits on the roster tier (21600) and its detail p
     );
     assert.equal(response.headers.get("x-cache-ttl"), ttl, path);
   }
+});
+
+// --- Security audit 2026-09-14, P2: withdrawn content must not survive ------
+// revalidation. Reproduced before the fix: the SELF job consumed the inner
+// 404 without looking at it and the stale 200 stayed for the 7-day hard TTL.
+
+function selfAnswering(status, headers = {}) {
+  const calls = [];
+  return {
+    calls,
+    fetch: async (req) => {
+      calls.push(req.url);
+      return new Response(status === 200 ? "fresh" : "gone", { status, headers });
+    },
+  };
+}
+
+test("swr: a background revalidation that comes back 404 evicts the stale entry", async () => {
+  const self = selfAnswering(404);
+  const runtime = createRuntime({ hit: staleHit({ ageMs: 10_000, body: "WITHDRAWN PROFILE" }), env: { CACHE_STATE: { get: async () => "7" }, SELF: self } });
+  const response = await run(new Request("https://ninetone.com/team/someone"), async () => { throw new Error("visitor never waits"); }, runtime);
+  // This visitor still gets the stale copy (by design: nobody waits) …
+  assert.equal(response.headers.get("x-cache"), "stale");
+  assert.equal(self.calls.length, 1);
+  // … but the entry is gone for everyone after them.
+  assert.deepEqual(runtime.deleted, runtime.matched);
+});
+
+test("swr: a revalidation that comes back as a redirect or as an uncacheable (bypass) response evicts too", async () => {
+  for (const [status, headers] of [[301, { Location: "/team" }], [200, { "x-cache": "bypass" }]]) {
+    const self = selfAnswering(status, headers);
+    const runtime = createRuntime({ hit: staleHit({ ageMs: 10_000 }), env: { CACHE_STATE: { get: async () => "7" }, SELF: self } });
+    await run(new Request("https://ninetone.com/team/someone"), async () => { throw new Error("visitor never waits"); }, runtime);
+    assert.equal(runtime.deleted.length, 1, `status ${status}`);
+  }
+});
+
+test("swr: a successful revalidation keeps the entry, and a thrown revalidation keeps it too (stale-on-error)", async () => {
+  const ok = selfAnswering(200);
+  const runtimeOk = createRuntime({ hit: staleHit({ ageMs: 10_000 }), env: { CACHE_STATE: { get: async () => "7" }, SELF: ok } });
+  await run(new Request("https://ninetone.com/team/someone"), async () => { throw new Error("visitor never waits"); }, runtimeOk);
+  assert.deepEqual(runtimeOk.deleted, []);
+
+  const failing = { fetch: async () => { throw new Error("upstream down"); } };
+  const runtimeErr = createRuntime({ hit: staleHit({ ageMs: 10_000 }), env: { CACHE_STATE: { get: async () => "7" }, SELF: failing } });
+  const res = await run(new Request("https://ninetone.com/team/someone"), async () => { throw new Error("visitor never waits"); }, runtimeErr);
+  assert.equal(res.headers.get("x-cache"), "stale");
+  assert.deepEqual(runtimeErr.deleted, [], "a transient failure must not evict the last good copy");
+});
+
+test("swr: without SELF, a stale hit re-rendered as 404 is evicted and the visitor gets the 404", async () => {
+  const runtime = createRuntime({ hit: staleHit({ ageMs: 10_000, body: "WITHDRAWN PROFILE" }) });
+  const response = await run(new Request("https://ninetone.com/team/someone"), async () => new Response("gone", { status: 404 }), runtime);
+  assert.equal(response.status, 404);
+  assert.equal(runtime.deleted.length, 1);
+  assert.equal(runtime.stored.length, 0);
+});
+
+test("a plain miss that renders 404 evicts nothing (there is nothing to evict)", async () => {
+  const runtime = createRuntime();
+  await run(new Request("https://ninetone.com/team/nobody"), async () => new Response("gone", { status: 404 }), runtime);
+  assert.deepEqual(runtime.deleted, []);
 });
