@@ -7,7 +7,16 @@ Astro + Tailwind v4 site for Ninetone Group, built statically and deployed to Gi
 - **Framework:** Astro 7. `output` is conditional on `DEPLOY_TARGET` ([astro.config.mjs](astro.config.mjs)): `"static"` for the GH Pages build, `"server"` via `@astrojs/cloudflare` for `build:cf`. The adapter was dropped once and is back — read the config comment before removing it again.
 - **Hosting:** GitHub Pages via GitHub Actions ([.github/workflows/deploy.yml](.github/workflows/deploy.yml))
 - **Image proxy:** Cloudflare Worker at [worker-fm-proxy/](worker-fm-proxy/) — see [DEPLOY.md](DEPLOY.md) for *why* this exists; it's load-bearing
-- **Styling:** Tailwind v4 (Vite plugin) + `@tailwindcss/typography`
+- **Styling:** Tailwind v4 (Vite plugin) + `@tailwindcss/typography`. Stylesheets are
+  **inlined** into every page (`build.inlineStylesheets: "always"`, Lighthouse 2026-09-14) —
+  there is no external CSS request; don't "fix" the missing `<link rel="stylesheet">`.
+- **Client router:** Astro's `<ClientRouter />` is mounted in [Base.astro](src/layouts/Base.astro);
+  pages swap in place instead of reloading. **Every hoisted `<script>` must bind inside a
+  function registered on `astro:page-load`** (the script itself runs once per full load), and
+  every `is:inline` behaviour script carries `data-astro-rerun`. Global `document`/`window`
+  listeners are registered once and look elements up at event time. Pinned by
+  `test/client-router-contract.test.mjs`. The language switch (`data-lang-switch`) keeps the
+  reader's place and plays the decode sweep — see the script at the end of Base.astro.
 - **Search:** `fuse.js` client-side
 - **Markdown:** `marked`
 - **Sitemap:** hand-written per-locale endpoints (`src/pages/sitemap-*.xml.ts`) — `@astrojs/sitemap` was removed

@@ -135,30 +135,30 @@ const noResultsLabel = await t("Inga träffar för");
   // Server-resolved (see the data attributes on #cmdk). The inline object is
   // the fallback if the attribute is missing or malformed — the palette must
   // still label its groups rather than render blanks.
-  const SECTION_LABELS: Record<SearchSection, string> = (() => {
-    const fallback: Record<SearchSection, string> = {
-      records: "Records",
-      previous: "Previous",
-      management: "Management",
-      nation: "Nation",
-      team: "Team",
-      news: "News",
-    };
+  // Client router (2026-09-14): the palette markup is re-rendered (in the
+  // page's locale) on every client-side navigation, so element refs and the
+  // locale-bound labels are re-read in bind() on astro:page-load. The search
+  // index, fuse instance and the global ⌘K listener live for the whole tab.
+  const FALLBACK_LABELS: Record<SearchSection, string> = {
+    records: "Records",
+    previous: "Previous",
+    management: "Management",
+    nation: "Nation",
+    team: "Team",
+    news: "News",
+  };
+  let SECTION_LABELS: Record<SearchSection, string> = FALLBACK_LABELS;
+  function readSectionLabels(): Record<SearchSection, string> {
     try {
       const raw = document.getElementById("cmdk")?.getAttribute("data-i18n-sections");
-      return raw ? { ...fallback, ...JSON.parse(raw) } : fallback;
-    } catch { return fallback; }
-  })();
+      return raw ? { ...FALLBACK_LABELS, ...JSON.parse(raw) } : FALLBACK_LABELS;
+    } catch { return FALLBACK_LABELS; }
+  }
 
   const SECTION_ORDER: SearchSection[] = ["records", "management", "nation", "previous", "team", "news"];
 
-  const root = document.getElementById("cmdk")!;
-  const backdrop = document.getElementById("cmdk-backdrop")!;
-  const panel = document.getElementById("cmdk-panel")!;
-  const input = document.getElementById("cmdk-input") as HTMLInputElement;
-  const body = document.getElementById("cmdk-body")!;
-  const emptyState = document.getElementById("cmdk-empty")!;
-  const resultsEl = document.getElementById("cmdk-results")!;
+  let root: HTMLElement, backdrop: HTMLElement, panel: HTMLElement, input: HTMLInputElement, emptyState: HTMLElement, resultsEl: HTMLElement;
+  let bound = false;
 
   let isOpen = false;
   let activeIndex = 0;
@@ -237,7 +237,7 @@ const noResultsLabel = await t("Inga träffar för");
   }
 
   function open() {
-    if (isOpen) return;
+    if (isOpen || !bound) return;
     isOpen = true;
     root.removeAttribute("aria-hidden");
     root.classList.replace("pointer-events-none", "pointer-events-auto");
@@ -381,14 +381,30 @@ const noResultsLabel = await t("Inga träffar för");
     }
   });
 
-  backdrop.addEventListener("click", close);
-
   let debounce: number | null = null;
-  input.addEventListener("input", () => {
-    if (debounce !== null) window.clearTimeout(debounce);
-    debounce = window.setTimeout(runSearch, 120);
-  });
+  function bind() {
+    const r = document.getElementById("cmdk");
+    if (!r) { bound = false; return; }
+    root = r;
+    backdrop = document.getElementById("cmdk-backdrop")!;
+    panel = document.getElementById("cmdk-panel")!;
+    input = document.getElementById("cmdk-input") as HTMLInputElement;
+    emptyState = document.getElementById("cmdk-empty")!;
+    resultsEl = document.getElementById("cmdk-results")!;
+    SECTION_LABELS = readSectionLabels();
+    // A freshly rendered palette is closed; results belong to the old page.
+    isOpen = false;
+    currentResults = [];
+    activeIndex = 0;
+    document.body.style.overflow = "";
+    backdrop.addEventListener("click", close);
+    input.addEventListener("input", () => {
+      if (debounce !== null) window.clearTimeout(debounce);
+      debounce = window.setTimeout(runSearch, 120);
+    });
+    bound = true;
+  }
+  document.addEventListener("astro:page-load", bind);
 
-  // Bridge: expose an open trigger so Header search button can use it
   (window as unknown as { ninetoneCmdK?: () => void }).ninetoneCmdK = open;
 </script>

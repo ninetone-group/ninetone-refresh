@@ -108,35 +108,42 @@ const readLessLabel = await t("Read less");
 </section>
 
 <script>
-  document.querySelectorAll<HTMLElement>("[data-section-intro]").forEach((root) => {
-    const collapsed = root.querySelector<HTMLElement>("[data-intro-collapsed]");
-    const expanded = root.querySelector<HTMLElement>("[data-intro-expanded]");
-    const btn = root.querySelector<HTMLButtonElement>("[data-intro-toggle]");
-    const label = root.querySelector<HTMLElement>("[data-intro-toggle-label]");
-    if (!collapsed || !expanded || !btn || !label) return;
+  // Client router (2026-09-14): hoisted scripts run ONCE per full load; every
+  // client-side navigation swaps the DOM and fires astro:page-load instead. All
+  // bindings live in init() so the fresh elements are wired after each swap;
+  // the old ones left with the old DOM, so nothing double-binds.
+  function initSectionIntro() {
+    document.querySelectorAll<HTMLElement>("[data-section-intro]").forEach((root) => {
+      const collapsed = root.querySelector<HTMLElement>("[data-intro-collapsed]");
+      const expanded = root.querySelector<HTMLElement>("[data-intro-expanded]");
+      const btn = root.querySelector<HTMLButtonElement>("[data-intro-toggle]");
+      const label = root.querySelector<HTMLElement>("[data-intro-toggle-label]");
+      if (!collapsed || !expanded || !btn || !label) return;
 
-    // Toggle text comes from data-label-more/data-label-less (server-rendered
-    // via t() in the frontmatter above — docs/i18n-phase-2-brief.md section
-    // 4), NOT hardcoded here. This <script> runs client-side, after
-    // hydration, where t() (async, needs Astro.locals) cannot run — so the
-    // ALREADY-TRANSLATED strings are threaded through as data attributes
-    // instead of being re-authored in English in this file.
-    const moreLabel = btn.dataset.labelMore || "Read more";
-    const lessLabel = btn.dataset.labelLess || "Read less";
+      // Toggle text comes from data-label-more/data-label-less (server-rendered
+      // via t() in the frontmatter above — docs/i18n-phase-2-brief.md section
+      // 4), NOT hardcoded here. This <script> runs client-side, after
+      // hydration, where t() (async, needs Astro.locals) cannot run — so the
+      // ALREADY-TRANSLATED strings are threaded through as data attributes
+      // instead of being re-authored in English in this file.
+      const moreLabel = btn.dataset.labelMore || "Read more";
+      const lessLabel = btn.dataset.labelLess || "Read less";
 
-    btn.addEventListener("click", () => {
-      const open = btn.getAttribute("aria-expanded") === "true";
-      if (open) {
-        expanded.classList.add("hidden");
-        collapsed.classList.remove("hidden");
-        label.textContent = moreLabel;
-        btn.setAttribute("aria-expanded", "false");
-      } else {
-        expanded.classList.remove("hidden");
-        collapsed.classList.add("hidden");
-        label.textContent = lessLabel;
-        btn.setAttribute("aria-expanded", "true");
-      }
+      btn.addEventListener("click", () => {
+        const open = btn.getAttribute("aria-expanded") === "true";
+        if (open) {
+          expanded.classList.add("hidden");
+          collapsed.classList.remove("hidden");
+          label.textContent = moreLabel;
+          btn.setAttribute("aria-expanded", "false");
+        } else {
+          expanded.classList.remove("hidden");
+          collapsed.classList.add("hidden");
+          label.textContent = lessLabel;
+          btn.setAttribute("aria-expanded", "true");
+        }
+      });
     });
-  });
+  }
+  document.addEventListener("astro:page-load", initSectionIntro);
 </script>

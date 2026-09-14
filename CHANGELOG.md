@@ -3,6 +3,17 @@
 All notable changes to the Ninetone Group site. Versions follow `MAJOR.MINOR.PATCH.MICRO`
 (the number in `VERSION`).
 
+## [0.2.5.0] - 2026-09-14
+
+### Added
+- **In-place navigation.** Astro's client router is mounted site-wide: links swap the page
+  without a full reload, with no page fade. Every client script now re-binds on
+  `astro:page-load` (inline behaviour scripts rerun), pinned by a contract test.
+- **Language switch keeps your place and decodes.** Switching SV/EN no longer jumps to the
+  top: the same section and offset are restored before first paint, and the visible text
+  resolves from a character scramble in a top-to-bottom sweep. Plain swap under
+  reduced-motion. Analytics gets a `page_view` per client-side navigation.
+
 ## [0.2.4.4] - 2026-09-14
 
 Lighthouse follow-up (mobile and desktop).

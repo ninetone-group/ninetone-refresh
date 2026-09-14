@@ -206,10 +206,17 @@ const socials = [
 
 <script>
   // Cookie settings reopener — calls the public API exposed by CookieConsent.astro
-  document.querySelectorAll<HTMLButtonElement>("[data-cookie-settings]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const api = (window as unknown as { ninetoneCookieConsent?: { open: () => void } }).ninetoneCookieConsent;
-      api?.open();
+  // Client router (2026-09-14): hoisted scripts run ONCE per full load; every
+  // client-side navigation swaps the DOM and fires astro:page-load instead. All
+  // bindings live in init() so the fresh elements are wired after each swap;
+  // the old ones left with the old DOM, so nothing double-binds.
+  function initFooter() {
+    document.querySelectorAll<HTMLButtonElement>("[data-cookie-settings]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const api = (window as unknown as { ninetoneCookieConsent?: { open: () => void } }).ninetoneCookieConsent;
+        api?.open();
+      });
     });
-  });
+  }
+  document.addEventListener("astro:page-load", initFooter);
 </script>

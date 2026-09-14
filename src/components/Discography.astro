@@ -292,7 +292,7 @@ const visibleChips = filterChipsSource
     </div>
 
     {visibleChips.length > 1 && (
-      <script is:inline>
+      <script is:inline data-astro-rerun>
         (function () {
           document.querySelectorAll('[data-discog-filters]').forEach(function (group) {
             // Each discography section has its own scope (a single artist page

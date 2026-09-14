@@ -63,19 +63,26 @@ const dismissLabel = await t("Dismiss");
 )}
 
 <script>
-  const KEY = "ninetone:promo-dismissed";
-  const bar = document.getElementById("promo-bar");
-  if (bar) {
-    const id = bar.dataset.promoId ?? "";
-    const dismissed = localStorage.getItem(KEY);
-    if (dismissed && dismissed === id) {
-      bar.remove();
-    } else {
-      const btn = document.getElementById("promo-dismiss");
-      btn?.addEventListener("click", () => {
-        localStorage.setItem(KEY, id);
+  // Client router (2026-09-14): hoisted scripts run ONCE per full load; every
+  // client-side navigation swaps the DOM and fires astro:page-load instead. All
+  // bindings live in init() so the fresh elements are wired after each swap;
+  // the old ones left with the old DOM, so nothing double-binds.
+  function initPromoBar() {
+    const KEY = "ninetone:promo-dismissed";
+    const bar = document.getElementById("promo-bar");
+    if (bar) {
+      const id = bar.dataset.promoId ?? "";
+      const dismissed = localStorage.getItem(KEY);
+      if (dismissed && dismissed === id) {
         bar.remove();
-      });
+      } else {
+        const btn = document.getElementById("promo-dismiss");
+        btn?.addEventListener("click", () => {
+          localStorage.setItem(KEY, id);
+          bar.remove();
+        });
+      }
     }
   }
+  document.addEventListener("astro:page-load", initPromoBar);
 </script>

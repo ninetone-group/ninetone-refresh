@@ -276,93 +276,100 @@ const privacyPolicyForLabel = await t("for how we handle personal data.");
 
 {hasRuntime && (
   <script>
-    document.querySelectorAll<HTMLFormElement>("form[data-contact-form]").forEach((form) => {
-      const wrapper = form.closest<HTMLElement>("[data-contact-wrapper]") ?? form.parentElement;
-      const button = form.querySelector<HTMLButtonElement>("button[type=submit]");
-      const buttonLabel = form.querySelector<HTMLElement>("[data-form-button-label]");
-      const hint = form.querySelector<HTMLElement>("[data-form-hint]");
-      const result = wrapper?.querySelector<HTMLElement>("[data-form-result]") ?? null;
-      const resultKicker = wrapper?.querySelector<HTMLElement>("[data-form-result-kicker]") ?? null;
-      const resultMessage = wrapper?.querySelector<HTMLElement>("[data-form-result-message]") ?? null;
-      const fallbackEmail = form.dataset.fallbackEmail || "hello@ninetone.com";
-      const originalLabel = buttonLabel?.textContent ?? "Send";
+    // Client router (2026-09-14): hoisted scripts run ONCE per full load; every
+    // client-side navigation swaps the DOM and fires astro:page-load instead. All
+    // bindings live in init() so the fresh elements are wired after each swap;
+    // the old ones left with the old DOM, so nothing double-binds.
+    function initContactForm() {
+      document.querySelectorAll<HTMLFormElement>("form[data-contact-form]").forEach((form) => {
+        const wrapper = form.closest<HTMLElement>("[data-contact-wrapper]") ?? form.parentElement;
+        const button = form.querySelector<HTMLButtonElement>("button[type=submit]");
+        const buttonLabel = form.querySelector<HTMLElement>("[data-form-button-label]");
+        const hint = form.querySelector<HTMLElement>("[data-form-hint]");
+        const result = wrapper?.querySelector<HTMLElement>("[data-form-result]") ?? null;
+        const resultKicker = wrapper?.querySelector<HTMLElement>("[data-form-result-kicker]") ?? null;
+        const resultMessage = wrapper?.querySelector<HTMLElement>("[data-form-result-message]") ?? null;
+        const fallbackEmail = form.dataset.fallbackEmail || "hello@ninetone.com";
+        const originalLabel = buttonLabel?.textContent ?? "Send";
 
-      // Bridge pattern (docs/i18n-phase-2-brief.md section 4, note 4): this
-      // <script> runs client-side with no Astro.locals, so it cannot call
-      // t() itself. Every string it needs was resolved server-side in the
-      // frontmatter above and threaded through as data-i18n-* attributes on
-      // [data-form-result] — read once here rather than re-authored in
-      // English inline.
-      const i18n = {
-        sending: result?.dataset.i18nSending || "Sending…",
-        tooManyKicker: result?.dataset.i18nTooManyKicker || "Too many attempts",
-        tooManyMessage: result?.dataset.i18nTooManyMessage || "Too many attempts. Try again in a minute.",
-        sentKicker: result?.dataset.i18nSentKicker || "Sent",
-        sentMessage: result?.dataset.i18nSentMessage || "Thanks. We read everything and reply when it's a fit.",
-        errorKicker: result?.dataset.i18nErrorKicker || "Something went wrong",
-        errorPrefix: result?.dataset.i18nErrorPrefix || "Something went wrong. Email us at",
-        errorSuffix: result?.dataset.i18nErrorSuffix || "instead.",
-      };
+        // Bridge pattern (docs/i18n-phase-2-brief.md section 4, note 4): this
+        // <script> runs client-side with no Astro.locals, so it cannot call
+        // t() itself. Every string it needs was resolved server-side in the
+        // frontmatter above and threaded through as data-i18n-* attributes on
+        // [data-form-result] — read once here rather than re-authored in
+        // English inline.
+        const i18n = {
+          sending: result?.dataset.i18nSending || "Sending…",
+          tooManyKicker: result?.dataset.i18nTooManyKicker || "Too many attempts",
+          tooManyMessage: result?.dataset.i18nTooManyMessage || "Too many attempts. Try again in a minute.",
+          sentKicker: result?.dataset.i18nSentKicker || "Sent",
+          sentMessage: result?.dataset.i18nSentMessage || "Thanks. We read everything and reply when it's a fit.",
+          errorKicker: result?.dataset.i18nErrorKicker || "Something went wrong",
+          errorPrefix: result?.dataset.i18nErrorPrefix || "Something went wrong. Email us at",
+          errorSuffix: result?.dataset.i18nErrorSuffix || "instead.",
+        };
 
-      function errorMessage(): string {
-        return `${i18n.errorPrefix} <a href="mailto:${fallbackEmail}" class="underline underline-offset-2 hover:text-ninetone-ink">${fallbackEmail}</a> ${i18n.errorSuffix}`;
-      }
+        function errorMessage(): string {
+          return `${i18n.errorPrefix} <a href="mailto:${fallbackEmail}" class="underline underline-offset-2 hover:text-ninetone-ink">${fallbackEmail}</a> ${i18n.errorSuffix}`;
+        }
 
-      function showResult(kind: "success" | "error", kickerText: string, message: string) {
-        if (!result || !resultKicker || !resultMessage) return;
-        result.classList.remove("hidden");
-        resultKicker.textContent = kickerText;
-        resultMessage.innerHTML = message;
-        result.dataset.state = kind;
-        if (hint) hint.classList.add("hidden");
-      }
+        function showResult(kind: "success" | "error", kickerText: string, message: string) {
+          if (!result || !resultKicker || !resultMessage) return;
+          result.classList.remove("hidden");
+          resultKicker.textContent = kickerText;
+          resultMessage.innerHTML = message;
+          result.dataset.state = kind;
+          if (hint) hint.classList.add("hidden");
+        }
 
-      form.addEventListener("submit", async (e) => {
-        e.preventDefault();
-        if (!button || !buttonLabel) return;
+        form.addEventListener("submit", async (e) => {
+          e.preventDefault();
+          if (!button || !buttonLabel) return;
 
-        button.disabled = true;
-        buttonLabel.textContent = i18n.sending;
+          button.disabled = true;
+          buttonLabel.textContent = i18n.sending;
 
-        try {
-          const formData = new FormData(form);
-          const payload: Record<string, string> = {};
-          formData.forEach((value, key) => {
-            payload[key] = String(value);
-          });
+          try {
+            const formData = new FormData(form);
+            const payload: Record<string, string> = {};
+            formData.forEach((value, key) => {
+              payload[key] = String(value);
+            });
 
-          const res = await fetch(form.action, {
-            method: "POST",
-            credentials: "same-origin",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
-          });
+            const res = await fetch(form.action, {
+              method: "POST",
+              credentials: "same-origin",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(payload),
+            });
 
-          if (res.status === 429) {
-            showResult("error", i18n.tooManyKicker, i18n.tooManyMessage);
+            if (res.status === 429) {
+              showResult("error", i18n.tooManyKicker, i18n.tooManyMessage);
+              button.disabled = false;
+              buttonLabel.textContent = originalLabel;
+              return;
+            }
+
+            const data = await res.json().catch(() => null);
+
+            if (res.ok && data?.ok) {
+              form.reset();
+              form.hidden = true;
+              showResult("success", i18n.sentKicker, i18n.sentMessage);
+              return;
+            }
+
+            showResult("error", i18n.errorKicker, errorMessage());
             button.disabled = false;
             buttonLabel.textContent = originalLabel;
-            return;
+          } catch {
+            showResult("error", i18n.errorKicker, errorMessage());
+            button.disabled = false;
+            buttonLabel.textContent = originalLabel;
           }
-
-          const data = await res.json().catch(() => null);
-
-          if (res.ok && data?.ok) {
-            form.reset();
-            form.hidden = true;
-            showResult("success", i18n.sentKicker, i18n.sentMessage);
-            return;
-          }
-
-          showResult("error", i18n.errorKicker, errorMessage());
-          button.disabled = false;
-          buttonLabel.textContent = originalLabel;
-        } catch {
-          showResult("error", i18n.errorKicker, errorMessage());
-          button.disabled = false;
-          buttonLabel.textContent = originalLabel;
-        }
+        });
       });
-    });
+    }
+    document.addEventListener("astro:page-load", initContactForm);
   </script>
 )}

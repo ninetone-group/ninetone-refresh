@@ -102,167 +102,174 @@ const sectionLabels = Object.fromEntries(
 <script>
   import Fuse from "fuse.js";
 
-  type SearchSection = "records" | "previous" | "management" | "nation" | "team" | "news";
-  type SearchEntry = {
-    section: SearchSection;
-    name: string;
-    blurb: string;
-    tags: string[];
-    href: string;
-    image?: string;
-  };
+  // Client router (2026-09-14): hoisted scripts run ONCE per full load; every
+  // client-side navigation swaps the DOM and fires astro:page-load instead. All
+  // bindings live in init() so the fresh elements are wired after each swap;
+  // the old ones left with the old DOM, so nothing double-binds.
+  function initSearchPage() {
+    type SearchSection = "records" | "previous" | "management" | "nation" | "team" | "news";
+    type SearchEntry = {
+      section: SearchSection;
+      name: string;
+      blurb: string;
+      tags: string[];
+      href: string;
+      image?: string;
+    };
 
-  // Bridge pattern (docs/i18n-phase-2-brief.md section 4, note 4): this
-  // <script> runs client-side with no Astro.locals, so it cannot call t()
-  // itself. Every string it needs was resolved server-side in the
-  // frontmatter above and threaded through as data-i18n-* attributes on
-  // #search-root — read once here rather than re-authored in English inline
-  // (the gap CommandPalette.astro's SECTION_LABELS documents but leaves
-  // open; fixed here since this page's script only needed a plain JSON
-  // object, not the more involved dynamic-list shape CommandPalette has).
-  const root = document.getElementById("search-root");
-  const i18n = {
-    typeAQuery: root?.dataset.i18nTypeAQuery || "Type a query and press search.",
-    searching: root?.dataset.i18nSearching || "Searching…",
-    noResultsFor: root?.dataset.i18nNoResultsFor || "No results for",
-    result: root?.dataset.i18nResult || "result",
-    results: root?.dataset.i18nResults || "results",
-    for: root?.dataset.i18nFor || "for",
-  };
-  const SECTION_LABELS: Record<SearchSection, string> = root?.dataset.i18nSectionLabels
-    ? JSON.parse(root.dataset.i18nSectionLabels)
-    : {
-        records: "Records",
-        previous: "Previous artists",
-        management: "Management",
-        nation: "Nation",
-        team: "Team",
-        news: "News",
-      };
+    // Bridge pattern (docs/i18n-phase-2-brief.md section 4, note 4): this
+    // <script> runs client-side with no Astro.locals, so it cannot call t()
+    // itself. Every string it needs was resolved server-side in the
+    // frontmatter above and threaded through as data-i18n-* attributes on
+    // #search-root — read once here rather than re-authored in English inline
+    // (the gap CommandPalette.astro's SECTION_LABELS documents but leaves
+    // open; fixed here since this page's script only needed a plain JSON
+    // object, not the more involved dynamic-list shape CommandPalette has).
+    const root = document.getElementById("search-root");
+    const i18n = {
+      typeAQuery: root?.dataset.i18nTypeAQuery || "Type a query and press search.",
+      searching: root?.dataset.i18nSearching || "Searching…",
+      noResultsFor: root?.dataset.i18nNoResultsFor || "No results for",
+      result: root?.dataset.i18nResult || "result",
+      results: root?.dataset.i18nResults || "results",
+      for: root?.dataset.i18nFor || "for",
+    };
+    const SECTION_LABELS: Record<SearchSection, string> = root?.dataset.i18nSectionLabels
+      ? JSON.parse(root.dataset.i18nSectionLabels)
+      : {
+          records: "Records",
+          previous: "Previous artists",
+          management: "Management",
+          nation: "Nation",
+          team: "Team",
+          news: "News",
+        };
 
-  const SECTION_ORDER: SearchSection[] = ["records", "management", "nation", "previous", "team", "news"];
+    const SECTION_ORDER: SearchSection[] = ["records", "management", "nation", "previous", "team", "news"];
 
-  let indexPromise: Promise<SearchEntry[]> | null = null;
-  function loadIndex(): Promise<SearchEntry[]> {
-    if (!indexPromise) {
-      const base = import.meta.env.BASE_URL.replace(/\/$/, "");
-      indexPromise = fetch(`${base}/search-index.json`).then((r) => r.json());
-    }
-    return indexPromise;
-  }
-
-  function escapeHtml(s: string): string {
-    return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-  }
-
-  function safeInternalUrl(value: string): string {
-    try {
-      const parsed = new URL(value, window.location.origin);
-      const internal = parsed.origin === window.location.origin ? parsed.pathname + parsed.search + parsed.hash : "#";
-      return localizeInternal(internal);
-    } catch { return "#"; }
-  }
-
-  // LOCALE-PRESERVING (translations audit P1) — see the fuller note in
-  // CommandPalette.astro. /search-index.json is a single locale-neutral
-  // document whose hrefs are bare Swedish paths; without this an English
-  // visitor clicking a search result lands on the Swedish page. Derived from
-  // the current URL rather than threaded as data, so the shared index stays
-  // one cacheable document instead of one per locale.
-  function currentLocalePrefix(): string {
-    return /^\/en(\/|$)/.test(window.location.pathname) ? "/en" : "";
-  }
-
-  function localizeInternal(path: string): string {
-    if (!path || path === "#" || path.startsWith("#")) return path;
-    const prefix = currentLocalePrefix();
-    if (!prefix) return path;
-    return /^\/en(\/|$)/.test(path) ? path : prefix + path;
-  }
-
-  function safeImageUrl(value: string): string {
-    try {
-      const parsed = new URL(value, window.location.origin);
-      return ["http:", "https:"].includes(parsed.protocol) ? parsed.href : "";
-    } catch { return ""; }
-  }
-
-  function renderResults(query: string, hits: SearchEntry[]): string {
-    if (hits.length === 0) {
-      return `<p class="text-base text-ninetone-ink/65">${i18n.noResultsFor} <strong>${escapeHtml(query)}</strong>.</p>`;
+    let indexPromise: Promise<SearchEntry[]> | null = null;
+    function loadIndex(): Promise<SearchEntry[]> {
+      if (!indexPromise) {
+        const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+        indexPromise = fetch(`${base}/search-index.json`).then((r) => r.json());
+      }
+      return indexPromise;
     }
 
-    const grouped = new Map<SearchSection, SearchEntry[]>();
-    for (const h of hits) {
-      const arr = grouped.get(h.section) ?? [];
-      arr.push(h);
-      grouped.set(h.section, arr);
+    function escapeHtml(s: string): string {
+      return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
     }
 
-    const sections = SECTION_ORDER.filter((s) => grouped.has(s));
-    return sections
-      .map((s) => {
-        const items = grouped.get(s)!;
-        const cards = items
-          .map(
-            (e) => `
-              <a href="${escapeHtml(safeInternalUrl(e.href))}" class="group flex flex-col gap-3 border-t border-ninetone-rule pt-4 transition-colors">
-                ${e.image && safeImageUrl(e.image) ? `<div class="aspect-[4/3] w-full overflow-hidden bg-ninetone-paper-warm"><img src="${escapeHtml(safeImageUrl(e.image))}" alt="" class="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.04]" loading="lazy" /></div>` : ""}
-                <div>
-                  <h3 class="font-display text-xl font-medium leading-tight tracking-tight transition-colors group-hover:opacity-70">${escapeHtml(e.name)}</h3>
-                  ${e.blurb ? `<p class="mt-2 line-clamp-2 text-sm text-ninetone-ink/65">${escapeHtml(e.blurb)}</p>` : ""}
-                  ${e.tags.length ? `<div class="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-[0.6875rem] uppercase tracking-[0.12em] text-ninetone-ink/55">${e.tags.slice(0, 3).map((t, i) => `${i > 0 ? '<span class="opacity-40">·</span>' : ""}<span>${escapeHtml(t)}</span>`).join("")}</div>` : ""}
-                </div>
-              </a>`,
-          )
-          .join("");
-        return `
-          <div class="mb-12">
-            <div class="mb-6 flex items-center justify-between">
-              <span class="kicker text-ninetone-ink/55">${SECTION_LABELS[s]}</span>
-              <span class="text-xs text-ninetone-ink/55">${items.length}</span>
-            </div>
-            <div class="grid gap-x-8 gap-y-12 md:grid-cols-3 lg:grid-cols-4">${cards}</div>
-          </div>`;
-      })
-      .join("");
-  }
+    function safeInternalUrl(value: string): string {
+      try {
+        const parsed = new URL(value, window.location.origin);
+        const internal = parsed.origin === window.location.origin ? parsed.pathname + parsed.search + parsed.hash : "#";
+        return localizeInternal(internal);
+      } catch { return "#"; }
+    }
 
-  async function runSearch(query: string) {
-    const status = document.getElementById("search-status");
-    const out = document.getElementById("search-results");
-    if (!status || !out) return;
+    // LOCALE-PRESERVING (translations audit P1) — see the fuller note in
+    // CommandPalette.astro. /search-index.json is a single locale-neutral
+    // document whose hrefs are bare Swedish paths; without this an English
+    // visitor clicking a search result lands on the Swedish page. Derived from
+    // the current URL rather than threaded as data, so the shared index stays
+    // one cacheable document instead of one per locale.
+    function currentLocalePrefix(): string {
+      return /^\/en(\/|$)/.test(window.location.pathname) ? "/en" : "";
+    }
 
-    if (!query) {
-      status.textContent = i18n.typeAQuery;
+    function localizeInternal(path: string): string {
+      if (!path || path === "#" || path.startsWith("#")) return path;
+      const prefix = currentLocalePrefix();
+      if (!prefix) return path;
+      return /^\/en(\/|$)/.test(path) ? path : prefix + path;
+    }
+
+    function safeImageUrl(value: string): string {
+      try {
+        const parsed = new URL(value, window.location.origin);
+        return ["http:", "https:"].includes(parsed.protocol) ? parsed.href : "";
+      } catch { return ""; }
+    }
+
+    function renderResults(query: string, hits: SearchEntry[]): string {
+      if (hits.length === 0) {
+        return `<p class="text-base text-ninetone-ink/65">${i18n.noResultsFor} <strong>${escapeHtml(query)}</strong>.</p>`;
+      }
+
+      const grouped = new Map<SearchSection, SearchEntry[]>();
+      for (const h of hits) {
+        const arr = grouped.get(h.section) ?? [];
+        arr.push(h);
+        grouped.set(h.section, arr);
+      }
+
+      const sections = SECTION_ORDER.filter((s) => grouped.has(s));
+      return sections
+        .map((s) => {
+          const items = grouped.get(s)!;
+          const cards = items
+            .map(
+              (e) => `
+                <a href="${escapeHtml(safeInternalUrl(e.href))}" class="group flex flex-col gap-3 border-t border-ninetone-rule pt-4 transition-colors">
+                  ${e.image && safeImageUrl(e.image) ? `<div class="aspect-[4/3] w-full overflow-hidden bg-ninetone-paper-warm"><img src="${escapeHtml(safeImageUrl(e.image))}" alt="" class="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.04]" loading="lazy" /></div>` : ""}
+                  <div>
+                    <h3 class="font-display text-xl font-medium leading-tight tracking-tight transition-colors group-hover:opacity-70">${escapeHtml(e.name)}</h3>
+                    ${e.blurb ? `<p class="mt-2 line-clamp-2 text-sm text-ninetone-ink/65">${escapeHtml(e.blurb)}</p>` : ""}
+                    ${e.tags.length ? `<div class="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-[0.6875rem] uppercase tracking-[0.12em] text-ninetone-ink/55">${e.tags.slice(0, 3).map((t, i) => `${i > 0 ? '<span class="opacity-40">·</span>' : ""}<span>${escapeHtml(t)}</span>`).join("")}</div>` : ""}
+                  </div>
+                </a>`,
+            )
+            .join("");
+          return `
+            <div class="mb-12">
+              <div class="mb-6 flex items-center justify-between">
+                <span class="kicker text-ninetone-ink/55">${SECTION_LABELS[s]}</span>
+                <span class="text-xs text-ninetone-ink/55">${items.length}</span>
+              </div>
+              <div class="grid gap-x-8 gap-y-12 md:grid-cols-3 lg:grid-cols-4">${cards}</div>
+            </div>`;
+        })
+        .join("");
+    }
+
+    async function runSearch(query: string) {
+      const status = document.getElementById("search-status");
+      const out = document.getElementById("search-results");
+      if (!status || !out) return;
+
+      if (!query) {
+        status.textContent = i18n.typeAQuery;
+        out.innerHTML = "";
+        return;
+      }
+
+      status.textContent = i18n.searching;
       out.innerHTML = "";
-      return;
+
+      const data = await loadIndex();
+      const fuse = new Fuse(data, {
+        keys: [
+          { name: "name", weight: 0.6 },
+          { name: "blurb", weight: 0.25 },
+          { name: "tags", weight: 0.15 },
+        ],
+        threshold: 0.35,
+        ignoreLocation: true,
+        minMatchCharLength: 2,
+      });
+
+      const results = fuse.search(query, { limit: 100 }).map((r) => r.item);
+      const countLabel = results.length === 1 ? i18n.result : i18n.results;
+      status.textContent = `${results.length} ${countLabel} ${i18n.for} "${query}"`;
+      out.innerHTML = renderResults(query, results);
     }
 
-    status.textContent = i18n.searching;
-    out.innerHTML = "";
-
-    const data = await loadIndex();
-    const fuse = new Fuse(data, {
-      keys: [
-        { name: "name", weight: 0.6 },
-        { name: "blurb", weight: 0.25 },
-        { name: "tags", weight: 0.15 },
-      ],
-      threshold: 0.35,
-      ignoreLocation: true,
-      minMatchCharLength: 2,
-    });
-
-    const results = fuse.search(query, { limit: 100 }).map((r) => r.item);
-    const countLabel = results.length === 1 ? i18n.result : i18n.results;
-    status.textContent = `${results.length} ${countLabel} ${i18n.for} "${query}"`;
-    out.innerHTML = renderResults(query, results);
+    const params = new URLSearchParams(window.location.search);
+    const initialQuery = params.get("q")?.trim() ?? "";
+    const input = document.getElementById("search-input") as HTMLInputElement | null;
+    if (input && initialQuery) input.value = initialQuery;
+    if (initialQuery) runSearch(initialQuery);
   }
-
-  const params = new URLSearchParams(window.location.search);
-  const initialQuery = params.get("q")?.trim() ?? "";
-  const input = document.getElementById("search-input") as HTMLInputElement | null;
-  if (input && initialQuery) input.value = initialQuery;
-  if (initialQuery) runSearch(initialQuery);
+  document.addEventListener("astro:page-load", initSearchPage);
 </script>
