@@ -1,15 +1,22 @@
-# Cloudflare Pages cache headers.
+# Cloudflare static-asset headers (Workers Static Assets on the cf target).
 #
 # Strategy:
-#   - HTML pages: short browser cache + long edge cache via stale-while-revalidate.
-#     Visitors served from CDN instantly; edge re-fetches in the background after
-#     the TTL so post-deploy updates roll out within ~10 min.
+#   - HTML is NOT served from here: the Worker renders it and src/middleware.ts
+#     sets its Cache-Control (tiered edge TTL + stale-while-revalidate).
 #   - Hashed assets (Astro emits content-hashed filenames under /_astro/):
 #     immutable + 1 year. Filename changes when content changes.
+#   - Self-hosted fonts (/fonts/*): immutable + 1 year. The files are NOT
+#     content-hashed, so replacing a font means giving the file a NEW NAME
+#     (and updating global.css + the Base.astro preload) — a same-name swap
+#     would sit behind a year-long browser cache.
 #   - Public images & static files: 1 day in browser, longer at edge.
-#   - Search index JSON: same as HTML.
 #
-# Order matters — first matching rule wins per header name.
+# Rule semantics (verified live 2026-09-14): Workers Static Assets APPENDS the
+# value of EVERY matching rule for the same header — it does not stop at the
+# first match like Cloudflare Pages did. A trailing "/*" Cache-Control rule
+# therefore leaked "max-age=600" onto every asset (fonts got only that, since
+# they had no rule of their own — Lighthouse: "391 KiB, 10m"). Keep exactly one
+# Cache-Control rule per path family, and never a Cache-Control catch-all.
 
 # Sitewide noindex while the preview is gated. Remove this block on public launch.
 # Part of the three-noindex-flips-together launch checklist in
@@ -30,6 +37,11 @@
 /_astro/*
   Cache-Control: public, max-age=31536000, immutable
 
+# Self-hosted fonts: stable file names, so a replacement MUST be renamed
+# (see the strategy note at the top).
+/fonts/*
+  Cache-Control: public, max-age=31536000, immutable
+
 # Public images — change infrequently, rename to bust.
 /images/*
   Cache-Control: public, max-age=86400, s-maxage=604800
@@ -44,7 +56,4 @@
 /search-index.json
   Cache-Control: public, max-age=600, s-maxage=600, stale-while-revalidate=86400
 
-# Default for everything else (including HTML pages).
-# 10 min browser cache, edge serves stale up to 1 day while revalidating.
-/*
-  Cache-Control: public, max-age=600, s-maxage=600, stale-while-revalidate=86400
+# No Cache-Control catch-all here — see the rule-semantics note at the top.

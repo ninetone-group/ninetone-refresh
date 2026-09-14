@@ -179,8 +179,15 @@ const saveChoiceLabel = await t("Spara val");
       banner.hidden = false;
       simpleView.hidden = false;
       customizeView.hidden = true;
-      var focusable = getFocusable();
-      if (focusable.length) focusable[0].focus();
+      // getFocusable() reads offsetParent, which forces layout; asked in the
+      // same tick as the un-hide above it was Lighthouse's "forced reflow"
+      // entry (42 ms, 2026-09-14). One frame later the browser has laid the
+      // banner out anyway, and the focus lands identically.
+      requestAnimationFrame(function () {
+        if (banner.hidden) return;
+        var focusable = getFocusable();
+        if (focusable.length) focusable[0].focus();
+      });
     }
 
     function hideBanner() {

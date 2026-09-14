@@ -103,6 +103,12 @@ export default defineConfig({
   // doc comment for why the integration was dropped rather than kept
   // alongside them.
   integrations: [],
+  // Lighthouse 2026-09-14: the two stylesheets (Base ~1.8 KiB, global
+  // ~11 KiB) were the only render-blocking requests on every page, each a
+  // full round trip on a throttled connection. Inlined, first paint waits for
+  // nothing but the HTML. Cost: ~11 KiB more compressed HTML per page and no
+  // cross-page CSS caching — a fair trade at ~100 KiB pages.
+  build: { inlineStylesheets: "always" },
   vite: {
     plugins: [tailwindcss()],
     define: {
