@@ -29,6 +29,20 @@ test("legacyRedirectTarget: old blog and Nation booking deep links reach today's
   assert.equal(legacyRedirectTarget("/previous-artists/kuokka"), "/records/artists/previous/single/kuokka");
 });
 
+test("legacyRedirectTarget: re-slugged client URLs from the GSC export reach the client's current slug (2026-09-14)", () => {
+  // Verified in FM: bangarden_customs → "bangarden" (Active), luddze_ → "luddze" (Active).
+  assert.equal(legacyRedirectTarget("/management/clients/bangarden_customs"), "/management/clients/bangarden");
+  assert.equal(legacyRedirectTarget("/management/clients/bangarden_customs/"), "/management/clients/bangarden");
+  assert.equal(legacyRedirectTarget("/management/clients/luddze_"), "/management/clients/luddze");
+  // Every other client slug is left to the page (data-driven cross-roster 301 or 404).
+  assert.equal(legacyRedirectTarget("/management/clients/raketforskaren"), null);
+  assert.equal(legacyRedirectTarget("/management/clients/bangarden"), null);
+  assert.equal(legacyRedirectTarget("/management/clients/previous"), null);
+  assert.equal(legacyRedirectTarget("/management/clients/previous/single/raketforskaren"), null);
+  // Prototype keys are not aliases.
+  assert.equal(legacyRedirectTarget("/management/clients/constructor"), null);
+});
+
 test("legacyRedirectTarget: real routes and unrelated paths are never rewritten", () => {
   assert.equal(legacyRedirectTarget("/ninetone-nation/booking"), null, "the booking LISTING is a real page");
   assert.equal(legacyRedirectTarget("/ninetone-nation/booking/"), null);

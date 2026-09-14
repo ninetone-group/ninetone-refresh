@@ -14,7 +14,10 @@ All notable changes to the Ninetone Group site. Versions follow `MAJOR.MINOR.PAT
 - **Cross-roster 301s for clients.** `/management/clients/{slug}` for a Not Active client
   redirects to the archive page and a re-signed client's archive URL redirects back, locale
   kept — the four former-client URLs still drawing traffic in Search Console
-  (`bangarden_customs`, `raketforskaren`, `luddze_`, `johanna_and_marcus`) no longer 404.
+  (`raketforskaren`, `johanna_and_marcus`) no longer 404. The other two Search Console
+  URLs (`bangarden_customs`, `luddze_`) turned out to be old slugs of clients that are
+  Active today under `bangarden` / `luddze`; a two-entry alias in the legacy redirect
+  table sends them there.
 - Sitemap and `llms.txt` list the new pages; middleware caches the list at the roster tier
   (6 h) and the detail pages at 1 h; footer links to the archive; the translation warm
   script covers previous-client prose.
