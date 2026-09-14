@@ -339,19 +339,27 @@ const otherLangCode = lang === "sv" ? "en" : "sv";
   }
 
   let shrunk = false;
-  const updateShrink = () => {
+  // `snap`: apply the state without the padding/height transition. Used right
+  // after a client-side swap, where the router has already laid the new
+  // header out at full height, so a plain class flip would animate 77→61 px.
+  const updateShrink = (snap = false) => {
     const inner = document.getElementById("site-header-inner");
     const logo = document.getElementById("site-header-logo");
     if (!inner || !logo) return;
     const next = window.scrollY > 24;
     if (next === shrunk) return;
     shrunk = next;
+    if (snap) { inner.style.transition = "none"; logo.style.transition = "none"; }
     if (shrunk) {
       inner.classList.replace("py-4", "py-2");
       logo.classList.replace("h-10", "h-8");
     } else {
       inner.classList.replace("py-2", "py-4");
       logo.classList.replace("h-8", "h-10");
+    }
+    if (snap) {
+      void inner.offsetHeight; // commit the snapped state before transitions return
+      requestAnimationFrame(() => { inner.style.transition = ""; logo.style.transition = ""; });
     }
   };
   window.addEventListener("scroll", updateShrink, { passive: true });
@@ -366,7 +374,7 @@ const otherLangCode = lang === "sv" ? "en" : "sv";
   // after-swap runs before the new DOM's first paint, so it lands shrunk.
   document.addEventListener("astro:after-swap", () => {
     shrunk = false;
-    updateShrink();
+    updateShrink(true);
   });
   document.addEventListener("astro:page-load", initHeader);
 </script>
