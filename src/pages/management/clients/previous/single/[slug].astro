@@ -1,21 +1,25 @@
 ---
-import Base from "../../../layouts/Base.astro";
-import StreamingRow from "../../../components/StreamingRow.astro";
-import MerchCard from "../../../components/MerchCard.astro";
-import NewsCard from "../../../components/NewsCard.astro";
-import RosterStrip from "../../../components/RosterStrip.astro";
-import YouTubeFeed from "../../../components/YouTubeFeed.astro";
-import { getClients, getPreviousClients, getNewsForArtist, pickRelatedArtists } from "../../../lib/ninetone";
-import { crossRosterTarget } from "../../../lib/roster-redirect";
-import { localizedPath } from "../../../lib/i18n";
-import { resolveChannelId, getYouTubeFeed } from "../../../lib/youtube";
-import { getProducts } from "../../../lib/shopify";
-import { renderBio } from "../../../lib/markdown";
-import { urlFor } from "../../../lib/url";
-import { pageJsonLdOrigin } from "../../../lib/site";
-import { breadcrumbs, person, markdownToPlainText, descriptionWithBioFallback } from "../../../lib/schema";
-import { notFound } from "../../../lib/not-found";
-import { fmText, sharedT } from "../../../lib/t";
+import Base from "../../../../../layouts/Base.astro";
+import StreamingRow from "../../../../../components/StreamingRow.astro";
+import MerchCard from "../../../../../components/MerchCard.astro";
+import NewsCard from "../../../../../components/NewsCard.astro";
+import YouTubeFeed from "../../../../../components/YouTubeFeed.astro";
+import { getClients, getPreviousClients, getNewsForArtist } from "../../../../../lib/ninetone";
+import { crossRosterTarget } from "../../../../../lib/roster-redirect";
+import { localizedPath } from "../../../../../lib/i18n";
+import { resolveChannelId, getYouTubeFeed } from "../../../../../lib/youtube";
+import { getProducts } from "../../../../../lib/shopify";
+import { renderBio } from "../../../../../lib/markdown";
+import { urlFor } from "../../../../../lib/url";
+import { pageJsonLdOrigin } from "../../../../../lib/site";
+import { breadcrumbs, person, markdownToPlainText, descriptionWithBioFallback } from "../../../../../lib/schema";
+import { notFound } from "../../../../../lib/not-found";
+import { fmText, sharedT } from "../../../../../lib/t";
+
+// Former Management client detail (2026-09-14) — the archive counterpart of
+// src/pages/management/clients/[slug].astro, laid out like the previous-
+// artist page: no "Represented by" block, no related strip. Only the record
+// lookup below touches the (cron-warmed) previous-clients list.
 
 // Locale-bound link builder (i18n Phase 2): every internal href on an
 // English page must keep the /en prefix, or one click drops the visitor
@@ -24,34 +28,30 @@ const url = urlFor(Astro.locals);
 
 
 export async function getStaticPaths() {
-  const clients = await getClients();
-  return clients.map((c) => ({
-    params: { slug: String(c.SLUG ?? "") },
-    props: { client: c, allClients: clients },
-  }));
+  const clients = await getPreviousClients();
+  return clients
+    .filter((c) => c.SLUG)
+    .map((c) => ({
+      params: { slug: String(c.SLUG) },
+      props: { client: c },
+    }));
 }
 
 // Static build (gh): client arrives via getStaticPaths props.
-// Live server (cf): resolve at request time from the cached client list.
-let { client, allClients } = Astro.props as {
-  client?: Record<string, unknown>;
-  allClients?: Record<string, unknown>[];
-};
-if (!client || !allClients) {
-  allClients = await getClients();
-  client = allClients.find((c) => String(c.SLUG ?? "") === Astro.params.slug);
+// Live server (cf): resolve at request time from the cached previous list.
+let client = (Astro.props as { client?: Record<string, unknown> }).client;
+if (!client) {
+  const clients = await getPreviousClients();
+  client = clients.find((c) => String(c.SLUG ?? "") === Astro.params.slug);
   if (!client) {
-    // The old site served every client here for as long as they were
-    // current; once they move to "Not Active" those URLs must land on the
-    // previous-client page, not a 404 (src/lib/roster-redirect.ts). A cached
-    // list read (the 5-minute FM cron keeps it warm), locale kept. GSC
-    // 2026-09-14: bangarden_customs, raketforskaren, luddze_,
-    // johanna_and_marcus still draw traffic on this path.
-    const target = crossRosterTarget(String(Astro.params.slug ?? ""), "current", await getPreviousClients(), "management");
+    // Re-signed client: the previous-client URL now belongs to the current
+    // detail page (src/lib/roster-redirect.ts).
+    const target = crossRosterTarget(String(Astro.params.slug ?? ""), "previous", await getClients(), "management");
     if (target) return Astro.redirect(localizedPath(target, (Astro.locals as { lang?: "sv" | "en" }).lang ?? "sv"), 301);
     return notFound(() => Astro.rewrite("/404"));
   }
 }
+const slug = String(client.SLUG ?? "");
 
 const name = String(client["Head Artist"] ?? "");
 // FM CONTENT (decision 8 / Definition of done). The entity's own name goes
@@ -63,18 +63,13 @@ const tagline = await fm(String(client.clientPresentationTitle ?? ""));
 const bioMarkdown = await fm(String(client.clientPresentationString ?? ""), "markdown");
 const bioHtml = renderBio(bioMarkdown);
 
-// seo-phase-1b-brief.md P1 item 7: the same person can appear on both the
-// Management client roster and the Records artist roster, which would
-// otherwise produce two pages with an identical bare-name <title>. Build a
-// complete, role-disambiguated title here and tell Base not to append its
-// own " | Ninetone Group" suffix on top of it (Base's `appendSiteName` prop
-// — see src/layouts/Base.astro) so no page ends up with two suffixes.
-const pageTitle = `${name} · Client | Ninetone Management`;
+// Role-disambiguated <title> (seo-phase-1b P1 item 7) — the same person can
+// exist on the Records roster too. Base's own " | Ninetone Group" suffix is
+// switched off so no page ends up with two suffixes.
+const pageTitle = `${name} · Previous client | Ninetone Management`;
 
-// Item 7 description fallback: when the tagline is under 70 characters, fall
-// back to the first ~150 characters of the bio, plain text, cut at a word
-// boundary — descriptionWithBioFallback() wraps markdownToPlainText(), which
-// already does the word-boundary-safe truncation.
+// Item 7 description fallback: a tagline under 70 characters is too thin to
+// serve as a meta description, so fall back to the opening of the bio.
 const metaDescription = descriptionWithBioFallback(tagline, bioMarkdown);
 const heroImage = client.artistPicture_big
   ? String(client.artistPicture_big)
@@ -89,10 +84,6 @@ const tags = (client.tags
   : client.genre
   ? String(client.genre).split(/\r|\n|,/).map((s) => s.trim()).filter(Boolean)
   : []);
-const manager = String(client.internalMgmntManager ?? client.internalAandR ?? "");
-const managerEmail = String(
-  client["Green_internalMgmntManagers::userEmail"] ?? client["Green_internalAandR::userEmail"] ?? "",
-);
 const ytOne = String(client.yotubeHighlight_one ?? "");
 const ytTwo = String(client.yotubeHighlight_two ?? "");
 const collectionId = String(client.collectionId ?? "").trim();
@@ -115,18 +106,16 @@ const socials = {
 let merch: Awaited<ReturnType<typeof getProducts>> = [];
 if (collectionId) {
   try { merch = await getProducts({ collectionId, limit: 8 }); } catch (err) {
-    console.error(`[client] merch fetch failed:`, err);
+    console.error(`[previous-client:${slug}] merch fetch failed:`, err);
   }
 }
 
 let latestNews: Awaited<ReturnType<typeof getNewsForArtist>> = [];
 try { latestNews = await getNewsForArtist(name, 4); } catch (err) {
-  console.error(`[client] news strip failed:`, err);
+  console.error(`[previous-client:${slug}] news strip failed:`, err);
 }
 // FM CONTENT (decision 8): the "In the news" cards render FM headlines and
-// excerpts. NewsCard translates only its own chrome labels, so without this
-// the block stayed Swedish on /en/ while the bio above it was English.
-// Pre-resolved here — fm() is async and these render in a .map().
+// excerpts. Pre-resolved here — fm() is async and these render in a .map().
 latestNews = await Promise.all(
   latestNews.map(async (p) => ({
     ...p,
@@ -134,14 +123,6 @@ latestNews = await Promise.all(
     shortMessage: await fm(String(p.shortMessage ?? p.Message ?? "")),
   })),
 );
-
-// "In good company" — same-tag clients ranked by overlap, padded with random
-// others if there aren't enough matches.
-function clientTagsOf(c: Record<string, unknown>): string[] {
-  const raw = (c.tags ?? c.genre ?? "") as string;
-  return String(raw).split(/\r|\n|,/).map((s) => s.trim()).filter(Boolean);
-}
-const related = pickRelatedArtists(client, allClients, clientTagsOf, 12);
 
 const ytLinks = [ytOne, ytTwo].filter(Boolean);
 
@@ -155,38 +136,28 @@ try {
   if (channelId) ytFeed = await getYouTubeFeed(channelId);
 } catch {}
 
-const slug = String(client.SLUG ?? "");
 const origin = pageJsonLdOrigin(Astro.request);
 const jsonLd = [
   breadcrumbs(origin, [
     { name: "Management", path: "/management" },
-    { name: "Clients", path: "/management/clients" },
-    { name, path: `/management/clients/${slug}` },
+    { name: "Previous clients", path: "/management/clients/previous" },
+    { name, path: `/management/clients/previous/single/${slug}` },
   ]),
   person(origin, name, {
     role: "client",
-    path: `management/clients/${slug}`,
+    path: `management/clients/previous/single/${slug}`,
     image: heroImage,
     description: tagline || markdownToPlainText(String(client.clientPresentationString ?? ""), 200),
     socials,
   }),
 ];
 
-// t() bound to this request (docs/i18n-phase-2-brief.md section 4), scoped
-// to the "More from Management" RosterStrip chrome only — see the analogous
-// comment in src/pages/records/artists/[slug].astro.
+// t() bound to this request (docs/i18n-phase-2-brief.md section 4). `name`/
+// `tagline`/`bioHtml`/`tags` are FM-derived content, not this page's chrome.
 const t = sharedT(Astro.locals);
-const moreFromManagementKicker = await t("More from Management");
-const inGoodCompanyHeading = await t("In good company.");
-const allClientsCta = await t("All clients");
-
-// Second pass (docs/i18n-phase-2-brief.md section 4): the rest of this
-// page's own chrome — first pass covered only the RosterStrip block above.
-const backToClientsLabel = await t("← Management · Clients");
-const clientKicker = await t("Management — Client");
+const backToPreviousLabel = await t("← Management · Previous clients");
+const archiveKicker = await t("Management — Archive");
 const watchKicker = await t("Watch");
-const representedByKicker = await t("Represented by");
-const getInTouchLabel = await t("Get in touch");
 const inTheNewsKicker = await t("In the news");
 const merchKicker = await t("Merch");
 const officialSuffix = await t("official.");
@@ -205,7 +176,7 @@ const officialSuffix = await t("official.");
   <section class="bg-ninetone-paper">
     <div class="mx-auto max-w-7xl px-6 pb-12 pt-12 md:pt-16">
       <p class="mb-8">
-        <a href={url("/management/clients")} class="kicker text-ninetone-ink/55 hover:text-ninetone-ink">{backToClientsLabel}</a>
+        <a href={url("/management/clients/previous")} class="kicker text-ninetone-ink/55 hover:text-ninetone-ink">{backToPreviousLabel}</a>
       </p>
 
       <div class="grid gap-10 md:grid-cols-12 md:gap-16">
@@ -223,7 +194,7 @@ const officialSuffix = await t("official.");
                   onload="this.classList.add('is-loaded'); this.closest('.fm-img-frame')?.classList.add('is-ready')"
                 />
               )}
-              <span class="absolute left-0 top-0 h-1 w-16 bg-ninetone-navy" aria-hidden></span>
+              <span class="absolute left-0 top-0 h-1 w-16 bg-ninetone-navy opacity-70" aria-hidden></span>
             </div>
             <div class="mt-6 hidden md:block">
               <StreamingRow socials={socials} />
@@ -232,7 +203,7 @@ const officialSuffix = await t("official.");
         </aside>
 
         <div class="md:col-span-7 lg:col-span-7">
-          <span class="kicker text-ninetone-navy">{clientKicker}</span>
+          <span class="kicker text-ninetone-navy">{archiveKicker}</span>
           <h1 class="mt-4 font-display text-[clamp(3rem,8vw,7rem)] leading-[0.9] tracking-[-0.045em]">{name}</h1>
 
           {tagline && (
@@ -253,7 +224,7 @@ const officialSuffix = await t("official.");
             <StreamingRow socials={socials} />
           </div>
 
-          <div class="mt-12 prose lede max-w-none" set:html={bioHtml}></div>
+          {bioHtml && <div class="mt-12 prose lede max-w-none" set:html={bioHtml}></div>}
 
           {ytLinks.length > 0 && (
             <div class="mt-16 border-t border-ninetone-rule pt-10">
@@ -266,28 +237,6 @@ const officialSuffix = await t("official.");
                     <iframe src={`https://www.youtube.com/embed/${id}`} class="aspect-video w-full" title={`${name} video`} loading="lazy" allowfullscreen></iframe>
                   ) : null;
                 })}
-              </div>
-            </div>
-          )}
-
-          {(manager || managerEmail) && (
-            <div class="mt-16 border-t border-ninetone-rule pt-10">
-              <span class="kicker text-ninetone-navy">{representedByKicker}</span>
-              <div class="mt-4 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-                <div>
-                  <p class="font-display text-2xl font-medium leading-tight tracking-tight">{manager || "Ninetone Management"}</p>
-                  {managerEmail && (
-                    <a href={`mailto:${managerEmail}`} class="mt-2 inline-block text-sm text-ninetone-ink/70 underline-offset-4 hover:underline">
-                      {managerEmail}
-                    </a>
-                  )}
-                </div>
-                <a
-                  href={url("/management/contact-management")}
-                  class="inline-flex items-center gap-2 self-start bg-ninetone-navy px-4 py-3 text-sm font-semibold text-ninetone-paper transition-colors hover:bg-ninetone-navy-dark"
-                >
-                  {getInTouchLabel} <span aria-hidden>→</span>
-                </a>
               </div>
             </div>
           )}
@@ -331,16 +280,5 @@ const officialSuffix = await t("official.");
         </div>
       </div>
     </section>
-  )}
-
-  {related.length > 0 && (
-    <RosterStrip
-      artists={related}
-      theme="management"
-      hrefBase="/management/clients"
-      kicker={moreFromManagementKicker}
-      heading={inGoodCompanyHeading}
-      cta={{ label: allClientsCta, href: "/management/clients" }}
-    />
   )}
 </Base>

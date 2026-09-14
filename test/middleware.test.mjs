@@ -1046,3 +1046,28 @@ test("legacy /blog/:slug and /ninetone-nation/booking/:slug deep links 301 to to
   await run(new Request("https://www.ninetone.com/ninetone-nation/booking"), async () => { rendered++; return new Response("list"); }, runtime);
   assert.equal(rendered, 1);
 });
+
+// --- Previous clients (2026-09-14) ------------------------------------------
+
+test("the previous-clients list sits on the roster tier (21600) and its detail pages on the detail tier (3600)", async () => {
+  // Rule order matters: /management/clients/ (detail, 3600) is a prefix of
+  // the new list path, so the list rules must be matched first — mirroring
+  // the /records/artists/previous arrangement.
+  const cases = [
+    ["/management/clients/previous", "21600"],
+    ["/management/clients/previous/3", "21600"],
+    ["/en/management/clients/previous", "21600"],
+    ["/management/clients/previous/single/bangarden_customs", "3600"],
+    ["/management/clients/bangarden_customs", "3600"],
+    ["/management/clients", "21600"],
+  ];
+  for (const [path, ttl] of cases) {
+    const runtime = createRuntime();
+    const response = await run(
+      new Request(`https://ninetone.com${path}`),
+      async () => new Response("ok"),
+      runtime,
+    );
+    assert.equal(response.headers.get("x-cache-ttl"), ttl, path);
+  }
+});

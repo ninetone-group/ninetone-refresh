@@ -455,3 +455,31 @@ test("LLMS_CHROME_SV: every key is a real chrome literal, and every literal that
     assert.ok(literal in LLMS_CHROME_SV, `no Swedish for: ${JSON.stringify(literal)}`);
   }
 });
+
+// --- Previous clients (2026-09-14) ------------------------------------------
+
+test("llms.txt: 'Previous clients' links to the bare /management/clients/previous list, under the Management section", () => {
+  const body = buildLlmsTxt(ORIGIN, stubData());
+  assert.ok(body.includes(`[Previous clients](${ORIGIN}/management/clients/previous)`));
+  assert.ok(!body.includes(`${ORIGIN}/management/clients/previous/1)`));
+  const mgmt = body.indexOf("## Ninetone Management");
+  const nation = body.indexOf("## Ninetone Nation");
+  const line = body.indexOf("[Previous clients]");
+  assert.ok(mgmt < line && line < nation, "previous clients belongs to the Management section");
+});
+
+test("llms.txt: previous clients use the real previous/single/{slug} route and are labelled as previous", () => {
+  const body = buildLlmsTxt(
+    ORIGIN,
+    stubData({
+      previousClients: [{ SLUG: "bangarden_customs", "Head Artist": "Bangården Customs", tags: "Kreatör" }],
+    }),
+  );
+  assert.ok(body.includes(`[Bangården Customs](${ORIGIN}/management/clients/previous/single/bangarden_customs): Kreatör — previous client`));
+  assert.ok(!body.includes(`${ORIGIN}/management/clients/bangarden_customs)`));
+});
+
+test("llms.txt: the Swedish chrome table renders 'Tidigare klienter' for the previous-clients line", () => {
+  const body = buildLlmsTxt(ORIGIN, stubData(), { chrome: LLMS_CHROME_SV, lang: "sv" });
+  assert.ok(body.includes(`[Tidigare klienter](${ORIGIN}/management/clients/previous)`));
+});

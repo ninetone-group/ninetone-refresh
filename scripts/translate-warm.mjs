@@ -298,6 +298,7 @@ const {
   getArtists,
   getPreviousArtists,
   getClients,
+  getPreviousClients,
   getTeam,
   getBookingCategories,
   getBookingRoster,
@@ -544,10 +545,11 @@ function voiceFieldJobs({ artists, clients, bookingCategories, webPostsBySection
 
 async function collectEntityJobs() {
   console.log("Fetching FM entities...");
-  const [artists, previousArtists, clients, team, bookingCategories, bookingRoster, news] = await Promise.all([
+  const [artists, previousArtists, clients, previousClients, team, bookingCategories, bookingRoster, news] = await Promise.all([
     getArtists(),
     getPreviousArtists(),
     getClients(),
+    getPreviousClients(),
     getTeam(),
     getBookingCategories(),
     getBookingRoster(),
@@ -589,6 +591,14 @@ async function collectEntityJobs() {
     jobs.push(job(c.clientPresentationShort, "fast", "plain"));
     // clients.astro falls back to artistPresentationShort when the client
     // variant is empty, so warm whichever the page would actually render.
+    jobs.push(job(c.artistPresentationShort, "fast", "plain"));
+  }
+  // Previous clients (management/clients/previous/*) render the same client
+  // fields, so warm them the same way.
+  for (const c of previousClients) {
+    jobs.push(job(c.clientPresentationTitle, "fast", "title"));
+    jobs.push(job(c.clientPresentationString, "fast", "markdown"));
+    jobs.push(job(c.clientPresentationShort, "fast", "plain"));
     jobs.push(job(c.artistPresentationShort, "fast", "plain"));
   }
   // Booking talent bios (bookingPresentationTitle/String) — bookingCategories'

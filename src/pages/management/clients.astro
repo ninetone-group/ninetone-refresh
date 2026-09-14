@@ -2,6 +2,7 @@
 import Base from "../../layouts/Base.astro";
 import ArtistCard from "../../components/ArtistCard.astro";
 import SectionIntro from "../../components/SectionIntro.astro";
+import ArtistsTabs from "../../components/ArtistsTabs.astro";
 import RosterFilters from "../../components/RosterFilters.astro";
 import RosterIndex from "../../components/RosterIndex.astro";
 import type { Artist } from "../../lib/ninetone";
@@ -82,6 +83,8 @@ const description = await t(
 
   <section class="bg-ninetone-paper pb-20">
     <div class="mx-auto max-w-7xl px-6">
+      <ArtistsTabs active="current" division="management" />
+
       <RosterFilters
         tags={sortedTags}
         theme="management"

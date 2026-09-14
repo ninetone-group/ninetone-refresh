@@ -3,6 +3,22 @@
 All notable changes to the Ninetone Group site. Versions follow `MAJOR.MINOR.PATCH.MICRO`
 (the number in `VERSION`).
 
+## [0.2.4.0] - 2026-09-14
+
+### Added
+- **Tidigare klienter (previous clients).** New Management archive mirroring the
+  previous-artists pages: paginated list at `/management/clients/previous` (30 per page,
+  A–Ö index on page 1, "Klienter / Tidigare klienter" tabs) and detail pages at
+  `/management/clients/previous/single/{slug}`, both locales. Reads the cron-warmed
+  `getPreviousClients()` list — no new FileMaker finds.
+- **Cross-roster 301s for clients.** `/management/clients/{slug}` for a Not Active client
+  redirects to the archive page and a re-signed client's archive URL redirects back, locale
+  kept — the four former-client URLs still drawing traffic in Search Console
+  (`bangarden_customs`, `raketforskaren`, `luddze_`, `johanna_and_marcus`) no longer 404.
+- Sitemap and `llms.txt` list the new pages; middleware caches the list at the roster tier
+  (6 h) and the detail pages at 1 h; footer links to the archive; the translation warm
+  script covers previous-client prose.
+
 ## [0.2.3.0] - 2026-09-13
 
 ### Added

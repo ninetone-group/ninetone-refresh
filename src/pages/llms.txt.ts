@@ -3,6 +3,7 @@ import {
   getArtists,
   getPreviousArtists,
   getClients,
+  getPreviousClients,
   getTeam,
   getNews,
   getBookingCategories,
@@ -72,10 +73,11 @@ export async function renderLlmsTxt(context: APIContext, lang: Lang): Promise<Re
   // src/pages/sitemap-pages.xml.ts's own reasoning for the same fix.
   const origin = pageJsonLdOrigin(request);
 
-  const [artists, previousArtists, clients, team, news, bookingCategories, guiderSections] = await Promise.all([
+  const [artists, previousArtists, clients, previousClients, team, news, bookingCategories, guiderSections] = await Promise.all([
     getArtists(),
     getPreviousArtists(),
     getClients(),
+    getPreviousClients(),
     getTeam(),
     getNews(),
     getBookingCategories(),
@@ -106,6 +108,7 @@ export async function renderLlmsTxt(context: APIContext, lang: Lang): Promise<Re
       artists,
       previousArtists,
       clients,
+      previousClients,
       team,
       news,
       bookingLines,

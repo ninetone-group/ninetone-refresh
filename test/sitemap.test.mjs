@@ -5,6 +5,8 @@ import {
   staticRouteEntries,
   detailPageEntries,
   previousArtistsPaginationEntries,
+  previousClientsPaginationEntries,
+  paginationEntries,
   bookingCategoryEntries,
   guideEntries,
   buildSitemapEntries,
@@ -87,6 +89,7 @@ function stubbedLists() {
     artists: [{ SLUG: "artist-a" }, { SLUG: "artist-b" }],
     previousArtists: Array.from({ length: 65 }, (_, i) => ({ SLUG: `old-artist-${i}` })),
     clients: [{ SLUG: "client-a" }, { SLUG: "client-b" }, { SLUG: "client-c" }],
+    previousClients: Array.from({ length: 31 }, (_, i) => ({ SLUG: `old-client-${i}` })),
     team: [{ SLUG: "team-a" }],
     bookingTalent: [{ SLUG: "talent-a" }, { SLUG: "talent-b" }],
     bookingCategories: [
@@ -102,6 +105,7 @@ test("buildSitemapEntries: produces exactly N entries for stubbed lists (static 
   const input = stubbedLists();
   const entries = buildSitemapEntries(ORIGIN, input);
   const expectedPaginationPages = previousArtistsPaginationEntries(ORIGIN, input.previousArtists.length).length;
+  const expectedClientPaginationPages = previousClientsPaginationEntries(ORIGIN, input.previousClients.length).length;
   const expectedCategoryPages = input.bookingCategories.filter((c) => c.artists.length > 0).length;
   const expectedCount =
     input.staticRoutes.length +
@@ -109,6 +113,8 @@ test("buildSitemapEntries: produces exactly N entries for stubbed lists (static 
     expectedPaginationPages +
     input.previousArtists.length +
     input.clients.length +
+    expectedClientPaginationPages +
+    input.previousClients.length +
     input.team.length +
     input.bookingTalent.length +
     expectedCategoryPages +
@@ -118,6 +124,53 @@ test("buildSitemapEntries: produces exactly N entries for stubbed lists (static 
   assert.equal(expectedPaginationPages, 2);
   // Artist + Föreläsare populated, Konferencier empty -> 2 category pages.
   assert.equal(expectedCategoryPages, 2);
+  // 31 previous clients at page size 30 -> page 2 only.
+  assert.equal(expectedClientPaginationPages, 1);
+});
+
+// --- Previous clients (2026-09-14) ------------------------------------------
+
+test("buildSitemapEntries: previous clients get the bare list route, pagination pages 2+, and one previous/single detail URL each", () => {
+  const entries = buildSitemapEntries(ORIGIN, stubbedLists());
+  const locs = entries.map((e) => e.loc);
+  assert.ok(locs.includes("https://ninetone.com/management/clients/previous")); // from STATIC_ROUTES
+  assert.ok(!locs.includes("https://ninetone.com/management/clients/previous/1"));
+  assert.ok(locs.includes("https://ninetone.com/management/clients/previous/2"));
+  assert.ok(!locs.includes("https://ninetone.com/management/clients/previous/3"));
+  assert.ok(locs.includes("https://ninetone.com/management/clients/previous/single/old-client-0"));
+  assert.ok(locs.includes("https://ninetone.com/management/clients/previous/single/old-client-30"));
+  // Never at the current-client path.
+  assert.ok(!locs.includes("https://ninetone.com/management/clients/old-client-0"));
+});
+
+test("buildSitemapEntries: previousClients is optional — older callers without it still build with no client archive entries", () => {
+  const { previousClients: _omit, ...input } = stubbedLists();
+  const locs = buildSitemapEntries(ORIGIN, input).map((e) => e.loc);
+  assert.ok(locs.includes("https://ninetone.com/management/clients/previous")); // static route stays
+  assert.ok(!locs.some((l) => l.includes("/management/clients/previous/single/")));
+  assert.ok(!locs.includes("https://ninetone.com/management/clients/previous/2"));
+});
+
+test("previousClientsPaginationEntries: same page math as the artists variant, on the clients base path", () => {
+  assert.deepEqual(
+    previousClientsPaginationEntries(ORIGIN, 140, 30).map((e) => e.loc), // 140 records as of 2026-09-13
+    [2, 3, 4, 5].map((n) => `https://ninetone.com/management/clients/previous/${n}`),
+  );
+  assert.equal(previousClientsPaginationEntries(ORIGIN, 30, 30).length, 0);
+  assert.equal(previousClientsPaginationEntries(ORIGIN, 0, 30).length, 0);
+});
+
+test("paginationEntries: strips a trailing slash from the base path and carries the changefreq", () => {
+  const entries = paginationEntries(ORIGIN, "/x/previous/", 61, 30, "yearly");
+  assert.deepEqual(entries.map((e) => e.loc), ["https://ninetone.com/x/previous/2", "https://ninetone.com/x/previous/3"]);
+  assert.ok(entries.every((e) => e.changefreq === "yearly"));
+});
+
+test("localized sitemap: the previous-clients routes are bilingual (sv + en entries)", () => {
+  const entries = localizeSitemapEntries(ORIGIN, buildSitemapEntries(ORIGIN, stubbedLists()), true);
+  const locs = entries.map((e) => e.loc);
+  assert.ok(locs.includes("https://ninetone.com/en/management/clients/previous"));
+  assert.ok(locs.includes("https://ninetone.com/en/management/clients/previous/single/old-client-0"));
 });
 
 test("buildSitemapEntries: previous-artist pagination page 1 is NOT duplicated (only the bare static route represents it)", () => {

@@ -57,6 +57,10 @@ export const STATIC_ROUTES: StaticRoute[] = [
   { path: "/records/contact-records", changefreq: "yearly" },
   { path: "/management", changefreq: "weekly" },
   { path: "/management/clients", changefreq: "weekly" },
+  // Same paginate() shape as the previous-artists list: page 1 at the bare
+  // path, pages 2+ at "/previous/{n}" (src/pages/management/clients/previous/
+  // [...page].astro).
+  { path: "/management/clients/previous", changefreq: "monthly" },
   { path: "/management/contact-management", changefreq: "yearly" },
   { path: "/ninetone-nation", changefreq: "weekly" },
   { path: "/ninetone-nation/booking", changefreq: "weekly" },
@@ -83,3 +87,10 @@ export function staticRoutePaths(): string[] {
  * how many pagination pages the sitemap should list.
  */
 export const PREVIOUS_ARTISTS_PAGE_SIZE = 30;
+
+/**
+ * Page size for the /management/clients/previous/{n} pagination — same
+ * arrangement as PREVIOUS_ARTISTS_PAGE_SIZE, shared by
+ * src/pages/management/clients/previous/[...page].astro and src/lib/sitemap.ts.
+ */
+export const PREVIOUS_CLIENTS_PAGE_SIZE = 30;

@@ -44,5 +44,25 @@
   "806d82aeea25df265c6fa1e5233c75f33e36d7a92daf91fee0b0196a858319cc": {
     "sv": "Varje tidigare artist i bokstavsordning – {count} totalt.",
     "en": "Every previous artist, alphabetically — {count} in total."
+  },
+  "b1bd3526cac2a1eb0a63e0c0d4ef270adbb5e34722304c86982d90face941bd5": {
+    "sv": "Tidigare klienter",
+    "en": "Previous Clients"
+  },
+  "1eef6494c8d585b6f858b54ec26fe755241a77c68ff9020031a565347cdb8128": {
+    "sv": "Varje tidigare klient i bokstavsordning – {count} totalt.",
+    "en": "Every previous client, alphabetically — {count} in total."
+  },
+  "f1fea0b100358a9195547c4aebef89f0ce51f1cd30255d3d9285828e5337b8f0": {
+    "sv": "← Management · Tidigare klienter",
+    "en": "← Management · Previous clients"
+  },
+  "5d2ba7cbea6125aab9e04c9b874f234a4d89b6746f8ab03854124df0eeaad765": {
+    "sv": "Management – Arkiv",
+    "en": "Management — Archive"
+  },
+  "1b2c064c4eed51f241b40f7de34f0654f7de6e633ea61142bc0dd3ec7cf105f7": {
+    "sv": "Tidigare klienter",
+    "en": "Previous clients"
   }
 }

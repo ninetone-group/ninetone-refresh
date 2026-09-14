@@ -3,6 +3,7 @@ import {
   getArtists,
   getPreviousArtists,
   getClients,
+  getPreviousClients,
   getTeam,
   getAllActiveBookingSlugs,
   getBookingCategories,
@@ -66,11 +67,12 @@ import { pageJsonLdOrigin } from "../lib/site";
 export const GET: APIRoute = async ({ request }) => {
   const origin = pageJsonLdOrigin(request);
 
-  const [artists, previousArtists, clients, team, bookingSlugs, bookingCategories, news, guiderSections] =
+  const [artists, previousArtists, clients, previousClients, team, bookingSlugs, bookingCategories, news, guiderSections] =
     await Promise.all([
       getArtists(),
       getPreviousArtists(),
       getClients(),
+      getPreviousClients(),
       getTeam(),
       getAllActiveBookingSlugs(),
       getBookingCategories(),
@@ -87,6 +89,7 @@ export const GET: APIRoute = async ({ request }) => {
     artists,
     previousArtists,
     clients,
+    previousClients,
     team,
     // getAllActiveBookingSlugs() (not getBookingRoster()) — this is the
     // EXACT set /ninetone-nation/[slug].astro generates pages for (via
