@@ -1139,7 +1139,25 @@ function isolateCachedRead(kv: KvLike, key: string): Promise<string | null> {
  * `translationLedgerFor(locals)` below is how t.ts and the middleware agree
  * on the one Map per request.
  */
-export const TRANSLATION_BUNDLE_TTL_SECONDS = 6 * 60 * 60;
+/**
+ * Bundle lifetime (2026-09-14 cold-start investigation). Was 6 h, anchored to
+ * the last CHANGE: storeTranslationBundleIfChanged() skipped the write when
+ * the ledger was identical, so KV's expiry was never extended by use and a
+ * stable route's bundle lapsed every 6 h. The next cache-miss render then
+ * paid every string as a serial KV read — measured 4.3 s of a 4.5 s homepage
+ * render, ~70 reads. Now: seven days (the edge cache's own hard TTL), and an
+ * unchanged bundle is re-put once per refresh window per isolate, so any
+ * route rendered at least weekly never lapses. Correctness is unchanged —
+ * entries are content-addressed (see above); only the "silent about a
+ * hand-deleted value" window grows, and that path is a maintenance script.
+ */
+export const TRANSLATION_BUNDLE_TTL_SECONDS = 7 * 24 * 60 * 60;
+/** An identical bundle is re-written (TTL renewed) at most this often per isolate. */
+export const TRANSLATION_BUNDLE_REFRESH_MS = 60 * 60 * 1000;
+const bundleWrittenAt = new Map<string, number>();
+export function resetBundleWriteLogForTests(): void {
+  bundleWrittenAt.clear();
+}
 
 /** Minimal locals shape the ledger rides on — the same object as the budget. */
 export interface LocalsWithLedger {
@@ -1204,6 +1222,7 @@ export async function storeTranslationBundleIfChanged(
   bundleKey: string,
   previous: Record<string, string> | null,
   ledger: ReadonlyMap<string, string>,
+  now: number = Date.now(),
 ): Promise<boolean> {
   if (ledger.size === 0 || typeof kv.put !== "function") return false;
   if (previous) {
@@ -1217,12 +1236,17 @@ export async function storeTranslationBundleIfChanged(
         }
       }
     }
-    if (same) return false;
+    // Identical: skip the write UNLESS this isolate has not renewed the
+    // bundle within the refresh window. KV has no "touch", so renewing the
+    // expiry means re-putting the same value — bounded to once an hour per
+    // isolate per route (see TRANSLATION_BUNDLE_TTL_SECONDS for why).
+    if (same && now - (bundleWrittenAt.get(bundleKey) ?? 0) < TRANSLATION_BUNDLE_REFRESH_MS) return false;
   }
   try {
     await kv.put(bundleKey, JSON.stringify(Object.fromEntries(ledger)), {
       expirationTtl: TRANSLATION_BUNDLE_TTL_SECONDS,
     });
+    bundleWrittenAt.set(bundleKey, now);
     return true;
   } catch (err) {
     console.error(`[translate] bundle write failed for ${bundleKey}:`, err);

@@ -16,6 +16,8 @@ import {
   translationBundleKey,
   translationLedgerFor,
   TRANSLATION_BUNDLE_TTL_SECONDS,
+  TRANSLATION_BUNDLE_REFRESH_MS,
+  resetBundleWriteLogForTests,
 } from "../src/lib/translate.ts";
 
 /** KV double that understands bulk get (array of keys -> Map), like Workers KV. */
@@ -222,24 +224,54 @@ test("seedIsolateCache never overrides an entry the isolate already holds", asyn
 });
 
 test("storeTranslationBundleIfChanged: writes on first sight, skips when identical, rewrites on change", async () => {
+  resetBundleWriteLogForTests();
   const kv = bulkKv();
   const bundleKey = translationBundleKey("en", "/");
   const ledger = new Map([["tr:v1:en:fast:a", "A"], ["tr:v1:en:quality:b", "B"]]);
+  const t0 = 1_000_000;
 
-  assert.equal(await storeTranslationBundleIfChanged(kv, bundleKey, null, ledger), true);
+  assert.equal(await storeTranslationBundleIfChanged(kv, bundleKey, null, ledger, t0), true);
   assert.equal(kv.calls.puts.length, 1);
   assert.deepEqual(kv.calls.puts[0][2], { expirationTtl: TRANSLATION_BUNDLE_TTL_SECONDS });
   assert.deepEqual(JSON.parse(kv.calls.puts[0][1]), Object.fromEntries(ledger));
 
   const previous = JSON.parse(kv.store.get(bundleKey));
-  assert.equal(await storeTranslationBundleIfChanged(kv, bundleKey, previous, ledger), false, "identical → no write");
+  assert.equal(await storeTranslationBundleIfChanged(kv, bundleKey, previous, ledger, t0 + 1000), false, "identical, just written → no write");
   assert.equal(kv.calls.puts.length, 1);
 
   ledger.set("tr:v1:en:fast:c", "C");
-  assert.equal(await storeTranslationBundleIfChanged(kv, bundleKey, previous, ledger), true, "new entry → rewrite");
+  assert.equal(await storeTranslationBundleIfChanged(kv, bundleKey, previous, ledger, t0 + 2000), true, "new entry → rewrite");
   assert.equal(kv.calls.puts.length, 2);
 
-  assert.equal(await storeTranslationBundleIfChanged(kv, bundleKey, null, new Map()), false, "empty ledger → nothing to store");
+  assert.equal(await storeTranslationBundleIfChanged(kv, bundleKey, null, new Map(), t0 + 3000), false, "empty ledger → nothing to store");
+});
+
+// 2026-09-14 cold-start investigation: the 6 h expiry was anchored to the
+// last CHANGE, so an unchanged route's bundle lapsed and the next miss render
+// paid ~70 serial KV reads (4.3 s on "/"). Reproduced before the fix: with
+// the old code the third call below returned false and the expiry was never
+// renewed.
+test("an identical bundle is re-written once per refresh window so its KV expiry is renewed by use, not only by change", async () => {
+  resetBundleWriteLogForTests();
+  const kv = bulkKv();
+  const bundleKey = translationBundleKey("sv", "/");
+  const ledger = new Map([["tr:v1:sv:quality:a", "A"]]);
+  const t0 = 5_000_000;
+
+  assert.equal(await storeTranslationBundleIfChanged(kv, bundleKey, null, ledger, t0), true);
+  const previous = JSON.parse(kv.store.get(bundleKey));
+  assert.equal(await storeTranslationBundleIfChanged(kv, bundleKey, previous, ledger, t0 + TRANSLATION_BUNDLE_REFRESH_MS - 1), false, "inside the window → no write");
+  assert.equal(await storeTranslationBundleIfChanged(kv, bundleKey, previous, ledger, t0 + TRANSLATION_BUNDLE_REFRESH_MS), true, "window elapsed → renewed");
+  assert.equal(kv.calls.puts.length, 2);
+  assert.deepEqual(kv.calls.puts[1][2], { expirationTtl: TRANSLATION_BUNDLE_TTL_SECONDS });
+  assert.equal(await storeTranslationBundleIfChanged(kv, bundleKey, previous, ledger, t0 + TRANSLATION_BUNDLE_REFRESH_MS + 1), false, "renewal recorded → quiet again");
+  // A different route has its own clock.
+  assert.equal(await storeTranslationBundleIfChanged(kv, translationBundleKey("sv", "/news"), null, ledger, t0 + 10), true);
+});
+
+test("the bundle lifetime is a week, not hours — a route rendered weekly can never lapse", () => {
+  assert.equal(TRANSLATION_BUNDLE_TTL_SECONDS, 7 * 24 * 60 * 60);
+  assert.ok(TRANSLATION_BUNDLE_REFRESH_MS < TRANSLATION_BUNDLE_TTL_SECONDS * 1000 / 24, "renewal happens far more often than expiry");
 });
 
 test("storeTranslationBundleIfChanged swallows a KV write failure", async () => {

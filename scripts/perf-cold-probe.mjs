@@ -3,7 +3,11 @@
  * Cold-render probe for the Cloudflare staging Worker.
  *
  * Fetches each route ONCE with an unknown query parameter (which bypasses the
- * page cache, so the Worker renders) and prints the Server-Timing breakdown:
+ * page cache, so the Worker renders) and prints the Server-Timing breakdown.
+ * NOTE (2026-09-14): that bypass path is the same one a visitor with an
+ * unrecognised query string takes; since v0.2.4.3 it preloads the route
+ * bundle like a real miss does, so the numbers are representative. Before
+ * that it rendered with NO bundle and overstated a real miss by seconds.
  *   trbundle  route translation bundle read (one per render)
  *   trnkv     physical translation KV reads — near 0 once bundles are warm
  *   fmkv      FM read-through (KV) · fmnet  live FileMaker time
