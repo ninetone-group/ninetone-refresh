@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { Buffer } from "node:buffer";
 import test from "node:test";
 import * as esbuild from "esbuild";
-import { translate, translationKey } from "../src/lib/translate.ts";
+import { translate, translationKey, TRANSLATION_BUNDLE_TTL_SECONDS, resetBundleWriteLogForTests } from "../src/lib/translate.ts";
 
 const middlewareModule = await loadMiddleware();
 
@@ -784,10 +784,13 @@ test("route bundle: read before render, every resolved translation written back 
   const bundlePut = puts.find(([k]) => k === "trb:v1:en:/news");
   assert.ok(bundlePut, "the ledger is written back as the route's bundle");
   assert.deepEqual(JSON.parse(bundlePut[1]), { [key]: "News" });
-  assert.equal(bundlePut[2].expirationTtl, 21600);
+  // Seven days (2026-09-14): the 6 h expiry, anchored to the last change,
+  // lapsed on quiet routes and cost ~70 serial reads on the next miss.
+  assert.equal(bundlePut[2].expirationTtl, TRANSLATION_BUNDLE_TTL_SECONDS);
 });
 
-test("route bundle: a preloaded bundle seeds the render and is not rewritten when unchanged", async () => {
+test("route bundle: a preloaded bundle seeds the render; an unchanged bundle is renewed once per isolate, then left alone", async () => {
+  resetBundleWriteLogForTests();
   const key = await translationKey("Artister", "en", "quality");
   const reads = [];
   const puts = [];
@@ -809,7 +812,24 @@ test("route bundle: a preloaded bundle seeds the render and is not rewritten whe
   await Promise.all(runtime.waits);
   assert.equal(await response.text(), "Artists (bundled)");
   assert.ok(!reads.includes(key), "the seeded key is never read from KV");
-  assert.equal(puts.length, 0, "identical ledger → no bundle write");
+  // First sight of this bundle in this isolate: one renewal write with the
+  // SAME content, so KV's expiry moves forward (2026-09-14 fix).
+  assert.equal(puts.length, 1, "identical ledger → exactly one renewal write");
+  assert.deepEqual(JSON.parse(puts[0][1]), { [key]: "Artists (bundled)" });
+  assert.equal(puts[0][2].expirationTtl, TRANSLATION_BUNDLE_TTL_SECONDS);
+
+  // Same route again inside the refresh window: nothing written.
+  const again = {
+    request: new Request("https://ninetone.com/en/records/artists"),
+    url: new URL("https://ninetone.com/en/records/artists"),
+    locals: { cfContext: { waitUntil: (p) => runtime.waits.push(p) } },
+  };
+  await middlewareModule.onRequest(again, async () => {
+    const r = await translate({ text: "Artister", target: "en", tier: "quality", kv, ledger: again.locals.__i18nLedger });
+    return new Response(r.text);
+  });
+  await Promise.all(runtime.waits);
+  assert.equal(puts.length, 1, "renewed already → quiet");
 });
 
 test("route bundle: a cache HIT reads no bundle at all", async () => {
@@ -1134,4 +1154,26 @@ test("a plain miss that renders 404 evicts nothing (there is nothing to evict)",
   const runtime = createRuntime();
   await run(new Request("https://ninetone.com/team/nobody"), async () => new Response("gone", { status: 404 }), runtime);
   assert.deepEqual(runtime.deleted, []);
+});
+
+// --- 2026-09-14 cold-start investigation: the bypass path used to render ----
+// with no translation bundle at all (every string a serial KV read).
+
+test("an uncached (bypass) render still preloads the route's translation bundle", async () => {
+  const reads = [];
+  const runtime = createRuntime({ env: { CACHE_STATE: { get: async (key) => { reads.push(key); return key === "cache-version" ? "7" : null; } } } });
+  const response = await run(new Request("https://ninetone.com/records/artists?foo=bar"), async () => new Response("ok"), runtime);
+  assert.equal(response.headers.get("x-cache"), null, "a meaningful query string bypasses the shared cache");
+  assert.equal(runtime.matched.length, 0);
+  assert.ok(reads.includes("trb:v1:sv:/records/artists"), `bundle read expected, got ${JSON.stringify(reads)}`);
+  assert.match(response.headers.get("server-timing") ?? "", /trbundle;/);
+});
+
+test("the bypass bundle preload is locale-aware and never writes", async () => {
+  const reads = [];
+  let puts = 0;
+  const runtime = createRuntime({ env: { CACHE_STATE: { get: async (key) => { reads.push(key); return key === "cache-version" ? "7" : null; }, put: async () => { puts += 1; } } } });
+  await run(new Request("https://ninetone.com/en/team?x=1"), async () => new Response("ok"), runtime);
+  assert.ok(reads.includes("trb:v1:en:/team"), `expected the English /team bundle, got ${JSON.stringify(reads)}`);
+  assert.equal(puts, 0);
 });

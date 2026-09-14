@@ -357,11 +357,22 @@ export const onRequest = defineMiddleware((context, next) => withServerTiming(as
   // private route will rely on, and a locale prefix must never be able to
   // strip it. /en/404 additionally un-did the documented no-cache invariant
   // that cache-policy.ts's header comment exists to explain.
+  const env = await getCfEnv();
+
   if (!cacheApi || shouldBypassCache(request, renderTarget ?? rawPathname, url.search)) {
+    // Uncached render (a meaningful query string, /api, /admin, …). Still
+    // seed the isolate with the route's translation bundle: without it this
+    // path paid every string as a serial KV read (2026-09-14, ~4 s on "/"),
+    // and any visitor arriving with an unrecognised parameter got that. Read
+    // only — the cached path below owns the bundle write.
+    const bypassKv = env?.CACHE_STATE ?? null;
+    const bypassBundleKey = translationBundleKey(lang, renderTarget ?? rawPathname);
+    if (bypassKv && bypassBundleKey.length <= MAX_BUNDLE_KEY_LENGTH) {
+      await timeServer("trbundle", () => loadTranslationBundle(bypassKv, bypassBundleKey));
+    }
     return harden(await render(renderTarget ?? undefined));
   }
 
-  const env = await getCfEnv();
   if (!env) return harden(await render(renderTarget ?? undefined)); // Node runtime (static build / plain dev)
 
   // Publish-button epoch. KV read is edge-cached 60s, so a Publish takes

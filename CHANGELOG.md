@@ -3,6 +3,18 @@
 All notable changes to the Ninetone Group site. Versions follow `MAJOR.MINOR.PATCH.MICRO`
 (the number in `VERSION`).
 
+## [0.2.4.3] - 2026-09-14
+
+### Fixed
+- **Multi-second cold renders after quiet periods.** Each route's translation bundle in KV
+  expired 6 hours after its last *change*, because an unchanged bundle was never rewritten
+  and KV has no touch. Once it lapsed, the next uncached render fetched every string one
+  by one: measured 4.3 s of a 4.5 s homepage render (about 70 serial reads). Bundles now
+  live seven days and are renewed on use (at most hourly per isolate), so any route
+  rendered weekly never lapses. Uncached renders with an unrecognised query string now
+  preload the bundle too. Deploys still empty the edge cache (18 today), but a miss costs
+  well under a second instead of seconds.
+
 ## [0.2.4.2] - 2026-09-14
 
 Security audit follow-up (`docs/security-audit-2026-09-14.md`).
