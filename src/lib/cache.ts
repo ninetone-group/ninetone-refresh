@@ -25,12 +25,61 @@ const MAX_ENTRIES = 500;
 
 type Entry = {
   promise: Promise<unknown>;
+  /** False while the load is in flight. A settled promise is a plain value and
+   *  safe to hand to any request; an in-flight one may belong to a request
+   *  that has ended (see `boundedJoin`). */
+  settled: boolean;
   expires: number;
   /** Last successfully resolved value — served if a later refresh fails. */
   stale?: { value: unknown };
 };
 
 const memCache = new Map<string, Entry>();
+
+/**
+ * CROSS-REQUEST SHARING (2026-09-19). This map lives for the whole isolate, so
+ * a caller can be handed a load that ANOTHER request started. On Workers a
+ * fetch belongs to the request that started it: if that request ends first
+ * (visitor closes the tab, the runtime cancels it), the load never settles and
+ * every request that joined it waits forever. The same hazard hung pages
+ * through the translation reads (fixed in v0.2.5.4, src/lib/translate.ts).
+ *
+ * So a JOINING caller waits on a timer it owns, and past the bound runs the
+ * load itself. The caller that STARTED a load is never bounded here (its own
+ * fetch timeout covers it), so a slow-but-alive FM call is not abandoned by
+ * its owner, only duplicated by a joiner that has waited this long.
+ *
+ * Workers only. The static build shares in-flight FM finds across hundreds of
+ * parallel page renders inside one process, where a load cannot be orphaned
+ * and a duplicate would just hammer FM.
+ */
+const ON_WORKERS = typeof navigator !== "undefined" && navigator.userAgent === "Cloudflare-Workers";
+let foreignWaitMs: number | null = ON_WORKERS ? 4000 : null;
+/** Test hook: a number enables the bound (any runtime), null restores the default. */
+export function setForeignWaitForTests(ms: number | null): void {
+  foreignWaitMs = ms ?? (ON_WORKERS ? 4000 : null);
+}
+
+/**
+ * Wait on a shared job for at most `ms`, on a timer owned by the CALLER; past
+ * it, settle with `fallback()` instead. A rejection of the shared job passes
+ * through unchanged. Shared with src/lib/filemaker.ts (the session token).
+ */
+export function boundedJoin<T>(job: Promise<T>, ms: number, fallback: () => Promise<T>): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => resolve(fallback()), ms);
+    job.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      },
+    );
+  });
+}
 
 function key(namespace: string, payload: unknown): string {
   return `${namespace}:${JSON.stringify(payload)}`;
@@ -67,10 +116,18 @@ export function cached<T>(
   const k = key(namespace, payload);
   const now = Date.now();
   const existing = memCache.get(k);
-  if (existing && now < existing.expires && !opts?.refresh) return existing.promise as Promise<T>;
+  if (existing && now < existing.expires && !opts?.refresh) {
+    if (existing.settled || foreignWaitMs === null) return existing.promise as Promise<T>;
+    // Joining a load someone else started: bounded, then load it ourselves.
+    // `refresh` re-runs the loader and carries the last-good value over.
+    return boundedJoin(existing.promise as Promise<T>, foreignWaitMs, () =>
+      cached(namespace, payload, loader, ttlMs, { ...opts, refresh: true }),
+    );
+  }
 
   const entry: Entry = {
     promise: Promise.resolve() as Promise<unknown>,
+    settled: false,
     expires: now + ttlMs,
     stale: existing?.stale,
   };
@@ -89,6 +146,10 @@ export function cached<T>(
       throw err;
     },
   );
+  const markSettled = () => {
+    entry.settled = true;
+  };
+  entry.promise.then(markSettled, markSettled);
   memCache.set(k, entry);
   // Request-derived slugs can otherwise grow a long-lived Worker isolate's
   // map without bound. Map.keys() yields insertion order and re-setting an

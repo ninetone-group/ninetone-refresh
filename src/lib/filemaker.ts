@@ -11,7 +11,7 @@
 // `.ts` extensions on purpose: plain Node (the test runner, with
 // --experimental-strip-types) cannot resolve extension-less imports, and
 // test/filemaker-kv.test.mjs imports this module directly.
-import { cached, type KvLike } from "./cache.ts";
+import { boundedJoin, cached, type KvLike } from "./cache.ts";
 import { getCfEnv } from "./cf.ts";
 import { mirrorRecordImages } from "./fm-image-mirror.ts";
 import { fmFindViaKv } from "./fm-kv.ts";
@@ -54,12 +54,31 @@ function dbPath(): string {
 function getToken(): Promise<string> {
   if (cachedToken && Date.now() < cachedToken.expires) return Promise.resolve(cachedToken.value);
   if (!tokenInFlight) {
-    tokenInFlight = createSession().finally(() => {
-      tokenInFlight = null;
+    // The caller that STARTS the login owns it; createSession's fetch timeout
+    // bounds it.
+    const started = createSession().finally(() => {
+      if (tokenInFlight === started) tokenInFlight = null;
     });
+    tokenInFlight = started;
+    return started;
   }
-  return tokenInFlight;
+  // JOINING a login another request started (2026-09-19). On Workers that
+  // fetch dies with its request, and `finally` then never runs, so without a
+  // bound this promise would hang every FM read on the isolate for its whole
+  // lifetime. Wait on a timer this caller owns, then drop the dead login and
+  // start a fresh one. See `boundedJoin` in cache.ts.
+  const joined = tokenInFlight;
+  return boundedJoin(joined, TOKEN_JOIN_WAIT_MS, () => {
+    if (tokenInFlight === joined) tokenInFlight = null;
+    return getToken();
+  });
 }
+const TOKEN_JOIN_WAIT_MS = 6000;
+
+/** No FM call may wait forever. A session answers in well under a second; the
+ *  largest find (the nightly releases count) takes ~9 s. */
+const FM_SESSION_TIMEOUT_MS = 10_000;
+const FM_FIND_TIMEOUT_MS = 30_000;
 
 async function createSession(): Promise<string> {
   const user = fmUser();
@@ -76,6 +95,7 @@ async function createSession(): Promise<string> {
       Authorization: `Basic ${auth}`,
     },
     body: "{}",
+    signal: AbortSignal.timeout(FM_SESSION_TIMEOUT_MS),
   });
   if (!res.ok) {
     throw new Error(`FM session failed: HTTP ${res.status}`);
@@ -218,6 +238,7 @@ async function fmRequestUntimed<T>(
       Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(FM_FIND_TIMEOUT_MS),
   });
 
   // FM returns 401 if the token expired between cache check and request.
