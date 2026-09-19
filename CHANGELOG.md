@@ -3,6 +3,13 @@
 All notable changes to the Ninetone Group site. Versions follow `MAJOR.MINOR.PATCH.MICRO`
 (the number in `VERSION`).
 
+## [0.2.5.3] - 2026-09-19
+
+### Fixed
+- Images already on screen no longer shimmer and fade in again after a language switch (or
+  any in-place navigation). The incoming page's matching images are marked loaded before the
+  swap, so they paint from the browser cache on the first frame while the text decodes.
+
 ## [0.2.5.2] - 2026-09-14
 
 ### Fixed
