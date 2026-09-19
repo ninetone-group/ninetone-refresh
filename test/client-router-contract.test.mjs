@@ -61,3 +61,18 @@ test("both language-switch anchors are marked for the keep-place + decode behavi
   const header = readFileSync("src/components/Header.astro", "utf8");
   assert.equal((header.match(/data-lang-switch/g) ?? []).length, 2);
 });
+
+// Images already decoded on screen must not shimmer/fade again after a swap
+// (2026-09-19). The router builds a fresh <body>, so the incoming img.fm-img
+// would start at opacity 0 until onload — even from the browser cache. Base
+// pre-marks the matching images in the incoming document before the swap.
+// Only source-level pins are possible here (no DOM in this suite); the visual
+// behaviour was verified in a headless browser.
+test("Base.astro pre-marks already-shown images in the incoming document before the swap", () => {
+  const base = readFileSync("src/layouts/Base.astro", "utf8");
+  assert.match(base, /astro:before-swap/);
+  assert.match(base, /newDocument/);
+  assert.match(base, /img\.complete && img\.naturalWidth > 0/);
+  assert.match(base, /img\.classList\.add\("is-loaded"\)/);
+  assert.match(base, /closest\("\.fm-img-frame"\)\?\.classList\.add\("is-ready"\)/);
+});
