@@ -3,6 +3,16 @@
 All notable changes to the Ninetone Group site. Versions follow `MAJOR.MINOR.PATCH.MICRO`
 (the number in `VERSION`).
 
+## [0.2.5.6] - 2026-09-19
+
+### Security
+- **No credentials inside the deployed Worker any more.** The FileMaker login, the Shopify
+  admin token, the Anthropic key and the publish password were being baked into the server
+  bundle from the deploying laptop, where they silently overrode the secrets stored in
+  Cloudflare (rotating a secret in the dashboard did nothing). They were never publicly
+  reachable. Secrets are now read from the runtime only, and the deploy refuses to go out
+  if any local secret value is found in the build.
+
 ## [0.2.5.5] - 2026-09-19
 
 ### Fixed

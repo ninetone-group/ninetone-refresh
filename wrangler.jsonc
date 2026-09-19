@@ -169,7 +169,10 @@
     // Publication cron PAUSED (2026-09-12): the tick polled all eight FM
     // layouts every minute for a subsystem that is not serving anyone yet.
     // Remove this line (or set anything but "off") to resume discovery.
-    "PUBLICATION_TICK": "off"
+    "PUBLICATION_TICK": "off",
+    // Not a secret: the Shopify collection shown on the homepage. Lived in .env,
+    // which the Cloudflare build no longer loads (2026-09-19).
+    "SHOPIFY_HOMEPAGE_COLLECTION_ID": "514085060873"
   },
   "observability": {
     "enabled": true

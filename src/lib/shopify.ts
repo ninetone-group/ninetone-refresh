@@ -28,7 +28,8 @@ const shopDomain = () =>
   import.meta.env?.SHOPIFY_SHOP_DOMAIN || procEnv("SHOPIFY_SHOP_DOMAIN") || "fc6d3a-d9.myshopify.com";
 const publicStoreUrl = () =>
   import.meta.env?.SHOPIFY_PUBLIC_STORE_URL || procEnv("SHOPIFY_PUBLIC_STORE_URL") || "https://shop.ninetone.com";
-const adminToken = () => import.meta.env?.SHOPIFY_ADMIN_TOKEN || procEnv("SHOPIFY_ADMIN_TOKEN");
+// A secret: process.env only, never import.meta.env (src/lib/env.ts).
+const adminToken = () => procEnv("SHOPIFY_ADMIN_TOKEN");
 const API_VERSION = "2024-10";
 
 /**

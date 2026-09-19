@@ -19,16 +19,10 @@
  * (inside the function, not module scope) for the same reason those modules
  * do — the Worker isolate must see its own bindings, not the build machine's.
  */
-function readEnv(name: string): string | undefined {
-  const meta = (import.meta as unknown as { env?: Record<string, unknown> }).env;
-  const baked = meta?.[name];
-  if (typeof baked === "string" && baked) return baked;
-  const proc = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process;
-  return proc?.env?.[name];
-}
+import { secretEnv } from "./env.ts";
 
 export function indexNowKey(): string | undefined {
-  return readEnv("INDEXNOW_KEY");
+  return secretEnv("INDEXNOW_KEY");
 }
 
 /**

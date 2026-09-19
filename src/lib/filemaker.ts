@@ -12,6 +12,7 @@
 // --experimental-strip-types) cannot resolve extension-less imports, and
 // test/filemaker-kv.test.mjs imports this module directly.
 import { boundedJoin, cached, type KvLike } from "./cache.ts";
+import { secretEnv } from "./env.ts";
 import { getCfEnv } from "./cf.ts";
 import { mirrorRecordImages } from "./fm-image-mirror.ts";
 import { fmFindViaKv } from "./fm-kv.ts";
@@ -25,16 +26,11 @@ import { timeServer } from "./server-timing.ts";
  * Read lazily (inside functions, not module scope) so the Worker isolate sees
  * its bindings instead of whatever the build machine had.
  */
-function runtimeEnv(baked: string | undefined, name: string): string | undefined {
-  if (baked) return baked;
-  const proc = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process;
-  return proc?.env?.[name];
-}
 
-const fmHost = () => runtimeEnv(import.meta.env.FM_HOST, "FM_HOST") ?? "files.ninetone.com";
-const fmDb = () => runtimeEnv(import.meta.env.FM_DB, "FM_DB") ?? "Ninetone Group AB";
-const fmUser = () => runtimeEnv(import.meta.env.FM_USER, "FM_USER");
-const fmPass = () => runtimeEnv(import.meta.env.FM_PASS, "FM_PASS");
+const fmHost = () => secretEnv("FM_HOST") ?? "files.ninetone.com";
+const fmDb = () => secretEnv("FM_DB") ?? "Ninetone Group AB";
+const fmUser = () => secretEnv("FM_USER");
+const fmPass = () => secretEnv("FM_PASS");
 
 const TOKEN_TTL_MS = 12 * 60 * 1000;
 

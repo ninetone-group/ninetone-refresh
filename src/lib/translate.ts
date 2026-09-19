@@ -70,6 +70,7 @@
 // src/pages/api/publish.ts already uses for the same reason (it too is
 // imported directly by a node:test file).
 import { getCfEnv } from "./cf.ts";
+import { secretEnv } from "./env.ts";
 import type { KvLike } from "./cache.ts";
 import { timeServer } from "./server-timing.ts";
 
@@ -86,13 +87,6 @@ import { timeServer } from "./server-timing.ts";
  * picked up. `import.meta.env` itself is guarded because this module is
  * imported directly by node:test with no Vite involved.
  */
-function readEnv(name: string): string | undefined {
-  const meta = (import.meta as unknown as { env?: Record<string, unknown> }).env;
-  const baked = meta?.[name];
-  if (typeof baked === "string" && baked) return baked;
-  const proc = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process;
-  return proc?.env?.[name];
-}
 
 /**
  * Resolve the Anthropic API key. On the Worker it arrives as a secret
@@ -107,7 +101,7 @@ async function resolveApiKey(): Promise<string | undefined> {
   const env = await getCfEnv();
   const fromBinding = env?.ANTHROPIC_API_KEY;
   if (typeof fromBinding === "string" && fromBinding) return fromBinding;
-  return readEnv("ANTHROPIC_API_KEY");
+  return secretEnv("ANTHROPIC_API_KEY");
 }
 
 // ---------------------------------------------------------------------------

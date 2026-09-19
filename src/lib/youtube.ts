@@ -19,8 +19,8 @@ import { getCfEnv } from "./cf";
 
 // Lazy read with process.env fallback for the Cloudflare Worker runtime,
 // where the key arrives as a binding instead of being baked at build.
+// A secret: process.env only, never import.meta.env (src/lib/env.ts).
 const apiKey = (): string | undefined =>
-  import.meta.env.YOUTUBE_API_KEY ||
   (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env
     ?.YOUTUBE_API_KEY;
 
