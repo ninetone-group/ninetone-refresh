@@ -325,3 +325,44 @@ test("isolate entries age out: a corrected KV value replaces a seeded one instea
     setIsolateEntryTtlForTests(60 * 60 * 1000);
   }
 });
+
+// Production hang, 2026-09-19 (staging, after a deploy): the FIRST cold render of
+// a route answered in ~0.5 s and the SECOND request for it never answered (Worker
+// log: outcome "canceled", 19 ms CPU, no log line; visitors saw error 1101 and a
+// language switch that looked dead). On Workers a timer belongs to the request
+// that created it and is dropped when that request ends. A read queued late by
+// request A therefore never flushes and never reaches its own timeout — and both
+// the batch queue and the isolate cache handed A's dead promise to request B.
+test("a read orphaned by a finished request cannot hang the next request on the same isolate", async () => {
+  const { setKvReadTimeoutForTests } = await import("../src/lib/translate.ts");
+  setKvReadTimeoutForTests(50);
+  const originalError = console.error;
+  console.error = () => {};
+  const realSetTimeout = globalThis.setTimeout;
+  try {
+    const key = await translationKey("Föräldralös", "en", "fast");
+    const kv = bulkKv({ [key]: "Orphaned (en)" });
+
+    // Request A: its I/O context is gone, so none of its timers ever fire.
+    globalThis.setTimeout = () => 0;
+    translate({ text: "Föräldralös", target: "en", tier: "fast", kv }).catch(() => {});
+    await new Promise((r) => realSetTimeout(r, 20));
+    globalThis.setTimeout = realSetTimeout;
+
+    // Request B, same isolate, same key, and a second key that has to join the queue.
+    const otherKey = await translationKey("Granne", "en", "fast");
+    kv.store.set(otherKey, "Neighbour (en)");
+    const HUNG = Symbol("hung");
+    const bound = (p) => Promise.race([p, new Promise((r) => realSetTimeout(() => r(HUNG), 1500))]);
+    const same = await bound(translate({ text: "Föräldralös", target: "en", tier: "fast", kv }));
+    const other = await bound(translate({ text: "Granne", target: "en", tier: "fast", kv }));
+    assert.notEqual(same, HUNG, "request B must not wait on request A's dead promise");
+    assert.notEqual(other, HUNG, "request B must not join a queue whose flush timer died");
+    assert.equal(same.text, "Orphaned (en)");
+    assert.equal(other.text, "Neighbour (en)");
+  } finally {
+    globalThis.setTimeout = realSetTimeout;
+    console.error = originalError;
+    setKvReadTimeoutForTests(5000);
+  }
+});

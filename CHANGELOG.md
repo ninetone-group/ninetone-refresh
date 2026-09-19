@@ -3,6 +3,15 @@
 All notable changes to the Ninetone Group site. Versions follow `MAJOR.MINOR.PATCH.MICRO`
 (the number in `VERSION`).
 
+## [0.2.5.4] - 2026-09-19
+
+### Fixed
+- **Pages no longer hang after a deploy.** On a fresh Worker the first request for a route
+  answered and the second one could wait forever (visitors saw error 1101, and the language
+  switch looked dead while it waited for the English page). A translation read left behind
+  by a finished request was being handed to the next one. Reads shared between requests are
+  now bounded, and an abandoned read queue is picked up by the next request.
+
 ## [0.2.5.3] - 2026-09-19
 
 ### Fixed

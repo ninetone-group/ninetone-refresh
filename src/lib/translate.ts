@@ -898,7 +898,14 @@ const ISOLATE_CACHE_MAX = 5000;
  * WeakMap so an isolate that somehow holds several bindings does not pin
  * their caches after the binding itself is gone.
  */
-type IsolateEntry = { job: Promise<string | null>; at: number };
+type IsolateEntry = {
+  job: Promise<string | null>;
+  at: number;
+  /** False while `job` is in flight. A settled job is a plain value and safe to
+   *  hand to any request; an in-flight one may belong to a request that has
+   *  ended (see `awaitForeignRead`). */
+  settled: boolean;
+};
 
 /**
  * Entries AGE OUT. Values are content-addressed, but a value can still be
@@ -928,7 +935,12 @@ function isolateCacheFor(kv: KvLike): Map<string, IsolateEntry> {
 
 function isolateCacheSet(kv: KvLike, key: string, job: Promise<string | null>): void {
   const isolateCache = isolateCacheFor(kv);
-  isolateCache.set(key, { job, at: Date.now() });
+  const entry: IsolateEntry = { job, at: Date.now(), settled: false };
+  const markSettled = () => {
+    entry.settled = true;
+  };
+  job.then(markSettled, markSettled);
+  isolateCache.set(key, entry);
   if (isolateCache.size > ISOLATE_CACHE_MAX) {
     const oldest = isolateCache.keys().next().value as string | undefined;
     if (oldest && oldest !== key) isolateCache.delete(oldest);
@@ -984,7 +996,19 @@ type BulkKvLike = KvLike & {
   get(keys: string[], opts?: { cacheTtl?: number }): Promise<unknown>;
 };
 
-const pendingReads = new WeakMap<object, PendingRead[]>();
+type PendingQueue = { reads: PendingRead[]; at: number };
+const pendingReads = new WeakMap<object, PendingQueue>();
+
+/**
+ * A zero-delay flush normally runs within a millisecond or two. A queue older
+ * than this was scheduled by a request that has since ENDED: on Workers a timer
+ * belongs to the request that created it and is dropped with it, so that flush
+ * will never run. The queue would then swallow every later read on the isolate
+ * (they join it and nobody flushes). Past this age the joining request
+ * schedules a flush of its own. A false positive (a long synchronous render
+ * delaying a live timer) only costs a second, empty flush.
+ */
+const ORPHANED_QUEUE_MS = 25;
 
 /**
  * A queued read that is never flushed (timer dropped with the I/O context,
@@ -1000,20 +1024,26 @@ export function setKvReadTimeoutForTests(ms: number): void {
 }
 
 function queueKvRead(kv: KvLike, key: string): Promise<string | null> {
-  let pending = pendingReads.get(kv as unknown as object);
-  if (!pending) {
-    pending = [];
-    pendingReads.set(kv as unknown as object, pending);
+  const now = Date.now();
+  let queue = pendingReads.get(kv as unknown as object);
+  if (!queue || now - queue.at > ORPHANED_QUEUE_MS) {
+    if (!queue) {
+      queue = { reads: [], at: now };
+      pendingReads.set(kv as unknown as object, queue);
+    } else {
+      queue.at = now; // adopted: this request's timer now owns the flush
+    }
     setTimeout(() => {
       void flushKvReads(kv);
     }, 0);
   }
+  const pending = queue.reads;
   return new Promise<string | null>((settle, fail) => {
     const timer = setTimeout(() => {
       console.error(`[translate] KV read for ${key} did not settle within ${kvReadTimeoutMs} ms — treating as a miss`);
       settle(null);
     }, kvReadTimeoutMs);
-    pending!.push({
+    pending.push({
       key,
       settle: (value) => {
         clearTimeout(timer);
@@ -1068,7 +1098,7 @@ async function readChunk(kv: KvLike, chunk: PendingRead[]): Promise<void> {
 }
 
 async function flushKvReads(kv: KvLike): Promise<void> {
-  const pending = pendingReads.get(kv as unknown as object);
+  const pending = pendingReads.get(kv as unknown as object)?.reads;
   pendingReads.delete(kv as unknown as object);
   if (!pending || pending.length === 0) return;
   const chunks: PendingRead[][] = [];
@@ -1076,10 +1106,40 @@ async function flushKvReads(kv: KvLike): Promise<void> {
   await Promise.all(chunks.map((chunk) => readChunk(kv, chunk)));
 }
 
+/**
+ * Dedupe onto an in-flight read WITHOUT trusting it to finish (2026-09-19).
+ *
+ * The isolate cache is shared by every request on the isolate, so the job may
+ * have been started by a request that has since ended. On Workers that read is
+ * dead: its flush timer and its own timeout were dropped with the request, so
+ * the promise never settles. Awaiting it hung the second request for a route
+ * forever after a deploy (Worker log: "canceled", ~20 ms CPU, no log line;
+ * visitors saw error 1101). The wait is therefore bounded by a timer owned by
+ * THIS request; past it the entry is evicted and the key is read again. A live
+ * job settles long before the bound, so same-request dedupe is unchanged.
+ */
+function awaitForeignRead(kv: KvLike, key: string, entry: IsolateEntry): Promise<string | null> {
+  return new Promise<string | null>((resolve) => {
+    const timer = setTimeout(() => {
+      const isolateCache = isolateCacheFor(kv);
+      if (isolateCache.get(key) === entry) isolateCache.delete(key);
+      resolve(isolateCachedRead(kv, key));
+    }, Math.min(kvReadTimeoutMs, FOREIGN_READ_WAIT_MS));
+    entry.job.then((value) => {
+      clearTimeout(timer);
+      resolve(value);
+    });
+  });
+}
+/** A KV read answers in tens of milliseconds; a second is already generous. */
+const FOREIGN_READ_WAIT_MS = 1000;
+
 function isolateCachedRead(kv: KvLike, key: string): Promise<string | null> {
   const isolateCache = isolateCacheFor(kv);
   const existing = isolateCache.get(key);
-  if (existing && Date.now() - existing.at < isolateEntryTtlMs) return existing.job;
+  if (existing && Date.now() - existing.at < isolateEntryTtlMs) {
+    return existing.settled ? existing.job : awaitForeignRead(kv, key, existing);
+  }
   if (existing) isolateCache.delete(key); // aged out: revalidate against KV
 
   const job = queueKvRead(kv, key)
