@@ -22,6 +22,24 @@ import tailwindcss from "@tailwindcss/vite";
  */
 const TARGET = process.env.DEPLOY_TARGET === "cf" ? "cf" : "gh";
 
+// SECRETS ARE READ FROM process.env ONLY (2026-09-19). The source never writes
+// `import.meta.env.<SECRET>`, because Astro replaces that text with the literal
+// value at build time, and on the Cloudflare target the adapter copies
+// `.dev.vars` into process.env first. That is how the FM password, the Shopify
+// admin token, the Anthropic key and the publish password ended up inside the
+// deployed Worker, silently overriding the secrets stored in Cloudflare.
+// See src/lib/env.ts; scripts/check-no-baked-secrets.mjs is the deploy gate.
+//
+// `astro dev` and the static build still need `.env`, and Vite does not put it
+// on process.env, so it is copied here. Never for the Cloudflare target: the
+// Worker gets secrets as bindings and settings from `vars` in wrangler.jsonc.
+// A value already in the shell (CI secrets) wins over the file.
+if (TARGET !== "cf") {
+  const { loadEnv } = await import("vite");
+  const fileEnv = loadEnv(process.env.NODE_ENV ?? "development", process.cwd(), "");
+  for (const [key, value] of Object.entries(fileEnv)) process.env[key] ??= value;
+}
+
 const site =
   TARGET === "cf"
     ? process.env.SITE_URL ?? "https://ninetone-site.ninetone.workers.dev"

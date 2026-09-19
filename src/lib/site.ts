@@ -16,6 +16,7 @@
  * Pure function: no I/O, easy to unit test. Always returns a bare origin
  * (scheme + host, no trailing slash, no path).
  */
+import { publicEnv } from "./env.ts";
 
 /** Strip to a bare origin: scheme + host, no trailing slash, no path/query/hash. */
 function toOrigin(value: string): string | null {
@@ -36,17 +37,9 @@ function toOrigin(value: string): string | null {
  * provides it, but this module is also imported directly by plain-Node unit
  * tests (node:test, no Vite involved), where `import.meta.env` is undefined.
  */
-function readEnv(name: string): string | undefined {
-  const meta = (import.meta as unknown as { env?: Record<string, unknown> }).env;
-  const baked = meta?.[name];
-  if (typeof baked === "string" && baked) return baked;
-  if (typeof baked === "boolean") return String(baked);
-  const proc = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process;
-  return proc?.env?.[name];
-}
 
 export function siteOrigin(request?: Request | { url: string | URL }): string {
-  const envOrigin = readEnv("PUBLIC_SITE_ORIGIN");
+  const envOrigin = publicEnv(import.meta.env?.PUBLIC_SITE_ORIGIN, "PUBLIC_SITE_ORIGIN");
   if (envOrigin) {
     const parsed = toOrigin(envOrigin);
     if (parsed) return parsed;
@@ -56,7 +49,7 @@ export function siteOrigin(request?: Request | { url: string | URL }): string {
   // build has no incoming request at build time. PUBLIC_HAS_RUNTIME is the
   // existing project-wide flag for "are we on the server target" (see
   // astro.config.mjs / ContactForm.astro).
-  const hasRuntime = readEnv("PUBLIC_HAS_RUNTIME") === "true";
+  const hasRuntime = publicEnv(import.meta.env?.PUBLIC_HAS_RUNTIME, "PUBLIC_HAS_RUNTIME") === "true";
   if (hasRuntime && request) {
     const raw = request instanceof Request ? request.url : String(request.url);
     const parsed = toOrigin(raw);
@@ -65,7 +58,7 @@ export function siteOrigin(request?: Request | { url: string | URL }): string {
 
   // Static fallback: the `site` configured in astro.config.mjs, exposed by
   // Astro as import.meta.env.SITE.
-  const staticSite = readEnv("SITE");
+  const staticSite = publicEnv(import.meta.env?.SITE, "SITE");
   if (staticSite) {
     const parsed = toOrigin(staticSite);
     if (parsed) return parsed;
@@ -83,7 +76,7 @@ export function siteOrigin(request?: Request | { url: string | URL }): string {
  * use this instead of re-reading the env var themselves.
  */
 export function isProductionShaped(): boolean {
-  return Boolean(readEnv("PUBLIC_SITE_ORIGIN"));
+  return Boolean(publicEnv(import.meta.env?.PUBLIC_SITE_ORIGIN, "PUBLIC_SITE_ORIGIN"));
 }
 
 /**
