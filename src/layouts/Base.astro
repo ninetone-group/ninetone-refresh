@@ -563,6 +563,40 @@ const tiktokEnabled = tracking && !isPlaceholder(TIKTOK_PIXEL_ID);
         pending = { sectionIndex, offset, y: window.scrollY };
       });
 
+      // Images the reader is already looking at must not shimmer and fade in
+      // again after a swap (2026-09-19). The router builds a fresh <body>, so
+      // every new img.fm-img starts at opacity 0 until its onload fires — even
+      // when the bytes come straight from the browser cache (the proxy sends a
+      // 24 h max-age and both locales embed identical URLs). Pre-mark the
+      // matching images in the incoming document BEFORE the swap: the classes
+      // are present when the node is inserted, so no transition runs and the
+      // image paints on the first frame. Images not shown yet keep the
+      // shimmer + fade. Applies to every in-place navigation, not only the
+      // language switch.
+      document.addEventListener("astro:before-swap", (e) => {
+        const { newDocument: next, to } = e as unknown as { newDocument?: Document; to?: URL };
+        if (!next) return;
+        const shown = new Set<string>();
+        for (const img of document.querySelectorAll<HTMLImageElement>("img.fm-img.is-loaded")) {
+          if (img.complete && img.naturalWidth > 0) shown.add(img.currentSrc || img.src);
+        }
+        if (!shown.size) return;
+        // location.href is still the OUTGOING page here (the router moves the
+        // URL after the swap), so relative srcs resolve against the incoming
+        // one. An unparsable src (FM/Shopify data) is skipped, not thrown —
+        // a throw would silently stop the pre-marking for every image after it.
+        const base = to?.href ?? location.href;
+        for (const img of next.querySelectorAll<HTMLImageElement>("img.fm-img")) {
+          const src = img.getAttribute("src");
+          if (!src) continue;
+          let abs: string;
+          try { abs = new URL(src, base).href; } catch { continue; }
+          if (!shown.has(abs)) continue;
+          img.classList.add("is-loaded");
+          img.closest(".fm-img-frame")?.classList.add("is-ready");
+        }
+      });
+
       document.addEventListener("astro:after-swap", () => {
         navigated = true;
         if (!pending) return;
