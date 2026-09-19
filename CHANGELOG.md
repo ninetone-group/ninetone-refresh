@@ -3,6 +3,16 @@
 All notable changes to the Ninetone Group site. Versions follow `MAJOR.MINOR.PATCH.MICRO`
 (the number in `VERSION`).
 
+## [0.2.5.5] - 2026-09-19
+
+### Fixed
+- **The FileMaker layer can no longer hang on work another visitor abandoned.** The same
+  weakness fixed for translations in 0.2.5.4 existed in the shared FileMaker login and the
+  in-memory response cache: a request that joined a login or a fetch started by someone
+  else would wait forever if that visitor left midway. Joiners now wait a few seconds at
+  most, then do the work themselves. FileMaker calls also have a plain timeout (10 s for a
+  login, 30 s for a find). Nothing changes on the FileMaker side.
+
 ## [0.2.5.4] - 2026-09-19
 
 ### Fixed

@@ -97,3 +97,56 @@ test("readCacheVersion: no in-isolate memo — a Publish is observed on the very
   kv.store.set("cache-version", "2"); // Publish
   assert.equal(await readCacheVersion(kv), "2");
 });
+
+// Cross-request sharing (2026-09-19). On Workers a fetch belongs to the request
+// that started it and dies with that request, so an in-flight promise shared at
+// module level can be one that never settles. The same hazard hung pages through
+// the translation reads (v0.2.5.4); these pin the guard for the FM response cache
+// and, through the shared helper, the FM session token.
+test("cached: a caller joining an in-flight load that never settles runs its own load after the bound", async () => {
+  const { setForeignWaitForTests } = await import("../src/lib/cache.ts");
+  setForeignWaitForTests(40);
+  try {
+    let runs = 0;
+    const payload = { q: `orphan-${Date.now()}` };
+    // Request A: its loader hangs forever (the request ended mid-fetch).
+    cached("fm-orphan", payload, () => { runs++; return new Promise(() => {}); }).catch(() => {});
+    // Request B: same key, a loader that works.
+    const HUNG = Symbol("hung");
+    const b = await Promise.race([
+      cached("fm-orphan", payload, async () => { runs++; return ["fresh"]; }),
+      new Promise((r) => setTimeout(() => r(HUNG), 1500)),
+    ]);
+    assert.notEqual(b, HUNG, "request B must not wait forever on request A's dead load");
+    assert.deepEqual(b, ["fresh"]);
+    assert.equal(runs, 2);
+    // The working load replaced the dead entry: a third caller is served from it.
+    assert.deepEqual(await cached("fm-orphan", payload, async () => { runs++; return ["again"]; }), ["fresh"]);
+    assert.equal(runs, 2);
+  } finally {
+    setForeignWaitForTests(null);
+  }
+});
+
+test("cached: a caller joining a LIVE in-flight load still shares it (dedupe unchanged)", async () => {
+  const { setForeignWaitForTests } = await import("../src/lib/cache.ts");
+  setForeignWaitForTests(500);
+  try {
+    let runs = 0;
+    const payload = { q: `live-${Date.now()}` };
+    const slow = () => { runs++; return new Promise((r) => setTimeout(() => r(["one"]), 30)); };
+    const [a, b] = await Promise.all([cached("fm-live", payload, slow), cached("fm-live", payload, slow)]);
+    assert.deepEqual(a, ["one"]);
+    assert.deepEqual(b, ["one"]);
+    assert.equal(runs, 1);
+  } finally {
+    setForeignWaitForTests(null);
+  }
+});
+
+test("boundedJoin: settles with the shared job when it is alive, falls back when it is dead, and passes rejections through", async () => {
+  const { boundedJoin } = await import("../src/lib/cache.ts");
+  assert.equal(await boundedJoin(Promise.resolve("shared"), 50, async () => "fallback"), "shared");
+  assert.equal(await boundedJoin(new Promise(() => {}), 30, async () => "fallback"), "fallback");
+  await assert.rejects(boundedJoin(Promise.reject(new Error("boom")), 50, async () => "fallback"), /boom/);
+});
