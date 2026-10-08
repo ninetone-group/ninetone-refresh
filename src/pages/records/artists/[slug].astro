@@ -15,6 +15,7 @@ import { pageJsonLdOrigin } from "../../../lib/site";
 import { breadcrumbs, musicGroup, markdownToPlainText, descriptionWithBioFallback, fmDateToIso } from "../../../lib/schema";
 import { notFound } from "../../../lib/not-found";
 import { crossRosterTarget } from "../../../lib/roster-redirect";
+import { crossDivisionRedirect } from "../../../lib/cross-division";
 import { localizedPath } from "../../../lib/i18n";
 import { fmText, sharedT } from "../../../lib/t";
 
@@ -46,7 +47,10 @@ if (!artist || !allArtists) {
     // current; once they move to "Not Active" those URLs must land on the
     // previous-artist page, not a 404 (src/lib/roster-redirect.ts). A cached
     // list read, locale kept.
-    const target = crossRosterTarget(String(Astro.params.slug ?? ""), "current", await getPreviousArtists());
+    const missed = String(Astro.params.slug ?? "");
+    const target =
+      crossRosterTarget(missed, "current", await getPreviousArtists()) ??
+      (await crossDivisionRedirect(missed, "records"));
     if (target) return Astro.redirect(localizedPath(target, (Astro.locals as { lang?: "sv" | "en" }).lang ?? "sv"), 301);
     return notFound(() => Astro.rewrite("/404"));
   }

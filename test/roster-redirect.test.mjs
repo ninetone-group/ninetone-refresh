@@ -54,3 +54,34 @@ test("the management pair never produces a records path, and unknown client slug
 test("omitting the division keeps the original records behaviour (existing call sites unchanged)", () => {
   assert.equal(crossRosterTarget("am_metro", "current", previous), crossRosterTarget("am_metro", "current", previous, "records"));
 });
+
+// --- Cross-division (2026-10-06) --------------------------------------------
+// GSC 16-month export: /ninetone-nation/booking/tommy_nilsson (30 clicks) and
+// /management/clients/ronny_and_ragge (22) are Records artists; the
+// within-division lookup above cannot see them.
+
+import { crossDivisionTarget, ARTIST_PATH, NATION_PATH, PREVIOUS_ARTIST_PATH } from "../src/lib/roster-redirect.ts";
+
+const candidates = [
+  { path: ARTIST_PATH, roster: [{ SLUG: "tommy_nilsson" }, { SLUG: "ronny_and_ragge" }] },
+  { path: CLIENT_PATH, roster: [{ SLUG: "mekbrudarna" }] },
+  { path: NATION_PATH, roster: [{ SLUG: "anjo" }, { SLUG: "mekbrudarna" }] },
+  { path: PREVIOUS_ARTIST_PATH, roster: [{ SLUG: "kuokka" }, { SLUG: "tommy_nilsson" }] },
+];
+
+test("a slug missing from its own division redirects to the first other division that has it", () => {
+  assert.equal(crossDivisionTarget("tommy_nilsson", candidates), "/records/artists/tommy_nilsson");
+  assert.equal(crossDivisionTarget("anjo", candidates), "/ninetone-nation/anjo");
+  assert.equal(crossDivisionTarget("kuokka", candidates), "/records/artists/previous/single/kuokka");
+});
+
+test("candidate order is the preference order: a current page beats a previous one, Management beats Nation", () => {
+  assert.equal(crossDivisionTarget("mekbrudarna", candidates), "/management/clients/mekbrudarna");
+  assert.equal(crossDivisionTarget("tommy_nilsson", candidates.slice().reverse()), "/records/artists/previous/single/tommy_nilsson");
+});
+
+test("unknown and empty slugs stay a 404 (null); an empty roster (failed load) is skipped", () => {
+  assert.equal(crossDivisionTarget("nobody", candidates), null);
+  assert.equal(crossDivisionTarget("", candidates), null);
+  assert.equal(crossDivisionTarget("anjo", [{ path: ARTIST_PATH, roster: [] }, ...candidates]), "/ninetone-nation/anjo");
+});

@@ -3,6 +3,24 @@
 All notable changes to the Ninetone Group site. Versions follow `MAJOR.MINOR.PATCH.MICRO`
 (the number in `VERSION`).
 
+## [0.2.5.7] - 2026-10-08
+
+### Fixed
+- **Old URLs for people who moved between divisions now redirect instead of 404.** The
+  previous site served the same person under several sections, so Google still sends
+  visitors to `/ninetone-nation/booking/tommy_nilsson` or `/management/clients/ronny_and_ragge`
+  even though both are Records artists today. The detail routes already looked a missing
+  slug up in their own division's previous roster; they now also ask the other divisions
+  (current pages first, then previous rosters) before giving up. Verified against the
+  Search Console 16-month export: 99.65% of the old site's search clicks now land on a
+  page, up from 99.3%; the remaining misses are people who left and junk URLs the old
+  site emitted. Locale is kept on the redirect.
+- **The Swedish 404 page reads properly.** The headline was served half-translated
+  ("This page tog ett annat uppdrag."); it now says "Den här sidan tog ett annat gig."
+  via `src/i18n/overrides.json`, along with "Talanger & klienter" (the site says
+  *klienter*, not *kunder*) and the "Öppna →" action label, which also fixes the same
+  label in the command palette.
+
 ## [0.2.5.6] - 2026-09-19
 
 ### Security

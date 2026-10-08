@@ -7,6 +7,7 @@ import Discography from "../../../../../components/Discography.astro";
 import YouTubeFeed from "../../../../../components/YouTubeFeed.astro";
 import { getArtists, getPreviousArtists, getArtistDetailWithReleases, getNewsForArtist } from "../../../../../lib/ninetone";
 import { crossRosterTarget } from "../../../../../lib/roster-redirect";
+import { crossDivisionRedirect } from "../../../../../lib/cross-division";
 import { localizedPath } from "../../../../../lib/i18n";
 import { resolveChannelId, getYouTubeFeed } from "../../../../../lib/youtube";
 import { getProducts } from "../../../../../lib/shopify";
@@ -42,7 +43,10 @@ if (!artist) {
   if (!artist) {
     // Re-signed artist: the previous-artist URL now belongs to the current
     // detail page (src/lib/roster-redirect.ts).
-    const target = crossRosterTarget(String(Astro.params.slug ?? ""), "previous", await getArtists());
+    const missed = String(Astro.params.slug ?? "");
+    const target =
+      crossRosterTarget(missed, "previous", await getArtists()) ??
+      (await crossDivisionRedirect(missed, "records"));
     if (target) return Astro.redirect(localizedPath(target, (Astro.locals as { lang?: "sv" | "en" }).lang ?? "sv"), 301);
     return notFound(() => Astro.rewrite("/404"));
   }
