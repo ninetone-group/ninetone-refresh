@@ -27,6 +27,12 @@
     { "pattern": "www.ninetone.com", "custom_domain": true },
     { "pattern": "ninetone.com", "custom_domain": true }
   ],
+  // Explicit, because once "routes" exists wrangler turns the workers.dev
+  // hostname OFF unless told otherwise (learned the hard way on launch day:
+  // staging vanished for a few minutes). It stays up as the staging URL and
+  // is noindex by hostname (src/lib/noindex.ts).
+  "workers_dev": true,
+  "preview_urls": true,
   "compatibility_date": "2026-06-01",
   // nodejs_compat also populates process.env from vars/secrets — the env
   // fallback in src/lib/filemaker.ts (and shopify/youtube) relies on it.
