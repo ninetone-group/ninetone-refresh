@@ -64,5 +64,17 @@
   "1b2c064c4eed51f241b40f7de34f0654f7de6e633ea61142bc0dd3ec7cf105f7": {
     "sv": "Tidigare klienter",
     "en": "Previous clients"
+  },
+  "cdd519f73706cce1ab4aab5f87d2e39adf0d437bc436f42791427cd11e592a7e": {
+    "sv": "Den här sidan tog ett annat gig.",
+    "en": "This page took a different gig."
+  },
+  "3ec839d79d6afcd6dcbcb30de66e57d4b7a90b1e43b9152db083cd5cbf6b1c4d": {
+    "sv": "Talanger & klienter",
+    "en": "Talent & clients"
+  },
+  "ed077f3d8125d60dca1979c7133601bd187d47c73ed9975028f677e49e709942": {
+    "sv": "Öppna",
+    "en": "Open"
   }
 }

@@ -50,3 +50,36 @@ export function crossRosterTarget(
   const base = from === "current" ? paths.previous : paths.current;
   return `${base}/${encodeURIComponent(slug)}`;
 }
+
+// ---------------------------------------------------------------------------
+// Cross-DIVISION redirects (2026-10-06)
+// ---------------------------------------------------------------------------
+//
+// WHY. The old site also served the same person under several divisions:
+// /ninetone-nation/booking/tommy_nilsson, /management/clients/ronny_and_ragge
+// — both Records artists today. The within-division lookup above cannot see
+// them, and the Search Console 16-month export (2026-10-06, not in the repo:
+// it carries traffic figures) shows those URLs still draw booking searches —
+// 64 of the 128 clicks the old site's URLs were losing. When a detail route misses
+// in BOTH of its own rosters, it asks the other divisions before giving up.
+//
+// Preference order when a slug exists in several places: a current page
+// beats a previous one, and Records (the largest roster, the canonical
+// artist page) beats Management beats Nation. The search is a cached list
+// read per roster, no extra FM call.
+
+export const NATION_PATH = "/ninetone-nation";
+
+export type CrossDivisionCandidate = { path: string; roster: ReadonlyArray<WithSlug> };
+
+/**
+ * The first candidate roster containing `slug`, as a detail-page path, or
+ * null for a genuine 404. Pure: the caller loads the rosters.
+ */
+export function crossDivisionTarget(slug: string, candidates: ReadonlyArray<CrossDivisionCandidate>): string | null {
+  if (!slug) return null;
+  for (const { path, roster } of candidates) {
+    if (hasSlug(roster, slug)) return `${path}/${encodeURIComponent(slug)}`;
+  }
+  return null;
+}

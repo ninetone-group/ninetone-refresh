@@ -7,6 +7,7 @@ import RosterStrip from "../../../components/RosterStrip.astro";
 import YouTubeFeed from "../../../components/YouTubeFeed.astro";
 import { getClients, getPreviousClients, getNewsForArtist, pickRelatedArtists } from "../../../lib/ninetone";
 import { crossRosterTarget } from "../../../lib/roster-redirect";
+import { crossDivisionRedirect } from "../../../lib/cross-division";
 import { localizedPath } from "../../../lib/i18n";
 import { resolveChannelId, getYouTubeFeed } from "../../../lib/youtube";
 import { getProducts } from "../../../lib/shopify";
@@ -48,7 +49,10 @@ if (!client || !allClients) {
     // list read (the 5-minute FM cron keeps it warm), locale kept. GSC
     // 2026-09-14: bangarden_customs, raketforskaren, luddze_,
     // johanna_and_marcus still draw traffic on this path.
-    const target = crossRosterTarget(String(Astro.params.slug ?? ""), "current", await getPreviousClients(), "management");
+    const missed = String(Astro.params.slug ?? "");
+    const target =
+      crossRosterTarget(missed, "current", await getPreviousClients(), "management") ??
+      (await crossDivisionRedirect(missed, "management"));
     if (target) return Astro.redirect(localizedPath(target, (Astro.locals as { lang?: "sv" | "en" }).lang ?? "sv"), 301);
     return notFound(() => Astro.rewrite("/404"));
   }
