@@ -13,6 +13,7 @@ import { url } from "../lib/url";
 import { siteOrigin, isProductionShaped, resolveSitePath, jsonLdOrigin } from "../lib/site";
 import { organization, website } from "../lib/schema";
 import { hreflangLinks, localizedPath } from "../lib/i18n";
+import { noindexFor } from "../lib/noindex";
 import type { Lang } from "../lib/translate";
 
 interface Props {
@@ -281,7 +282,9 @@ const promo = await getPromo().catch((err) => {
 // public/_headers — any one of them is enough to stop indexing.
 // Page-level `noindex` prop ORs in on top — a page can opt itself out of
 // indexing even once the site-wide flag goes false, but never the reverse.
-const envNoindex = String(import.meta.env.PUBLIC_NOINDEX ?? "true") !== "false";
+// src/lib/noindex.ts: the flag, OR a *.workers.dev host (staging must never
+// be indexed as a copy of the live site now that the cf build ships live).
+const envNoindex = noindexFor(Astro.url.hostname, import.meta.env.PUBLIC_NOINDEX);
 const noindex = envNoindex || noindexProp;
 
 // Trackers only fire when the site is actually live (noindex off). Keeps the

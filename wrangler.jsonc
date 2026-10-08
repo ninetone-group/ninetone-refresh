@@ -18,6 +18,15 @@
   // means `wrangler deploy` can never land on another account the login can
   // see.
   "account_id": "39f8beab0b95e4c3df1242f03744b8f1",
+  // LIVE since 2026-10-08: both hostnames are Custom Domains on this Worker
+  // (Cloudflare owns their DNS records and certificates). www is canonical;
+  // the naked domain only 301s to it (src/lib/canonical-host.ts, gated on
+  // PUBLIC_CANONICAL_HOST from package.json "build:cf"). The workers.dev URL
+  // stays up as staging and is kept noindex by hostname (src/lib/noindex.ts).
+  "routes": [
+    { "pattern": "www.ninetone.com", "custom_domain": true },
+    { "pattern": "ninetone.com", "custom_domain": true }
+  ],
   "compatibility_date": "2026-06-01",
   // nodejs_compat also populates process.env from vars/secrets — the env
   // fallback in src/lib/filemaker.ts (and shopify/youtube) relies on it.
