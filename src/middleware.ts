@@ -40,7 +40,9 @@ import {
   shouldBypassCache,
   trailingSlashRedirectTarget,
 } from "./lib/cache-policy";
+import { canonicalHostRedirect } from "./lib/canonical-host";
 import { hasEnglishVersion, localizedPath, stripLocale } from "./lib/i18n";
+import { noindexFor } from "./lib/noindex";
 import { timeServer, withServerTiming } from "./lib/server-timing";
 import {
   loadTranslationBundle,
@@ -150,20 +152,19 @@ function ttlFor(pathname: string): number {
 }
 
 /**
- * Site-wide noindex while the preview is gated — the same PUBLIC_NOINDEX
- * flag Base.astro's <meta name="robots"> and robots.txt read. public/_headers
- * only covers the static-asset layer, so without this the SSR HTML never
- * carried the header the launch checklist assumed it did. Flips off with
- * the same single variable at launch.
+ * Site-wide noindex — the same rule Base.astro's <meta name="robots"> and
+ * robots.txt apply (src/lib/noindex.ts): the PUBLIC_NOINDEX flag, OR a
+ * *.workers.dev hostname, which is why the hostname is needed here. Without
+ * this header the SSR HTML never carried the noindex the launch checklist
+ * assumed it did (public/_headers only covers the static-asset layer).
  */
-const NOINDEX_HEADER =
-  String(import.meta.env?.PUBLIC_NOINDEX ?? "true") !== "false";
+const NOINDEX_ENV = import.meta.env?.PUBLIC_NOINDEX;
 
-function harden(res: Response): Response {
+function hardenResponse(res: Response, hostname: string): Response {
   // Some platform responses expose immutable headers; clone before applying
   // policy so redirects/errors receive the same protection reliably.
   res = new Response(res.body, res);
-  if (NOINDEX_HEADER) res.headers.set("X-Robots-Tag", "noindex, nofollow, noarchive, nosnippet, noimageindex");
+  if (noindexFor(hostname, NOINDEX_ENV)) res.headers.set("X-Robots-Tag", "noindex, nofollow, noarchive, nosnippet, noimageindex");
   res.headers.set("X-Content-Type-Options", "nosniff");
   res.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
   res.headers.set("X-Frame-Options", "DENY");
@@ -176,6 +177,15 @@ function harden(res: Response): Response {
 export const onRequest = defineMiddleware((context, next) => withServerTiming(async () => {
   const { request, url, locals } = context;
   const render = (target?: string) => timeServer("render", () => next(target));
+  const harden = (res: Response) => hardenResponse(res, url.hostname);
+
+  // Canonical host (src/lib/canonical-host.ts): the naked domain 301s to
+  // www before anything else runs — no cache lookup, no render, nothing
+  // served on a host Google should never see content on.
+  const canonicalLocation = canonicalHostRedirect(url, import.meta.env?.PUBLIC_CANONICAL_HOST);
+  if (canonicalLocation) {
+    return harden(new Response(null, { status: 301, headers: { Location: canonicalLocation } }));
+  }
 
   // Trailing-slash canonicalization (seo-phase-1b-brief.md P0 item 5) — the
   // cf target's astro.config.mjs now sets trailingSlash: "never", so

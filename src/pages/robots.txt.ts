@@ -1,5 +1,6 @@
 import type { APIRoute } from "astro";
 import { pageJsonLdOrigin } from "../lib/site.ts";
+import { noindexFor } from "../lib/noindex.ts";
 
 /**
  * robots.txt as an endpoint rather than a static file, so the same build can
@@ -42,7 +43,9 @@ export function buildRobotsTxt(origin: string, envNoindex: boolean): string {
 // Astro's per-target default (static => prerendered, server => SSR) is
 // exactly the behavior both targets need.
 export const GET: APIRoute = async ({ request }) => {
-  const envNoindex = String(import.meta.env.PUBLIC_NOINDEX ?? "true") !== "false";
+  // src/lib/noindex.ts: the flag, OR a *.workers.dev host — staging keeps
+  // Disallow: / even though the cf build ships with the flag off.
+  const envNoindex = noindexFor(new URL(request.url).hostname, import.meta.env.PUBLIC_NOINDEX);
   // pageJsonLdOrigin(), not a bare siteOrigin(): on the still-preview gh
   // target the site is served from a sub-path (/ninetone-refresh-preview),
   // and the Sitemap: line must point at a URL that actually resolves there.

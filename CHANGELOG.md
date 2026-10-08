@@ -3,6 +3,22 @@
 All notable changes to the Ninetone Group site. Versions follow `MAJOR.MINOR.PATCH.MICRO`
 (the number in `VERSION`).
 
+## [0.3.0.0] - 2026-10-08
+
+### Launch
+- **ninetone.com is served by the new site.** `www.ninetone.com` and `ninetone.com` are
+  Custom Domains on the `ninetone-site` Worker; Cloudflare owns their DNS records and
+  certificates. `www` stays the canonical host, as it was on the old site and in every
+  URL Google holds; the naked domain 301s to it (`src/lib/canonical-host.ts`, gated on
+  `PUBLIC_CANONICAL_HOST` so the static build, dev and tests never redirect).
+- **Search engines are let in.** The three noindex flips moved together: `PUBLIC_NOINDEX=false`
+  is now part of `build:cf`, `public/_headers` lost its `X-Robots-Tag`, and `robots.txt`
+  serves the allow-all variant with the sitemap. One rule (`src/lib/noindex.ts`) decides
+  the meta tag, `robots.txt` and the middleware header, and keeps any `*.workers.dev`
+  host noindex so the staging URL is never indexed as a copy of the live site.
+- Nameservers moved from one.com to Cloudflare on 2026-10-08 15:55 UTC with every
+  record verified identical (Google Workspace mail, FileMaker, Shopify, smart links).
+
 ## [0.2.5.7] - 2026-10-08
 
 ### Fixed
