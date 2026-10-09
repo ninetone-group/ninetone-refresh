@@ -3,6 +3,28 @@
 All notable changes to the Ninetone Group site. Versions follow `MAJOR.MINOR.PATCH.MICRO`
 (the number in `VERSION`).
 
+## [0.3.1.0] - 2026-10-09
+
+### Added
+- **The homepage copy is edited in FileMaker.** Patrik's "Ninetone Group" category in
+  `API_WEBPOSTS` now feeds the hero, the positioning band, the three division cards,
+  "Vi bygger bron" (including its cases, however many there are), and the headings and
+  intros for What's on, the roster, news, About and Merch. The Swedish site shows the
+  text exactly as written, with no translation pass; `/en/` translates it.
+- Each FM block is bound to its homepage slot by FM's row id, because the subject is the
+  headline itself and five blocks share one sort timestamp (`src/lib/homepage-copy.ts`).
+  A slot whose block is missing keeps the built-in copy. A new block in FM is ignored
+  until it is mapped there.
+- English wording for the current FM headlines and the two client names in the bridge
+  section is pinned in `src/i18n/overrides.json`, so `/en/` keeps the brief's own lines
+  until a headline is edited.
+
+### Notes
+- Kickers, buttons, the What's on cards, the numbers heading, "Talk to us" and the footer
+  are not in FM and stay in code.
+- Markup in these fields is read for structure only: `## ` or `*…*` marks a lead line,
+  a plain `## Name` starts a case. Links and bold inside body text render as plain text.
+
 ## [0.3.0.1] - 2026-10-09
 
 ### Fixed
