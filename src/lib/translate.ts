@@ -914,9 +914,13 @@ const EN_HINT_WORDS = new Set(
  *
  * Deliberately conservative. A wrong "same language" answer leaves a string
  * untranslated; a `null` only falls back to the model exactly as before. So
- * it answers only when one language's function words clearly dominate, and
- * short strings need unanimous evidence. URLs are removed first — a slug like
- * "hans-och-valter-vinner" is not prose.
+ * it answers only when one language's function words clearly dominate. URLs
+ * are removed first — a slug like "hans-och-valter-vinner" is not prose.
+ *
+ * Short strings can be called Swedish (unanimous evidence only) but never
+ * English: in "Ny singel: The Best of You" the only function words belong to
+ * the quoted title, and calling that English would leave a Swedish headline
+ * untranslated on the English site. English needs long prose.
  */
 export function detectLanguage(text: string): Lang | null {
   const prose = text.replace(URL_RE, " ").toLowerCase();
@@ -931,7 +935,6 @@ export function detectLanguage(text: string): Lang | null {
   if (sv >= 5 && sv >= en * 5) return "sv";
   if (en >= 5 && en >= sv * 5) return "en";
   if (en === 0 && (sv >= 2 || (sv === 1 && swedishLetters))) return "sv";
-  if (sv === 0 && en >= 2 && !swedishLetters) return "en";
   return null;
 }
 

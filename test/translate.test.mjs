@@ -767,7 +767,17 @@ test("detectLanguage: English prose stays en when it names Swedish places", () =
 });
 
 test("detectLanguage: declines on short strings with no clear evidence", () => {
-  for (const text of ["News", "Publicerad", "Ninetone artister", "Crashdïet Signs with Ninetone", "Tommy Nilsson med The End of the Road"]) {
+  for (const text of [
+    "News",
+    "Publicerad",
+    "Ninetone artister",
+    "Crashdïet Signs with Ninetone",
+    "Tommy Nilsson med The End of the Road",
+    // A short string is never called English: the function words here all
+    // belong to the quoted title, and the headline itself is Swedish.
+    "Ny singel: The Best of You",
+    "Mia Karlsson Joins The Gems on European Tour",
+  ]) {
     assert.equal(detectLanguage(text), null, text);
   }
 });
@@ -775,21 +785,22 @@ test("detectLanguage: declines on short strings with no clear evidence", () => {
 // Extended by the /ship coverage audit (2026-10-09): the last two assertions.
 // Value: protects=Words in a URL slug do not change the language verdict of the prose around the link;
 //   fails_when=the URL removal in detectLanguage is dropped, which turns the second line null and the third "sv";
+//   (second line rewritten when short strings stopped being called English: it is now Swedish prose beside an English slug)
 //   why_new=the first assertion is null with or without the rule, so on its own it could not catch that;
 //   seam=none
 test("detectLanguage: words inside a URL are not evidence", () => {
   // "hans", "och" are Swedish hint words, but here they are a slug.
   assert.equal(detectLanguage("Read more: https://example.se/hans-och-valter-vinner-och-firar"), null);
-  // English prose stays English next to a Swedish slug, and a slug alone
+  // Swedish prose stays Swedish next to an English slug, and a slug alone
   // does not make a string Swedish.
-  assert.equal(detectLanguage("More about the band at https://example.se/hans-och-valter-vinner-och-firar"), "en");
+  assert.equal(detectLanguage("Läs mer om bandet och turnén: https://example.com/the-story-of-the-band"), "sv");
   assert.equal(detectLanguage("Listen: https://example.se/hans-och-valter-vinner"), null);
 });
 
 // Added by the /ship coverage audit (2026-10-09).
-// Value: protects=detectLanguage answers a short string only on unanimous evidence, in either language;
+// Value: protects=detectLanguage calls a short string Swedish only on unanimous evidence, and never calls one English;
 //   fails_when=a short-string rule is loosened or dropped, so one stray function word or English words beside å/ä/ö decide;
-//   why_new=short strings were only checked for null, and neither short "sv" nor short "en" answer had a test;
+//   why_new=short strings were only checked for null, and the short "sv" answer had no test;
 //   seam=none
 test("detectLanguage: a short string is answered only on unanimous evidence", () => {
   const cases = [
@@ -797,8 +808,9 @@ test("detectLanguage: a short string is answered only on unanimous evidence", ()
     ["Läs mer om oss och våra artister", "sv"],
     // One Swedish function word, backed by å/ä/ö.
     ["Boka artister för ditt event", "sv"],
-    // Several English function words, nothing Swedish.
-    ["Read more about the artist and the label", "en"],
+    // Several English function words, nothing Swedish: still undecided. A
+    // short string is never called English (see "Ny singel: The Best of You").
+    ["Read more about the artist and the label", null],
     // "sin" is also an English word: one function word without å/ä/ö decides nothing.
     ["Original Sin tour dates", null],
     // A Swedish headline quoting an English title: "släpper" keeps it from reading as English.
@@ -858,6 +870,19 @@ test("translate: Swedish text on the English site still translates (cache hit is
       const result = await translate({ text: FM_BODY, target: "en", tier: "fast", kind: "markdown", kv, waitUntil: waitUntilInline });
       assert.equal(result.text, "English body");
       assert.equal(result.cached, true);
+      assert.equal(calls.length, 0);
+    },
+  );
+});
+
+test("translate: a Swedish headline that quotes an English title is still translated for the English site", async () => {
+  const text = "Ny singel: The Best of You";
+  const kv = fakeKv({ [await translationKey(text, "en", "fast")]: "New single: The Best of You" });
+  await withStubbedFetch(
+    router(() => anthropicResponse("should not be used")),
+    async (calls) => {
+      const result = await translate({ text, target: "en", tier: "fast", kind: "title", kv, waitUntil: waitUntilInline });
+      assert.equal(result.text, "New single: The Best of You");
       assert.equal(calls.length, 0);
     },
   );
