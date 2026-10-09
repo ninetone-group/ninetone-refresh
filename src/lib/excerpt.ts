@@ -17,6 +17,11 @@ function htmlToText(html: string): string {
     .trim();
 }
 
+/** Markdown source to one line of plain text. */
+export function markdownToText(markdown: string): string {
+  return htmlToText(renderBio(markdown));
+}
+
 /**
  * News excerpt as plain text — the card blurb, the article standfirst, the
  * meta description and the search-index blurb all read it.
@@ -50,5 +55,5 @@ export function newsExcerpt(shortMessage: unknown, message: unknown): string {
   if (!MARKUP_RE.test(excerpt)) return excerpt;
   // Literal tags first: renderBio escapes them, so they would otherwise come
   // back out of the entity decoding above as visible "<h2>" text.
-  return htmlToText(renderBio(excerpt.replace(/<\/?[a-z][^>]*>/gi, " ")));
+  return markdownToText(excerpt.replace(/<\/?[a-z][^>]*>/gi, " "));
 }

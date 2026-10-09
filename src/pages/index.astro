@@ -29,7 +29,9 @@ import {
   getArtistBySlug,
   getLatestClient,
   getNews,
+  getWebPostSection,
 } from "../lib/ninetone";
+import { parseHomepageCopy } from "../lib/homepage-copy";
 import { liveRosterCount, roundedPlus, yearsSince } from "../lib/metrics";
 import { readReleaseCount } from "../lib/release-count";
 import { getCfEnv } from "../lib/cf";
@@ -52,7 +54,7 @@ const collectionId =
 // Core homepage content — failures render the error page (never edge-cached)
 // instead of a silently-gutted homepage. Transients are absorbed by lib/cache.ts.
 // The two "in focus" picks share the cached roster fetches — no extra FM calls.
-const [featuredArtists, heroArtist, heroClient, latestNews, allArtists, allClients, allBooking, prevArtists, prevClients, prevBooking] = await Promise.all([
+const [featuredArtists, heroArtist, heroClient, latestNews, allArtists, allClients, allBooking, prevArtists, prevClients, prevBooking, groupSection] = await Promise.all([
   getFeaturedArtists(20),
   getArtistOfTheWeek(), // rotates Mondays 00:00 UTC — same artist all week
   getLatestClient(), // newest management addition (FM recordId order)
@@ -68,7 +70,19 @@ const [featuredArtists, heroArtist, heroClient, latestNews, allArtists, allClien
   getPreviousArtists(),
   getPreviousClients(),
   getPreviousBooking(),
+  // Editable homepage copy (API_WEBPOSTS, category "Ninetone Group"). Unlike
+  // the reads above this one may fail quietly: every slot it feeds has
+  // built-in copy to fall back on, so a missed read costs wording, not a page.
+  getWebPostSection("Ninetone Group").catch(() => null),
 ]);
+
+// FM homepage copy, slot by slot (src/lib/homepage-copy.ts). Patrik writes it
+// in Swedish, so the Swedish site shows it exactly as written — no translation
+// pass at all, which is the only way a short headline is guaranteed not to be
+// reworded. /en/ translates it like any other string on this page. A slot FM
+// does not fill keeps the built-in copy below.
+const copy = parseHomepageCopy(groupSection);
+const pageLang = (Astro.locals as { lang?: "sv" | "en" } | undefined)?.lang ?? "sv";
 
 // getArtistOfTheWeek() sources from the API_ARTIST roster layout, which
 // (verified live on staging) carries only artistPicture_small — never _big —
@@ -113,34 +127,46 @@ const portalsSource = [
 // in (decision 5) — this page mixes English taglines with Swedish blurbs
 // verbatim, so both stay as their own t() source rather than being
 // rewritten to match each other.
+const fromFm = async (text: string) => (pageLang === "sv" ? text : t(text));
 const portals = await Promise.all(
-  portalsSource.map(async (p) => ({
-    ...p,
-    title: await t(p.title),
-    tagline: await t(p.tagline),
-    blurb: await t(p.blurb),
-  })),
+  portalsSource.map(async (p) => {
+    const card = copy.cards[p.theme];
+    return {
+      ...p,
+      title: await t(p.title),
+      tagline: card ? await fromFm(card.tagline) : await t(p.tagline),
+      blurb: card ? await fromFm(card.blurb) : await t(p.blurb),
+    };
+  }),
 );
 
 // Hero section
 const heroKicker = await t("Sundsvall / Stockholm — since 2006");
-const heroH1 = await t("We connect what people need with what people care about.");
-const heroBody = await t(
-  "Ninetone är länken mellan behov, erbjudanden och publik. Vi hjälper artister, kreatörer, organisationer, företag, idrottslag och offentliga personer att förstå vad de egentligen erbjuder — och hur det ska formuleras, paketeras och nå fram.",
-);
-const heroTagline = await t(
-  "Vi arbetar där kultur, kommunikation, algoritmer, underhållning, sociala medier och mänskligt beteende möts.",
-);
+const heroH1 = copy.hero ? await fromFm(copy.hero.heading) : await t("We connect what people need with what people care about.");
+const heroBody = copy.hero
+  ? await fromFm(copy.hero.body)
+  : await t(
+      "Ninetone är länken mellan behov, erbjudanden och publik. Vi hjälper artister, kreatörer, organisationer, företag, idrottslag och offentliga personer att förstå vad de egentligen erbjuder — och hur det ska formuleras, paketeras och nå fram.",
+    );
+const heroTagline = copy.hero
+  ? await fromFm(copy.hero.tagline)
+  : await t("Vi arbetar där kultur, kommunikation, algoritmer, underhållning, sociala medier och mänskligt beteende möts.");
 const talkToUsCta = await t("Talk to us"); // reused verbatim at both hero + closing CTA — sharedT() memoizes, so this is ONE call even though it renders twice.
 const seeWhatWeDoCta = await t("See what we do");
 
 // Positioning band
 const positioningKicker = await t("Positioning");
-const positioningH2 = await t("Not a label. Not an agency. Not traditional management.");
-const positioningTagline = await t("Ninetone är ett kommunikations- och utvecklingshus för den moderna uppmärksamhetsekonomin.");
-const positioningBody = await t(
-  "Ibland arbetar vi med musik. Ibland med influencers. Ibland med företag, organisationer, idrottslag, TV-profiler eller kreatörer. Men uppgiften är nästan alltid densamma: att förstå ett behov. Förädla ett erbjudande. Och bygga bron till de människor som behöver känna, förstå, köpa, följa, lyssna, komma, rösta, dela eller bry sig.",
-);
+const positioningH2 = copy.positioning
+  ? await fromFm(copy.positioning.heading)
+  : await t("Not a label. Not an agency. Not traditional management.");
+const positioningTagline = copy.positioning
+  ? await fromFm(copy.positioning.tagline)
+  : await t("Ninetone är ett kommunikations- och utvecklingshus för den moderna uppmärksamhetsekonomin.");
+const positioningBody = copy.positioning
+  ? await fromFm(copy.positioning.body)
+  : await t(
+      "Ibland arbetar vi med musik. Ibland med influencers. Ibland med företag, organisationer, idrottslag, TV-profiler eller kreatörer. Men uppgiften är nästan alltid densamma: att förstå ett behov. Förädla ett erbjudande. Och bygga bron till de människor som behöver känna, förstå, köpa, följa, lyssna, komma, rösta, dela eller bry sig.",
+    );
 
 // Portal band per-card "Enter" affordance + kicker
 const enterLabel = await t("Enter");
@@ -148,31 +174,59 @@ const ninetoneKicker = await t("Ninetone");
 
 // "What we do" vignette band
 const howWeWorkKicker = await t("How we work");
-const buildBridgeH2 = await t("We build the bridge.");
-const howWeWorkTagline = await t("Varje uppdrag börjar med samma fråga: vad behöver kopplas ihop?");
-const sportKicker = await t("Sport · Idrottsklubb");
-const sportBody = await t(
-  "Att förstå klubbens behov av publik, energi, biljettförsäljning och starkare relation till fansen. Ninetone arbetar med budskap, kanalval, rådgivning till ledningen och kommunikation som kan fylla läktarna och stärka klubbens närvaro i människors vardag.",
-);
-const orgKicker = await t("Organisation");
-const orgBody = await t(
-  "Att tydliggöra värdet i deras tjänster, formulera erbjudandet tillsammans med ledningen och nå Sveriges företagare på ett sätt som känns relevant, konkret och användbart.",
-);
-const musicKicker = await t("Music · Artist");
-const musicHeading = await t("En artist");
-const musicBody = await t(
-  "Att ta en konstnärlig produkt och bygga ett universum runt den — ljud, berättelse, känsla, kanal, publik och långsiktig riktning.",
-);
-const creatorKicker = await t("Public person · Creator");
-const creatorHeading = await t("En influencer");
-const creatorBody = await t("Att omvandla uppmärksamhet till struktur, affär, kreativ utveckling och hållbar karriär.");
-const sameCoreTagline = await t("Olika världar. Samma kärna.");
-const sameCoreEmphasis = await t("Behov. Erbjudande. Människa.");
+const buildBridgeH2 = copy.bridge ? await fromFm(copy.bridge.heading) : await t("We build the bridge.");
+const howWeWorkTagline = copy.bridge
+  ? await fromFm(copy.bridge.tagline)
+  : await t("Varje uppdrag börjar med samma fråga: vad behöver kopplas ihop?");
+// One tile per case. FM decides how many there are; the built-in four are the
+// fallback. The first two built-in headings are names and were never
+// translated — the same two names coming from FM are pinned in
+// src/i18n/overrides.json so /en/ does not "translate" them.
+const bridgeCases = copy.bridge?.cases.length
+  ? await Promise.all(
+      copy.bridge.cases.map(async (c) => ({
+        kicker: await fromFm(c.kicker),
+        heading: await fromFm(c.heading),
+        body: await fromFm(c.body),
+      })),
+    )
+  : [
+      {
+        kicker: await t("Sport · Idrottsklubb"),
+        heading: "GIF Sundsvall",
+        body: await t(
+          "Att förstå klubbens behov av publik, energi, biljettförsäljning och starkare relation till fansen. Ninetone arbetar med budskap, kanalval, rådgivning till ledningen och kommunikation som kan fylla läktarna och stärka klubbens närvaro i människors vardag.",
+        ),
+      },
+      {
+        kicker: await t("Organisation"),
+        heading: "Företagarna",
+        body: await t(
+          "Att tydliggöra värdet i deras tjänster, formulera erbjudandet tillsammans med ledningen och nå Sveriges företagare på ett sätt som känns relevant, konkret och användbart.",
+        ),
+      },
+      {
+        kicker: await t("Music · Artist"),
+        heading: await t("En artist"),
+        body: await t(
+          "Att ta en konstnärlig produkt och bygga ett universum runt den — ljud, berättelse, känsla, kanal, publik och långsiktig riktning.",
+        ),
+      },
+      {
+        kicker: await t("Public person · Creator"),
+        heading: await t("En influencer"),
+        body: await t("Att omvandla uppmärksamhet till struktur, affär, kreativ utveckling och hållbar karriär."),
+      },
+    ];
+const sameCoreTagline = copy.bridge ? await fromFm(copy.bridge.closing) : await t("Olika världar. Samma kärna.");
+const sameCoreEmphasis = copy.bridge ? await fromFm(copy.bridge.closingAccent) : await t("Behov. Erbjudande. Människa.");
 
 // Bento "What's on"
 const whatsOnKicker = await t("What's on");
-const whatsMovingH2 = await t("What's moving.");
-const whatsMovingBody = await t("Projekt, releaser, berättelser och människor vi arbetar med just nu.");
+const whatsMovingH2 = copy.whatsOn ? await fromFm(copy.whatsOn.heading) : await t("What's moving.");
+const whatsMovingBody = copy.whatsOn
+  ? await fromFm(copy.whatsOn.body)
+  : await t("Projekt, releaser, berättelser och människor vi arbetar med just nu.");
 const updatedWeeklyLabel = await t("Updated weekly");
 const artistOfWeekKicker = await t("Artist of the week");
 // FM CONTENT on the homepage (decision 8). The bento tiles and the Latest
@@ -216,10 +270,10 @@ const clientInFocusKicker = await t("Client in focus");
 
 // Roster strip
 const rosterKicker = await t("The roster");
-const rosterHeading = await t("People, projects and public attention.");
-const rosterBlurb = await t(
-  "Här finns artister, kreatörer och profiler vi arbetar med, har byggt med eller hjälper att föra vidare till nästa nivå.",
-);
+const rosterHeading = copy.roster ? await fromFm(copy.roster.heading) : await t("People, projects and public attention.");
+const rosterBlurb = copy.roster
+  ? await fromFm(copy.roster.body)
+  : await t("Här finns artister, kreatörer och profiler vi arbetar med, har byggt med eller hjälper att föra vidare till nästa nivå.");
 const allArtistsCta = await t("All artists");
 
 // Metrics panel
@@ -251,29 +305,34 @@ const metrics = await Promise.all(
 );
 
 // Editorial news block
-const editorialHeading = await t("Stories from the intersection.");
+const editorialHeading = copy.news ? await fromFm(copy.news.heading) : await t("Stories from the intersection.");
 const editorialKicker = await t("From the intersection");
-const editorialBlurb = await t("Nyheter från musik, management, varumärken, kreatörer, organisationer och publika projekt.");
+const editorialBlurb = copy.news
+  ? await fromFm(copy.news.body)
+  : await t("Nyheter från musik, management, varumärken, kreatörer, organisationer och publika projekt.");
 
 // About
 const aboutKicker = await t("About");
+const aboutHeading = copy.about ? await fromFm(copy.about.heading) : "Ninetone Group";
 const aboutParagraphs = await Promise.all(
-  [
+  (copy.about?.paragraphs ?? [
     "Ninetone Group är ett svenskt utvecklings-, management- och kommunikationshus byggt för den moderna uppmärksamhetsekonomin.",
     "Vi arbetar med människor och organisationer som behöver nå fram: artister, kreatörer, influencers, sportprofiler, företag, idrottslag, organisationer och offentliga personer.",
     "Vår styrka ligger i att förstå både avsändaren och mottagaren. Vad behöver sägas? Vem behöver känna det? Vilken kanal bär budskapet bäst? Hur blir ett erbjudande inte bara synligt, utan relevant?",
     "Därför arbetar vi tvärs över musik, sociala medier, PR, management, affärsutveckling, produktion, storytelling, distribution och publikförståelse.",
     "Vi är inte bara ett musikbolag. Inte bara ett managementbolag. Inte bara en byrå.",
-  ].map((p) => t(p)),
+  ]).map((p) => (copy.about ? fromFm(p) : t(p))),
 );
-const aboutClosing = await t("Vi är länken mellan behovet, erbjudandet och människorna på andra sidan.");
+const aboutClosing = copy.about
+  ? await fromFm(copy.about.closing)
+  : await t("Vi är länken mellan behovet, erbjudandet och människorna på andra sidan.");
 
 // Merch
-const merchHeading = await t("The house, wearable.");
+const merchHeading = copy.merch ? await fromFm(copy.merch.heading) : await t("The house, wearable.");
 const merchKicker = await t("Merch");
-const merchBlurb = await t(
-  "Kläder och objekt från Ninetone-världen. Enkla saker för människor som rör sig nära musiken, projekten och kulturen runt huset.",
-);
+const merchBlurb = copy.merch
+  ? await fromFm(copy.merch.body)
+  : await t("Kläder och objekt från Ninetone-världen. Enkla saker för människor som rör sig nära musiken, projekten och kulturen runt huset.");
 
 // Closing CTA band
 const closingKicker = talkToUsCta; // same source string as the hero CTA ("Talk to us") — reuse the resolved value instead of a second t() call.
@@ -303,9 +362,11 @@ const closingBody = await t(
           <p class="text-lg leading-relaxed text-ninetone-ink/75">
             {heroBody}
           </p>
-          <p class="font-display text-lg italic leading-snug tracking-tight text-ninetone-ink/70 md:text-xl">
-            {heroTagline}
-          </p>
+          {heroTagline && (
+            <p class="font-display text-lg italic leading-snug tracking-tight text-ninetone-ink/70 md:text-xl">
+              {heroTagline}
+            </p>
+          )}
           <div class="flex flex-wrap gap-3 pt-2">
             <a href={url("/management/contact-management")} class="inline-flex items-center gap-2 bg-ninetone-ink px-4 py-3 text-sm font-semibold text-ninetone-paper transition-colors hover:bg-ninetone-ink-soft">
               {talkToUsCta} <span aria-hidden>→</span>
@@ -328,9 +389,11 @@ const closingBody = await t(
           <h2 class="mt-3 font-display text-4xl leading-[1.05] tracking-tight md:text-5xl">
             {positioningH2}
           </h2>
-          <p class="mt-6 max-w-2xl font-display text-2xl italic leading-snug tracking-tight text-ninetone-ink/75 md:text-3xl">
-            {positioningTagline}
-          </p>
+          {positioningTagline && (
+            <p class="mt-6 max-w-2xl font-display text-2xl italic leading-snug tracking-tight text-ninetone-ink/75 md:text-3xl">
+              {positioningTagline}
+            </p>
+          )}
         </div>
         <div class="md:col-span-5 md:pt-10">
           <p class="max-w-xl text-[0.9375rem] leading-relaxed text-ninetone-ink/85">
@@ -400,42 +463,22 @@ const closingBody = await t(
       </div>
 
       <div class="mt-16 grid gap-10 md:grid-cols-2 md:gap-x-16 md:gap-y-14">
-        <div>
-          <span class="kicker text-ninetone-ink/55">{sportKicker}</span>
-          <h3 class="mt-3 font-display text-2xl leading-tight tracking-tight md:text-3xl">GIF Sundsvall</h3>
-          <p class="mt-4 max-w-xl text-[0.9375rem] leading-relaxed text-ninetone-ink/85">
-            {sportBody}
-          </p>
-        </div>
-
-        <div>
-          <span class="kicker text-ninetone-ink/55">{orgKicker}</span>
-          <h3 class="mt-3 font-display text-2xl leading-tight tracking-tight md:text-3xl">Företagarna</h3>
-          <p class="mt-4 max-w-xl text-[0.9375rem] leading-relaxed text-ninetone-ink/85">
-            {orgBody}
-          </p>
-        </div>
-
-        <div>
-          <span class="kicker text-ninetone-ink/55">{musicKicker}</span>
-          <h3 class="mt-3 font-display text-2xl leading-tight tracking-tight md:text-3xl">{musicHeading}</h3>
-          <p class="mt-4 max-w-xl text-[0.9375rem] leading-relaxed text-ninetone-ink/85">
-            {musicBody}
-          </p>
-        </div>
-
-        <div>
-          <span class="kicker text-ninetone-ink/55">{creatorKicker}</span>
-          <h3 class="mt-3 font-display text-2xl leading-tight tracking-tight md:text-3xl">{creatorHeading}</h3>
-          <p class="mt-4 max-w-xl text-[0.9375rem] leading-relaxed text-ninetone-ink/85">
-            {creatorBody}
-          </p>
-        </div>
+        {bridgeCases.map((c) => (
+          <div>
+            {c.kicker && <span class="kicker text-ninetone-ink/55">{c.kicker}</span>}
+            <h3 class="mt-3 font-display text-2xl leading-tight tracking-tight md:text-3xl">{c.heading}</h3>
+            <p class="mt-4 max-w-xl text-[0.9375rem] leading-relaxed text-ninetone-ink/85">
+              {c.body}
+            </p>
+          </div>
+        ))}
       </div>
 
-      <p class="mt-20 max-w-3xl font-display text-2xl italic leading-snug tracking-tight text-ninetone-ink/75 md:text-3xl">
-        {sameCoreTagline} <span class="not-italic font-medium text-ninetone-red">{sameCoreEmphasis}</span>
-      </p>
+      {(sameCoreTagline || sameCoreEmphasis) && (
+        <p class="mt-20 max-w-3xl font-display text-2xl italic leading-snug tracking-tight text-ninetone-ink/75 md:text-3xl">
+          {sameCoreTagline} <span class="not-italic font-medium text-ninetone-red">{sameCoreEmphasis}</span>
+        </p>
+      )}
 
       <div class="mt-12 h-px w-full bg-ninetone-ink/80" aria-hidden></div>
     </div>
@@ -573,13 +616,15 @@ const closingBody = await t(
     <div class="mx-auto grid max-w-7xl gap-10 px-6 md:grid-cols-12 md:gap-16">
       <div class="md:col-span-4 md:sticky md:top-28 md:self-start">
         <span class="kicker text-ninetone-ink/55">{aboutKicker}</span>
-        <h2 class="mt-3 font-display text-4xl leading-[1.05] tracking-tight md:text-5xl">Ninetone Group</h2>
+        <h2 class="mt-3 font-display text-4xl leading-[1.05] tracking-tight md:text-5xl">{aboutHeading}</h2>
       </div>
       <div class="md:col-span-8 space-y-6 max-w-2xl text-[0.9375rem] leading-relaxed text-ninetone-ink/85">
         {aboutParagraphs.map((p) => <p>{p}</p>)}
-        <p class="font-display text-xl italic leading-snug tracking-tight text-ninetone-ink/85 md:text-2xl">
-          {aboutClosing}
-        </p>
+        {aboutClosing && (
+          <p class="font-display text-xl italic leading-snug tracking-tight text-ninetone-ink/85 md:text-2xl">
+            {aboutClosing}
+          </p>
+        )}
       </div>
     </div>
   </section>
