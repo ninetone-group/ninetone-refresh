@@ -432,7 +432,18 @@ export const onRequest = defineMiddleware((context, next) => withServerTiming(as
     const freshUntil = stamp === null ? Number.NaN : Number(stamp);
     const stale = Number.isFinite(freshUntil) && Date.now() > freshUntil;
     const canRevalidate = typeof self?.fetch === "function" && typeof cfContext?.waitUntil === "function";
-    if (!stale || canRevalidate) {
+    // A copy rendered with untranslated text ("degraded", cached for one
+    // minute below) is never handed out stale. Its translations were ordered
+    // by the render that produced it and are in KV seconds later, so the next
+    // render is the translated page — but serving the stale copy first meant
+    // a page showed source text on the first visit AND the second, however
+    // long apart, and only the third visitor got the translation. After the
+    // v0.3.0.1 key change that was every English article and bio, for hours
+    // (found 2026-10-09: a 75-second-old copy still served Swedish with its
+    // translation long since stored). Rendering costs this one visitor a few
+    // hundred milliseconds instead.
+    const degradedCopy = hit.headers.has("x-translation");
+    if (!stale || (canRevalidate && !degradedCopy)) {
       const res = new Response(hit.body, hit);
       res.headers.set("Cache-Control", visitorCacheControl(hit.headers.get("x-cache-ttl") ?? DEFAULT_TTL));
       res.headers.delete(FRESH_UNTIL_HEADER);

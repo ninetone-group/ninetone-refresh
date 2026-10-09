@@ -3,6 +3,32 @@
 All notable changes to the Ninetone Group site. Versions follow `MAJOR.MINOR.PATCH.MICRO`
 (the number in `VERSION`).
 
+## [0.3.2.1] - 2026-10-09
+
+### Fixed
+- **English pages no longer sit on their Swedish source for three visits.** A page rendered
+  with untranslated text is cached for one minute, and its translation lands in KV seconds
+  later. But the next visitor was still handed that same copy as "stale" while a fresh one
+  rendered in the background, so a page showed source text on the first visit and the
+  second, however far apart, and only the third got the translation. After 0.3.0.1 gave
+  every multi-paragraph text a new translation key, that was every English article and
+  bio; 37 of 80 English article bodies were still Swedish hours later. A stale copy that
+  was rendered with untranslated text is now re-rendered for that visitor instead of
+  served again (`src/middleware.ts`). First visit shows the source, the next one a minute
+  or more later shows the translation.
+- **A text the model hands back untranslated is no longer stored as its translation.** The
+  fast tier returned one Swedish article body unchanged for English; its paragraphs and
+  links were intact, so it passed the structure guard, was cached, and `/en/` served the
+  Swedish article as a complete page that nothing retried. Such an answer is now rejected
+  and retried at the other tier, and an entry already stored that way is treated as
+  missing and replaces itself (`leftUntranslated` in `src/lib/translate.ts`).
+
+### Notes
+- Nothing was failing to translate: every forced render during the investigation produced
+  a stored, intact translation on the first try (14 of 14). The 80 English news articles
+  were visited by hand afterwards; artist, client and booking pages still translate on
+  their first visit.
+
 ## [0.3.2.0] - 2026-10-09
 
 ### Added

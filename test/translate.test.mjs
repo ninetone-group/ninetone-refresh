@@ -15,6 +15,7 @@ import {
   detectLanguage,
   breaksMarkdownStructure,
   callWithGuard,
+  leftUntranslated,
 } from "../src/lib/translate.ts";
 import { resolveFmDisplayText } from "../src/lib/t.ts";
 
@@ -981,6 +982,73 @@ test("translate: when both tiers merge the paragraphs nothing is cached — the 
         await scheduler.flush();
         assert.equal(result.text, FM_PARAGRAPHS.join("\n\n"));
         assert.equal(kv.puts.length, 0);
+      },
+    );
+  }));
+
+// ---------------------------------------------------------------------------
+// A "translation" that is the source handed back (found live 2026-10-09)
+//
+// The fast tier returned one Swedish article unchanged for English. Paragraphs
+// and links were intact, so it was cached as the translation and /en/ served
+// the Swedish article as a complete page that nothing ever retried.
+// ---------------------------------------------------------------------------
+
+test("leftUntranslated: prose still in the source language is caught; a real translation and a shared short word are not", () => {
+  const english = "Agnes sat on the jury when the contest was decided. This time she took part as a member of the jury and it was a return to a contest she knows.";
+  assert.equal(leftUntranslated(FM_BODY, normalizeLineEndings(FM_BODY), "en"), true);
+  assert.equal(leftUntranslated(FM_BODY, english, "en"), false);
+  // Returned "unchanged" but with the quotes and spacing touched: still the source.
+  assert.equal(leftUntranslated("Agnes arbetar som artist och hon är ”aktuell” med ett nytt projekt.", 'Agnes arbetar som artist  och hon är "aktuell" med ett nytt projekt', "en"), true);
+  // A real translation that keeps a Swedish title and has no English function word is not refused.
+  assert.equal(leftUntranslated("Tommy släpper singeln ”Du och jag” på fredag och det är stort.", "Tommy releases ”Du och jag” Friday", "en"), false);
+  // Identical in both languages, and too short to place: never flagged.
+  for (const word of ["Artist", "Organisation", "Ninetone Group"]) assert.equal(leftUntranslated(word, word, "en"), false, word);
+  // Swedish text on the Swedish site is not a translation at all.
+  assert.equal(leftUntranslated(FM_BODY, normalizeLineEndings(FM_BODY), "sv"), false);
+});
+
+test("translate: a fast-tier answer that returns the Swedish source for English is rejected and retried at quality", () =>
+  withEnv({ ANTHROPIC_API_KEY: "test-key" }, async () => {
+    const kv = fakeKv();
+    const source = FM_PARAGRAPHS.join("\n\n");
+    const english = FM_PARAGRAPHS.map((p, i) => (i < 3 ? `This is English paragraph ${i + 1} and it is the translation of the text.` : p)).join("\n\n");
+    const seenModels = [];
+    await withStubbedFetch(
+      router((url, init) => {
+        const { model } = JSON.parse(init.body);
+        seenModels.push(model);
+        return anthropicResponse(model === "claude-haiku-4-5" ? source : english);
+      }),
+      async () => {
+        const scheduler = collectingWaitUntil();
+        await translate({ text: FM_BODY, target: "en", tier: "fast", kind: "markdown", kv, waitUntil: scheduler.waitUntil });
+        await scheduler.flush();
+        assert.deepEqual(seenModels, ["claude-haiku-4-5", "claude-sonnet-5"]);
+        assert.deepEqual(kv.puts.map((put) => put[1]), [english]);
+      },
+    );
+  }));
+
+test("translate: a stored 'translation' that is the Swedish source is treated as missing, re-translated and replaced", () =>
+  withEnv({ ANTHROPIC_API_KEY: "test-key" }, async () => {
+    const source = FM_PARAGRAPHS.join("\n\n");
+    const english = FM_PARAGRAPHS.map((p, i) => (i < 3 ? `This is English paragraph ${i + 1} and it is the translation of the text.` : p)).join("\n\n");
+    const key = await translationKey(FM_BODY, "en", "fast");
+    const kv = fakeKv({ [key]: source });
+    await withStubbedFetch(
+      router(() => anthropicResponse(english)),
+      async () => {
+        const scheduler = collectingWaitUntil();
+        const ledger = new Map();
+        const first = await translate({ text: FM_BODY, target: "en", tier: "fast", kind: "markdown", kv, waitUntil: scheduler.waitUntil, ledger });
+        assert.deepEqual([first.origin, first.cached], ["miss", false]);
+        assert.equal(ledger.size, 0, "the bad value must not reach the route bundle");
+        await scheduler.flush();
+        assert.equal(kv.store.get(key), english);
+        // The next render reads the replacement, not this isolate's old copy.
+        const second = await translate({ text: FM_BODY, target: "en", tier: "fast", kind: "markdown", kv, waitUntil: scheduler.waitUntil });
+        assert.deepEqual([second.text, second.origin], [english, "cached"]);
       },
     );
   }));

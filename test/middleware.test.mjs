@@ -1026,6 +1026,34 @@ test("swr: a hit inside its tier is a plain hit and never touches SELF", async (
   assert.equal(self.calls.length, 0);
 });
 
+// Regression (2026-10-09). Hours after a deploy, English articles still showed
+// their Swedish source: the copy from the first visit was handed out again as
+// "stale" on the second, a minute or a day later, although its translation
+// had been in KV since seconds after the first. Three visits to see English.
+test("swr: a stale copy that was rendered with untranslated text is re-rendered for this visitor, never served again", async () => {
+  const degraded = (ageMs) => {
+    const hit = staleHit({ ageMs, ttl: "60", body: "half-translated" });
+    hit.headers.set("x-translation", "degraded; misses=1 refused=0");
+    return hit;
+  };
+  const self = selfBinding();
+  const runtime = createRuntime({ hit: degraded(15_000), env: { CACHE_STATE: { get: async () => "7" }, SELF: self } });
+  let renders = 0;
+  const response = await run(new Request("https://www.ninetone.com/news"), async () => { renders++; return new Response("translated"); }, runtime);
+
+  assert.equal(await response.text(), "translated");
+  assert.equal(response.headers.get("x-cache"), "miss");
+  assert.equal(renders, 1);
+  assert.equal(self.calls.length, 0, "the render happened in this request; nothing left to revalidate");
+  assert.equal(runtime.stored.length, 1, "the complete page replaces the half-translated copy");
+
+  // Inside its one-minute lease the same copy is still an ordinary hit: a burst of visitors does not stampede renders.
+  const leased = createRuntime({ hit: degraded(-30_000), env: { CACHE_STATE: { get: async () => "7" }, SELF: selfBinding() } });
+  const held = await run(new Request("https://www.ninetone.com/news"), async () => { throw new Error("no render inside the lease"); }, leased);
+  assert.equal(held.headers.get("x-cache"), "hit");
+  assert.equal(await held.text(), "half-translated");
+});
+
 test("swr: without a SELF binding a stale hit renders synchronously, as before", async () => {
   const runtime = createRuntime({ hit: staleHit({ ageMs: 10_000 }) });
   let nextCalls = 0;

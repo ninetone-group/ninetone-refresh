@@ -859,7 +859,9 @@ export async function callWithGuard(
   const source = normalizeLineEndings(text);
   const system = buildSystemPrompt(target, kind, protectedTerms);
   const rejected = (result: AnthropicCallResult) =>
-    isRejected(result) || (kind === "markdown" && breaksMarkdownStructure(source, result.text));
+    isRejected(result) ||
+    leftUntranslated(source, result.text, target) ||
+    (kind === "markdown" && breaksMarkdownStructure(source, result.text));
 
   const first = await callAnthropic(apiKey, system, source, tier);
   if (!rejected(first)) return first.text;
@@ -941,6 +943,32 @@ export function detectLanguage(text: string): Lang | null {
   if (en >= 5 && en >= sv * 5) return "en";
   if (en === 0 && (sv >= 2 || (sv === 1 && swedishLetters))) return "sv";
   return null;
+}
+
+/**
+ * True when `output` is the source handed back: `source` is confidently in a
+ * language other than the target, and `output` says the same thing letter for
+ * letter (spacing, quotes and punctuation aside). That is not a translation.
+ *
+ * Found 2026-10-09: the fast tier returned one Swedish article body unchanged
+ * for English. Its paragraphs and links were of course intact, so the
+ * structure guard passed it, it was cached permanently, and /en/ served the
+ * Swedish article as a complete page — no miss, so nothing ever retried.
+ * Checked in two places: at the model seam, so it is never stored again, and
+ * on a cache hit, so an entry stored before this check heals itself.
+ *
+ * Deliberately an identity test, not "the output looks Swedish". A genuine
+ * translation can keep a Swedish song title or name and carry few English
+ * function words; rejecting on a language guess would refuse real work on
+ * both tiers, forever (the P0-3 failure mode). Short strings never trip it
+ * either way: `detectLanguage` declines on them, and "Artist" or
+ * "Organisation" is legitimately identical in both languages.
+ */
+export function leftUntranslated(source: string, output: string, target: Lang): boolean {
+  const from = detectLanguage(source);
+  if (from === null || from === target) return false;
+  const letters = (text: string) => (text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []).join(" ");
+  return letters(source) === letters(output);
 }
 
 // ---------------------------------------------------------------------------
@@ -1473,10 +1501,15 @@ export async function translate(options: TranslateOptions): Promise<TranslateRes
     // inside isolateCachedRead(), which resolves null on failure — same
     // "a read failure is just a miss" posture as kvCached.
     const raw = await timeServer("trnread", () => isolateCachedRead(kv, key));
-    if (raw !== null) {
+    if (raw !== null && !leftUntranslated(text, raw, target)) {
       options.ledger?.set(key, raw);
       return { text: raw, cached: true, lang: target, origin: "cached" };
     }
+    // A stored value that is the source handed back (see `leftUntranslated`)
+    // is a miss. Drop this isolate's copy so the re-translation scheduled
+    // below is read back once it lands, and keep it out of the ledger so the
+    // route bundle stops re-seeding it.
+    if (raw !== null) isolateCacheFor(kv).delete(key);
   }
 
   const sourceLang = guessSourceLang(text);
