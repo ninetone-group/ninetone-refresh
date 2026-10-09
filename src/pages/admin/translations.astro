@@ -1,0 +1,128 @@
+---
+import AdminLayout from "../../layouts/AdminLayout.astro";
+---
+
+<AdminLayout
+  title="Translations"
+  heading="Translations."
+  current="translations"
+  wide
+  lede="What each site shows for a text, next to what FileMaker holds. Lock a wording to keep it."
+>
+  <div class="mt-4 flex flex-wrap items-end gap-4">
+    <label class="flex min-w-0 flex-1 flex-col gap-2 text-xs uppercase tracking-[0.16em] text-ninetone-ink/60">
+      Page
+      <select id="item" class="border border-ninetone-ink/25 bg-white px-3 py-3 text-base normal-case tracking-normal text-ninetone-ink outline-none focus:border-ninetone-ink"></select>
+    </label>
+    <button id="flush" type="button" class="bg-ninetone-red px-4 py-3 text-sm font-semibold text-ninetone-paper transition-colors hover:bg-ninetone-red-dark">
+      Show changes on the site now →
+    </button>
+  </div>
+  <p id="note" class="mt-3 min-h-5 text-sm text-ninetone-ink/70" aria-live="polite"></p>
+
+  <div id="strings" class="mt-8"></div>
+
+  <p class="mt-12 max-w-2xl border-t border-ninetone-rule pt-6 text-xs leading-relaxed text-ninetone-ink/55">
+    A lock belongs to the exact FileMaker text. Edit that text in FileMaker and the lock no longer applies; the new text is
+    translated automatically again. A locked wording has to keep the same paragraphs and the same links as the original. A locked
+    line shows on the site when the page next refreshes, or straight away with the red button.
+  </p>
+
+  <script is:inline data-astro-rerun>
+    window.ninetoneAdmin.ready(async () => {
+      const A = window.ninetoneAdmin;
+      const select = document.getElementById("item");
+      const root = document.getElementById("strings");
+      const note = document.getElementById("note");
+      const STATE = {
+        "same-language": "Shown as written in FileMaker",
+        cached: "Translated automatically",
+        locked: "Locked wording",
+        override: "Pinned in the site's code",
+        miss: "Not translated yet — shows the original until someone visits",
+        empty: "Empty",
+      };
+
+      A.say("Loading…");
+      const list = await A.call("items").catch(() => ({}));
+      if (!list.ok) return A.say(list.error || "Could not load the pages.");
+      A.say("");
+      for (const item of list.items) {
+        const option = A.el("option", "", item.label);
+        option.value = item.id;
+        select.append(option);
+      }
+      const wanted = new URLSearchParams(location.search).get("item");
+      if (wanted && list.items.some((i) => i.id === wanted)) select.value = wanted;
+
+      function side(itemId, string, lang, name) {
+        const shown = string[lang];
+        const box = A.el("div", "min-w-0");
+        box.append(A.el("div", "text-xs uppercase tracking-[0.16em] text-ninetone-ink/55", name));
+        const state = shown.structureBroken ? "Damaged: lost a paragraph or a link" : STATE[shown.origin] || shown.origin;
+        box.append(A.el("div", shown.structureBroken ? "mt-1 text-xs font-semibold text-ninetone-red" : "mt-1 text-xs text-ninetone-ink/60", state));
+        box.append(A.el("p", "mt-3 whitespace-pre-wrap break-words text-sm leading-relaxed", shown.text));
+        if (!shown.lockable) return box;
+
+        const area = A.el("textarea", "mt-4 w-full border border-ninetone-ink/25 bg-white p-3 text-sm leading-relaxed outline-none focus:border-ninetone-ink");
+        area.rows = string.kind === "markdown" ? 10 : 2;
+        area.value = shown.origin === "miss" ? "" : shown.text;
+        area.placeholder = "Write the wording to lock…";
+        const actions = A.el("div", "mt-2 flex flex-wrap gap-3");
+        const lock = A.el("button", "bg-ninetone-ink px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-ninetone-paper transition-colors hover:bg-ninetone-ink-soft", shown.locked ? "Update lock" : "Lock this wording");
+        lock.type = "button";
+        lock.addEventListener("click", async () => {
+          note.textContent = "Saving…";
+          const r = await A.call("lock", { item: itemId, string: string.id, lang, text: area.value }).catch(() => ({}));
+          note.textContent = r.ok ? "Locked. It shows when the page next refreshes; the red button speeds that up." : r.error || "Could not save.";
+          if (r.ok) load();
+        });
+        actions.append(lock);
+        if (shown.locked) {
+          const unlock = A.el("button", "border border-ninetone-ink/40 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] transition-colors hover:border-ninetone-ink", "Remove lock");
+          unlock.type = "button";
+          unlock.addEventListener("click", async () => {
+            note.textContent = "Removing…";
+            const r = await A.call("unlock", { item: itemId, string: string.id, lang }).catch(() => ({}));
+            note.textContent = r.ok ? "Lock removed. The automatic translation is back." : r.error || "Could not remove.";
+            if (r.ok) load();
+          });
+          actions.append(unlock);
+        }
+        box.append(area, actions);
+        return box;
+      }
+
+      async function load() {
+        root.replaceChildren();
+        A.say("Reading the texts…");
+        const r = await A.call("review", { item: select.value }).catch(() => ({}));
+        if (!r.ok) return A.say(r.error || "Could not load this page.");
+        A.say("");
+        for (const string of r.strings) {
+          const card = A.el("section", "border-t border-ninetone-ink py-8");
+          card.append(A.el("h2", "font-display text-2xl tracking-tight", string.label));
+          card.append(A.el("div", "mt-4 text-xs uppercase tracking-[0.16em] text-ninetone-ink/55", "In FileMaker"));
+          card.append(A.el("p", "mt-2 max-w-3xl whitespace-pre-wrap break-words text-sm leading-relaxed text-ninetone-ink/70", string.source));
+          const grid = A.el("div", "mt-8 grid gap-10 md:grid-cols-2");
+          grid.append(side(r.item.id, string, "sv", "Swedish site shows"), side(r.item.id, string, "en", "English site shows"));
+          card.append(grid);
+          root.append(card);
+        }
+        if (!r.strings.length) root.append(A.el("p", "text-sm text-ninetone-ink/70", "This page has no FileMaker texts."));
+      }
+
+      select.addEventListener("change", () => {
+        history.replaceState(null, "", `?item=${encodeURIComponent(select.value)}`);
+        note.textContent = "";
+        load();
+      });
+      document.getElementById("flush").addEventListener("click", async () => {
+        note.textContent = "Refreshing the site…";
+        const r = await A.call("flush").catch(() => ({}));
+        note.textContent = r.ok ? "Done. Pages pick the changes up over the next few minutes." : r.error || "Could not refresh.";
+      });
+      load();
+    });
+  </script>
+</AdminLayout>

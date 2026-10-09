@@ -1,0 +1,51 @@
+---
+import AdminLayout from "../../layouts/AdminLayout.astro";
+---
+
+<AdminLayout
+  title="Homepage blocks"
+  heading="Homepage blocks."
+  current="homepage"
+  wide
+  lede="Each text block under “Ninetone Group” in FileMaker, and the part of the homepage it fills."
+>
+  <div id="blocks"></div>
+  <p class="mt-12 max-w-2xl border-t border-ninetone-rule pt-6 text-xs leading-relaxed text-ninetone-ink/55">
+    Editing a block's text always works. A block is tied to its place by FileMaker's row number, so a brand-new block, or one that
+    was deleted and created again, shows here as “not read yet” until Mikael connects it. The three cards are found by their
+    subject: Records, Management, Nation.
+  </p>
+
+  <script is:inline data-astro-rerun>
+    window.ninetoneAdmin.ready(async () => {
+      const A = window.ninetoneAdmin;
+      const root = document.getElementById("blocks");
+      A.say("Reading FileMaker…");
+      const r = await A.call("blocks").catch(() => ({}));
+      if (!r.ok) return A.say(r.error || "Could not load the blocks.");
+      A.say("");
+      if (!r.found) root.append(A.el("p", "mt-4 text-sm text-ninetone-red", "No “Ninetone Group” section came back from FileMaker. The homepage is showing its built-in text."));
+
+      const table = A.el("table", "mt-4 w-full border-t border-ninetone-rule text-left text-sm");
+      const head = A.el("tr", "border-b border-ninetone-rule text-xs uppercase tracking-[0.16em] text-ninetone-ink/55");
+      for (const label of ["Row", "Subject in FileMaker", "Fills"]) head.append(A.el("th", "py-3 pr-6 font-normal", label));
+      table.append(head);
+      for (const block of r.blocks) {
+        const row = A.el("tr", "border-b border-ninetone-rule align-top");
+        row.append(A.el("td", "py-3 pr-6 font-mono text-xs text-ninetone-ink/55", block.recordId));
+        row.append(A.el("td", "py-3 pr-6", block.subject || "(no subject)"));
+        row.append(A.el("td", block.fills ? "py-3 pr-6" : "py-3 pr-6 font-semibold text-ninetone-red", block.fills || "Not read yet — tell Mikael"));
+        table.append(row);
+      }
+      root.append(table);
+
+      if (r.unfilled.length) {
+        root.append(A.el("h2", "mt-12 font-display text-2xl tracking-tight", "Showing built-in text"));
+        root.append(A.el("p", "mt-2 max-w-2xl text-sm text-ninetone-ink/70", "No FileMaker block fills these, so the homepage uses the text written into the site:"));
+        const list = A.el("ul", "mt-4 list-disc pl-5 text-sm");
+        for (const name of r.unfilled) list.append(A.el("li", "py-0.5", name));
+        root.append(list);
+      }
+    });
+  </script>
+</AdminLayout>

@@ -1,0 +1,146 @@
+---
+import "../styles/global.css";
+import { url } from "../lib/url";
+
+/**
+ * Shell for the /admin pages (src/pages/admin/). Standalone like the Publish
+ * page: no Base layout, no client router, no FileMaker read while rendering —
+ * the page is a static frame and everything in it comes from POST /api/admin
+ * after sign-in, so it still loads when FM is having a bad day.
+ *
+ * Sign-in happens once per browser tab. The password is exchanged for an
+ * eight-hour token (src/lib/admin-auth.ts) kept in sessionStorage; closing
+ * the tab signs out.
+ *
+ * Page scripts use window.ninetoneAdmin: ready(fn) runs once signed in,
+ * call(action, payload) talks to the API, el() builds DOM. Everything FM or
+ * an editor wrote is inserted with textContent, never as HTML.
+ */
+interface Props {
+  title: string;
+  heading: string;
+  lede?: string;
+  current?: "home" | "homepage" | "translations" | "health";
+  wide?: boolean;
+}
+
+const { title, heading, lede, current, wide = false } = Astro.props;
+const nav = [
+  { id: "home", href: "/admin", label: "Admin" },
+  { id: "publish", href: "/admin/publish", label: "Publish" },
+  { id: "homepage", href: "/admin/homepage", label: "Homepage blocks" },
+  { id: "translations", href: "/admin/translations", label: "Translations" },
+  { id: "health", href: "/admin/health", label: "Content health" },
+];
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>{title} | Ninetone Admin</title>
+    <script data-astro-rerun define:vars={{ endpoint: url("/api/admin") }}>
+      const KEY = "ninetone-admin";
+      const queue = [];
+      let started = false;
+      const admin = (window.ninetoneAdmin = {
+        el(tag, className, text) {
+          const node = document.createElement(tag);
+          if (className) node.className = className;
+          if (text !== undefined) node.textContent = text;
+          return node;
+        },
+        say(message) {
+          document.getElementById("admin-status").textContent = message || "";
+        },
+        async call(action, payload) {
+          const res = await fetch(endpoint, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action, token: sessionStorage.getItem(KEY), ...payload }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (res.status === 401 && action !== "login") {
+            sessionStorage.removeItem(KEY);
+            location.reload();
+          }
+          return { ...data, status: res.status };
+        },
+        ready(fn) {
+          if (started) fn();
+          else queue.push(fn);
+        },
+      });
+
+      function start() {
+        started = true;
+        document.getElementById("admin-login").hidden = true;
+        document.getElementById("admin-content").hidden = false;
+        queue.forEach((fn) => fn());
+      }
+
+      document.addEventListener("DOMContentLoaded", () => {
+        if (sessionStorage.getItem(KEY)) return start();
+        const form = document.getElementById("admin-login");
+        form.hidden = false;
+        form.addEventListener("submit", async (e) => {
+          e.preventDefault();
+          admin.say("Signing in…");
+          const r = await admin.call("login", { password: document.getElementById("admin-password").value }).catch(() => ({ status: 0 }));
+          if (r.ok) {
+            sessionStorage.setItem(KEY, r.token);
+            admin.say("");
+            start();
+          } else if (r.status === 401) admin.say("Wrong password.");
+          else if (r.status === 429) admin.say("Too many attempts. Wait a minute and try again.");
+          else if (r.status === 503) admin.say("Admin only works on the live site, not this preview.");
+          else admin.say("Something went wrong. Try again.");
+        });
+      });
+    </script>
+  </head>
+  <body class="bg-ninetone-paper text-ninetone-ink">
+    <main class={`mx-auto min-h-screen px-6 py-16 ${wide ? "max-w-5xl" : "max-w-xl"}`}>
+      <nav class="flex flex-wrap gap-x-5 gap-y-2 border-b border-ninetone-rule pb-4 text-xs uppercase tracking-[0.16em]">
+        {nav.map((link) => (
+          <a
+            href={url(link.href)}
+            class={link.id === current ? "text-ninetone-ink" : "text-ninetone-ink/55 transition-colors hover:text-ninetone-ink"}
+            aria-current={link.id === current ? "page" : undefined}
+          >
+            {link.label}
+          </a>
+        ))}
+      </nav>
+
+      <span class="kicker mt-12 text-ninetone-red">Ninetone — Admin</span>
+      <h1 class="mt-6 font-display text-5xl leading-[0.95] tracking-[-0.03em] md:text-6xl">{heading}</h1>
+      {lede && <p class="mt-6 max-w-2xl font-display text-lg italic leading-snug text-ninetone-ink/75">{lede}</p>}
+
+      <form id="admin-login" hidden class="mt-10 flex max-w-md flex-col gap-4">
+        <label class="text-xs uppercase tracking-[0.16em] text-ninetone-ink/60" for="admin-password">Publish password</label>
+        <input
+          id="admin-password"
+          type="password"
+          required
+          autocomplete="current-password"
+          class="border border-ninetone-ink/25 bg-white px-4 py-3 text-base outline-none focus:border-ninetone-ink"
+        />
+        <button
+          type="submit"
+          class="inline-flex items-center justify-center gap-2 bg-ninetone-ink px-4 py-3 text-sm font-semibold text-ninetone-paper transition-colors hover:bg-ninetone-ink-soft"
+        >
+          Sign in <span aria-hidden>→</span>
+        </button>
+      </form>
+
+      <p id="admin-status" class="mt-6 min-h-6 text-sm text-ninetone-ink/70" aria-live="polite"></p>
+
+      <div id="admin-content" hidden>
+        <slot />
+      </div>
+    </main>
+  </body>
+</html>

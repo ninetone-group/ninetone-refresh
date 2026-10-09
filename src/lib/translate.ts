@@ -73,6 +73,7 @@ import { getCfEnv } from "./cf.ts";
 import { secretEnv } from "./env.ts";
 import type { KvLike } from "./cache.ts";
 import { timeServer } from "./server-timing.ts";
+import { peekLock } from "./translation-locks.ts";
 
 // ---------------------------------------------------------------------------
 // Env resolution
@@ -143,11 +144,15 @@ export interface TranslateOptions {
   ledger?: Map<string, string>;
 }
 
+/** Where a result came from. The admin pages read this; rendering does not. */
+export type TranslationOrigin = "empty" | "override" | "same-language" | "locked" | "cached" | "miss";
+
 export interface TranslateResult {
   text: string;
   cached: boolean;
   /** The language the returned `text` is actually IN — "target" on a cache hit, "source" (best-effort-detected) on a miss. */
   lang: Lang;
+  origin: TranslationOrigin;
 }
 
 // ---------------------------------------------------------------------------
@@ -1424,7 +1429,7 @@ export async function translate(options: TranslateOptions): Promise<TranslateRes
   const { target, tier, kind = "plain", protect = [], waitUntil, budget } = options;
 
   if (!options.text || !options.text.trim()) {
-    return { text: options.text, cached: true, lang: target };
+    return { text: options.text, cached: true, lang: target, origin: "empty" };
   }
 
   const text = normalizeLineEndings(options.text);
@@ -1441,18 +1446,25 @@ export async function translate(options: TranslateOptions): Promise<TranslateRes
     override = await lookupOverride(await sha256Hex(options.text), target);
   }
   if (override !== null) {
-    return { text: override, cached: true, lang: target };
+    return { text: override, cached: true, lang: target, origin: "override" };
   }
 
   // Already in the target language: serve the source as written. Checked
   // before the KV read so the rewrites cached under the old behaviour are
   // never served again (see `detectLanguage`).
   if (detectLanguage(text) === target) {
-    return { text, cached: true, lang: target };
+    return { text, cached: true, lang: target, origin: "same-language" };
   }
 
   const key = keyFromHash(hash, target, tier);
   const kv = options.kv !== undefined ? options.kv : (await getCfEnv())?.CACHE_STATE ?? null;
+
+  // A wording an editor locked from /admin beats the machine translation.
+  // Memory only — the middleware primes the map (src/lib/translation-locks.ts).
+  const locked = peekLock(kv, target, hash);
+  if (locked !== null) {
+    return { text: locked, cached: true, lang: target, origin: "locked" };
+  }
 
   if (kv) {
     // Read through the isolate cache (see its doc comment): a hit costs no
@@ -1463,7 +1475,7 @@ export async function translate(options: TranslateOptions): Promise<TranslateRes
     const raw = await timeServer("trnread", () => isolateCachedRead(kv, key));
     if (raw !== null) {
       options.ledger?.set(key, raw);
-      return { text: raw, cached: true, lang: target };
+      return { text: raw, cached: true, lang: target, origin: "cached" };
     }
   }
 
@@ -1498,7 +1510,7 @@ export async function translate(options: TranslateOptions): Promise<TranslateRes
     schedule(job.catch((err) => console.error("[translate] background translation failed:", err)));
   }
 
-  return { text, cached: false, lang: sourceLang };
+  return { text, cached: false, lang: sourceLang, origin: "miss" };
 }
 
 /**

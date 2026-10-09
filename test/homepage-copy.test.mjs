@@ -108,3 +108,22 @@ test("parseHomepageCopy: an edited headline still lands in its slot; an unknown 
   assert.equal(copy.hero.heading, SECTION.blocks[2].subject);
   assert.equal(JSON.stringify(copy).includes("En helt ny rubrik"), false);
 });
+
+// Value: protects=the admin status list agrees with the parser: cards are found by subject, a full section leaves nothing unfilled, a missing section lists every slot;
+//   fails_when=the slot labels and the slot rule drift apart, or a missing section stops reporting its slots as unfilled;
+//   why_new=the admin test checks one hero row and one unknown row only;
+//   seam=none
+test("describeHomepageBlocks: every block of a full section fills a named slot, and no section means every slot is unfilled", async () => {
+  const { describeHomepageBlocks } = await import("../src/lib/homepage-copy.ts");
+  const full = describeHomepageBlocks(SECTION);
+  assert.deepEqual(full.unfilled, []);
+  assert.equal(full.blocks.length, 11);
+  assert.equal(full.blocks.find((b) => b.subject === "Records").fills, "Records card");
+  assert.equal(full.blocks.find((b) => b.recordId === "55").fills, "Bridge section and its cases");
+  assert.equal(full.blocks.every((b) => b.fills !== null), true);
+
+  const none = describeHomepageBlocks(null);
+  assert.deepEqual(none.blocks, []);
+  assert.equal(none.unfilled.length, 11);
+  assert.equal(none.unfilled.includes("Hero (top of the page)") && none.unfilled.includes("Nation card"), true);
+});

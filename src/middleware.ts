@@ -44,6 +44,7 @@ import { canonicalHostRedirect } from "./lib/canonical-host";
 import { hasEnglishVersion, localizedPath, stripLocale } from "./lib/i18n";
 import { noindexFor } from "./lib/noindex";
 import { timeServer, withServerTiming } from "./lib/server-timing";
+import { primeLocks } from "./lib/translation-locks";
 import {
   loadTranslationBundle,
   storeTranslationBundleIfChanged,
@@ -377,9 +378,13 @@ export const onRequest = defineMiddleware((context, next) => withServerTiming(as
     // only — the cached path below owns the bundle write.
     const bypassKv = env?.CACHE_STATE ?? null;
     const bypassBundleKey = translationBundleKey(lang, renderTarget ?? rawPathname);
-    if (bypassKv && bypassBundleKey.length <= MAX_BUNDLE_KEY_LENGTH) {
-      await timeServer("trbundle", () => loadTranslationBundle(bypassKv, bypassBundleKey));
-    }
+    await Promise.all([
+      bypassKv && bypassBundleKey.length <= MAX_BUNDLE_KEY_LENGTH
+        ? timeServer("trbundle", () => loadTranslationBundle(bypassKv, bypassBundleKey))
+        : null,
+      // Editor-locked wordings, so translate() can consult them from memory.
+      timeServer("trlocks", () => primeLocks(bypassKv)),
+    ]);
     return harden(await render(renderTarget ?? undefined));
   }
 
@@ -488,9 +493,12 @@ export const onRequest = defineMiddleware((context, next) => withServerTiming(as
   const translationKv = env.CACHE_STATE ?? null;
   const bundleKey = translationBundleKey(lang, renderTarget ?? rawPathname);
   const bundleUsable = translationKv !== null && bundleKey.length <= MAX_BUNDLE_KEY_LENGTH;
-  const bundle = bundleUsable
-    ? await timeServer("trbundle", () => loadTranslationBundle(translationKv!, bundleKey))
-    : null;
+  // The lock map is primed alongside, in parallel, so it adds no latency:
+  // translate() reads locks from memory only (src/lib/translation-locks.ts).
+  const [bundle] = await Promise.all([
+    bundleUsable ? timeServer("trbundle", () => loadTranslationBundle(translationKv!, bundleKey)) : null,
+    timeServer("trlocks", () => primeLocks(translationKv, version)),
+  ]);
   // Created here so the nested /404 rewrite pass (same locals object) and
   // every component in the render append to ONE ledger.
   const ledger = translationLedgerFor(locals as { __i18nLedger?: Map<string, string> });

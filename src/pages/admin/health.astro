@@ -1,0 +1,79 @@
+---
+import AdminLayout from "../../layouts/AdminLayout.astro";
+import { url } from "../../lib/url";
+---
+
+<AdminLayout
+  title="Content health"
+  heading="Content health."
+  current="health"
+  wide
+  lede="Every news text and homepage text, checked in both languages against what FileMaker holds."
+>
+  <div id="health"></div>
+  <p class="mt-12 max-w-2xl border-t border-ninetone-rule pt-6 text-xs leading-relaxed text-ninetone-ink/55">
+    “Waiting” is normal for new or edited text: a translation starts the first time someone opens that page in that language, and
+    until it lands the page shows the original. “Damaged” means a stored translation has lost a paragraph or a link compared with
+    FileMaker; that should stay at zero.
+  </p>
+
+  <script is:inline data-astro-rerun define:vars={{ reviewUrl: url("/admin/translations"), siteRoot: url("/") }}>
+    window.ninetoneAdmin.ready(async () => {
+      const A = window.ninetoneAdmin;
+      const root = document.getElementById("health");
+      A.say("Checking every text. This takes a few seconds…");
+      const r = await A.call("health").catch(() => ({}));
+      if (!r.ok) return A.say(r.error || "Could not run the check.");
+      A.say("");
+      const report = r.report;
+
+      root.append(A.el("p", "mt-4 text-sm text-ninetone-ink/70", `${report.strings} texts across ${report.items} pages.`));
+      const grid = A.el("div", "mt-6 grid gap-10 md:grid-cols-2");
+      for (const [lang, name] of [["sv", "Swedish site"], ["en", "English site"]]) {
+        const counts = report.byLang[lang];
+        const damaged = report.problems.filter((p) => p.lang === lang && p.issue === "damaged").length;
+        const box = A.el("div", "border-t border-ninetone-ink pt-4");
+        box.append(A.el("h2", "font-display text-2xl tracking-tight", name));
+        const rows = [
+          ["Shown as written", counts["same-language"]],
+          ["Translated", counts.cached - damaged],
+          ["Locked wording", counts.locked + counts.override],
+          ["Waiting for first visit", counts.miss],
+          ["Damaged", damaged],
+        ];
+        const list = A.el("dl", "mt-4 text-sm");
+        for (const [label, value] of rows) {
+          const row = A.el("div", "flex justify-between border-b border-ninetone-rule py-2");
+          row.append(A.el("dt", label === "Damaged" && value ? "font-semibold text-ninetone-red" : "text-ninetone-ink/70", label));
+          row.append(A.el("dd", label === "Damaged" && value ? "font-semibold text-ninetone-red" : "font-mono", String(value)));
+          list.append(row);
+        }
+        box.append(list);
+        grid.append(box);
+      }
+      root.append(grid);
+
+      root.append(A.el("h2", "mt-14 font-display text-2xl tracking-tight", report.problems.length ? "Worth a look" : "Nothing waiting, nothing damaged."));
+      if (!report.problems.length) return;
+      const table = A.el("table", "mt-4 w-full border-t border-ninetone-rule text-left text-sm");
+      for (const p of report.problems.slice(0, 300)) {
+        const row = A.el("tr", "border-b border-ninetone-rule align-top");
+        row.append(A.el("td", p.issue === "damaged" ? "py-2 pr-4 font-semibold text-ninetone-red" : "py-2 pr-4 text-ninetone-ink/60", p.issue === "damaged" ? "Damaged" : "Waiting"));
+        row.append(A.el("td", "py-2 pr-4 text-xs uppercase tracking-[0.12em] text-ninetone-ink/55", p.lang === "sv" ? "Swedish" : "English"));
+        const cell = A.el("td", "py-2 pr-4");
+        const page = A.el("a", "underline underline-offset-2 hover:opacity-70", p.itemLabel);
+        page.href = siteRoot.replace(/\/$/, "") + (p.lang === "en" ? "/en" : "") + p.path;
+        cell.append(page, A.el("span", "text-ninetone-ink/55", ` — ${p.string}`));
+        row.append(cell);
+        const review = A.el("a", "underline underline-offset-2 hover:opacity-70", "Review");
+        review.href = `${reviewUrl}?item=${encodeURIComponent(p.item)}`;
+        const last = A.el("td", "py-2 text-right");
+        last.append(review);
+        row.append(last);
+        table.append(row);
+      }
+      root.append(table);
+      if (report.problems.length > 300) root.append(A.el("p", "mt-3 text-xs text-ninetone-ink/55", `Showing the first 300 of ${report.problems.length}.`));
+    });
+  </script>
+</AdminLayout>
