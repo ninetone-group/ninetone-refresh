@@ -32,6 +32,48 @@ const SLOT_BY_RECORD_ID = {
 
 type Slot = (typeof SLOT_BY_RECORD_ID)[keyof typeof SLOT_BY_RECORD_ID];
 export type Division = "records" | "management" | "nation";
+type Target = Slot | `card:${Division}`;
+
+/** What each slot is called on /admin/homepage. Also the list of every slot there is. */
+const TARGET_LABELS: Record<Target, string> = {
+  hero: "Hero (top of the page)",
+  positioning: "Positioning band",
+  "card:records": "Records card",
+  "card:management": "Management card",
+  "card:nation": "Nation card",
+  bridge: "Bridge section and its cases",
+  whatsOn: "What's on heading",
+  roster: "Roster heading",
+  news: "News heading",
+  about: "About",
+  merch: "Merch heading",
+};
+
+/** The one rule for where a block goes — shared by the parser and the admin status page. */
+function targetOf(block: WebPostBlock): Target | null {
+  const subject = block.subject.trim();
+  const division = subject.toLowerCase();
+  if (division === "records" || division === "management" || division === "nation") return `card:${division}`;
+  const slot = SLOT_BY_RECORD_ID[block.recordId as keyof typeof SLOT_BY_RECORD_ID] as Slot | undefined;
+  return slot && subject ? slot : null;
+}
+
+export type HomepageBlockStatus = { recordId: string; subject: string; fills: string | null };
+
+/** Every FM block with the slot it fills (or null), plus the slots nothing fills. For /admin/homepage. */
+export function describeHomepageBlocks(section: WebPostCategory | null | undefined): {
+  blocks: HomepageBlockStatus[];
+  unfilled: string[];
+} {
+  const filled = new Set<Target>();
+  const blocks = (section?.blocks ?? []).map((block) => {
+    const target = targetOf(block);
+    if (target) filled.add(target);
+    return { recordId: block.recordId ?? "", subject: block.subject.trim(), fills: target ? TARGET_LABELS[target] : null };
+  });
+  const unfilled = (Object.keys(TARGET_LABELS) as Target[]).filter((t) => !filled.has(t)).map((t) => TARGET_LABELS[t]);
+  return { blocks, unfilled };
+}
 
 export type HeadedCopy = { heading: string; body: string };
 export type BridgeCase = { kicker: string; heading: string; body: string };
@@ -131,17 +173,13 @@ export function parseHomepageCopy(section: WebPostCategory | null | undefined): 
   const copy: HomepageCopy = { cards: {} };
   for (const block of section?.blocks ?? []) {
     const subject = block.subject.trim();
-    const division = subject.toLowerCase();
-    if (division === "records" || division === "management" || division === "nation") {
+    const slot = targetOf(block);
+    if (!slot) continue;
+
+    if (slot === "card:records" || slot === "card:management" || slot === "card:nation") {
       const { lead, body } = leadAndBody(block.message);
-      copy.cards[division] = { tagline: lead, blurb: body };
-      continue;
-    }
-
-    const slot: Slot | undefined = SLOT_BY_RECORD_ID[block.recordId as keyof typeof SLOT_BY_RECORD_ID];
-    if (!slot || !subject) continue;
-
-    if (slot === "hero") {
+      copy.cards[slot.slice(5) as Division] = { tagline: lead, blurb: body };
+    } else if (slot === "hero") {
       const { lead, body } = leadAndBody(block.message);
       copy.hero = { heading: subject, body, tagline: lead };
     } else if (slot === "positioning") {

@@ -32,6 +32,13 @@ async function loadMiddleware() {
           path: new URL("../src/lib/translate.ts", import.meta.url).href,
           external: true,
         }));
+        // Same for translation-locks.ts, which translate.ts imports: the lock
+        // map the middleware primes is module-level state there, and a bundled
+        // copy would be a second map that translate() never looks at.
+        build.onResolve({ filter: /^\.\/lib\/translation-locks$/ }, () => ({
+          path: new URL("../src/lib/translation-locks.ts", import.meta.url).href,
+          external: true,
+        }));
         build.onLoad({ filter: /.*/, namespace: "stub" }, (args) => ({
           contents: args.path === "astro"
             ? "export const defineMiddleware = (fn) => fn;"
@@ -1176,4 +1183,38 @@ test("the bypass bundle preload is locale-aware and never writes", async () => {
   await run(new Request("https://ninetone.com/en/team?x=1"), async () => new Response("ok"), runtime);
   assert.ok(reads.includes("trb:v1:en:/team"), `expected the English /team bundle, got ${JSON.stringify(reads)}`);
   assert.equal(puts, 0);
+});
+
+// --- 2026-10-09 editor locks: translate() only peeks at memory, so the -------
+// middleware is the one thing that loads the lock map for a visitor's render.
+
+// Added by the /ship test coverage audit, 2026-10-09 (pass 1).
+// Value: protects=a page rendered through the middleware shows an editor-locked wording, on the cached path and on the uncached (bypass) path;
+//   fails_when=either primeLocks() call leaves src/middleware.ts, or runs only after the render has started;
+//   why_new=test/admin.test.mjs loads the map through the admin API in the same isolate, so no test fails if the middleware never loads it;
+//   seam=none
+test("editor locks: the middleware loads the lock map before the render, on the cached path and on the bypass path", async () => {
+  const source = "Boka en artist till festen";
+  const key = await translationKey(source, "en", "fast");
+  const lockId = `en:${key.split(":").pop()}`;
+  for (const path of ["/en/news", "/en/news?foo=bar"]) {
+    const store = new Map([
+      [key, "Book an artist (machine)"],
+      ["tr-locks:v1", JSON.stringify({ [lockId]: { text: "Book an act for the party", source, at: "" } })],
+    ]);
+    // A new binding per pass: the lock map is held per KV binding, so each pass starts unloaded.
+    const kv = { get: async (k) => (typeof k === "string" && store.has(k) ? store.get(k) : null), put: async () => {} };
+    // Control: nothing has loaded the map for this binding yet, so the machine translation is served.
+    assert.equal((await translate({ text: source, target: "en", tier: "fast", kv })).text, "Book an artist (machine)", path);
+
+    const response = await run(
+      new Request(`https://ninetone.com${path}`),
+      async () => {
+        const shown = await translate({ text: source, target: "en", tier: "fast", kv });
+        return new Response(`${shown.origin}: ${shown.text}`);
+      },
+      createRuntime({ env: { CACHE_STATE: kv } }),
+    );
+    assert.equal(await response.text(), "locked: Book an act for the party", path);
+  }
 });

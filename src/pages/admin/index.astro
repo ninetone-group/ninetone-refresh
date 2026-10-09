@@ -1,0 +1,24 @@
+---
+import AdminLayout from "../../layouts/AdminLayout.astro";
+import { url } from "../../lib/url";
+
+const tools = [
+  { href: "/admin/publish", title: "Publish", text: "Make FileMaker edits show on the site within a minute instead of waiting for the automatic refresh." },
+  { href: "/admin/homepage", title: "Homepage blocks", text: "See which FileMaker block fills which part of the homepage, and spot a block the page does not read yet." },
+  { href: "/admin/translations", title: "Translations", text: "Read the Swedish and English side by side for the homepage or a news article, and lock a wording you want kept." },
+  { href: "/admin/health", title: "Content health", text: "Check every news text and homepage text in both languages: translated, waiting, or damaged." },
+];
+---
+
+<AdminLayout title="Admin" heading="Admin." current="home" lede="Tools for the people who write the site. Nothing here changes FileMaker.">
+  <ul class="mt-4 border-t border-ninetone-rule">
+    {tools.map((tool) => (
+      <li class="border-b border-ninetone-rule">
+        <a href={url(tool.href)} class="group block py-6">
+          <span class="font-display text-2xl tracking-tight transition-opacity group-hover:opacity-70">{tool.title} <span aria-hidden>→</span></span>
+          <span class="mt-2 block max-w-md text-sm leading-relaxed text-ninetone-ink/70">{tool.text}</span>
+        </a>
+      </li>
+    ))}
+  </ul>
+</AdminLayout>

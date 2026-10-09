@@ -3,6 +3,47 @@
 All notable changes to the Ninetone Group site. Versions follow `MAJOR.MINOR.PATCH.MICRO`
 (the number in `VERSION`).
 
+## [0.3.2.0] - 2026-10-09
+
+### Added
+- **An admin area at `/admin`**, behind the Publish password. Sign in once per browser tab;
+  the password is exchanged for an eight-hour session (`src/lib/admin-auth.ts`). Sessions
+  are signed with a random key the Worker creates and keeps in KV, never with the password,
+  so a session cannot be forged from a password guess. Changing the password ends every
+  open session.
+  - **Homepage blocks** (`/admin/homepage`): every FileMaker block under "Ninetone Group"
+    and the part of the homepage it fills, with a clear flag on a block the page does not
+    read yet and a list of slots still showing built-in text.
+  - **Translations** (`/admin/translations`): for the homepage or any news article, the
+    FileMaker text next to what the Swedish and the English site show, and whether that is
+    the original, an automatic translation, a locked wording, or still waiting. An editor
+    can lock a wording, update it, or remove the lock, and refresh the site from the page.
+  - **Content health** (`/admin/health`): every news and homepage text checked in both
+    languages, counted as shown-as-written, translated, locked, waiting or damaged, with
+    links to the page and to its review.
+- **Locked wordings** (`src/lib/translation-locks.ts`): the runtime twin of
+  `src/i18n/overrides.json`. A lock is keyed on the exact source text and beats the
+  automatic translation. All locks live in one KV value that the middleware loads beside
+  the translation bundle; `translate()` only looks in memory, so a render makes no extra
+  per-string reads.
+
+### Notes
+- A lock is the only admin action that changes what visitors read. The source is looked
+  up on the server, and the new wording must keep the original's paragraphs and render
+  exactly the same links and images (any scheme), so a lock cannot add, drop or repoint a
+  link. The source language's own site cannot be locked.
+- **Known limit: one person saves locks at a time.** All locks share one KV value that is
+  read and written back. Two saves at the same moment, or within about a minute from
+  different Cloudflare locations, can drop one of them while both report success. The fix
+  is one KV key per lock; until then, a save that cannot read the current list is refused
+  and nothing is overwritten.
+- Found before first deploy by the coverage audit and the security review, and fixed here:
+  a save could erase other locks when its read failed; a lock could add a `mailto:`,
+  `tel:` or site-relative link; and sessions were first signed with the password itself,
+  which made the session check an unthrottled way to test password guesses.
+- The review and health pages list the homepage copy and news only. Artist, client and
+  booking texts, and wording written in the page files, are not listed yet.
+
 ## [0.3.1.0] - 2026-10-09
 
 ### Added
