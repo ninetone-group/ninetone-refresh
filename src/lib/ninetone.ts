@@ -8,6 +8,7 @@
 import { fmFind, type FmFindOptions, fmFindWithPortals } from "./filemaker";
 import { hasProfileImage } from "./profile-image";
 import { isActiveBookingArtist } from "./booking-status";
+import { newsExcerpt } from "./excerpt";
 
 export type Artist = Record<string, unknown> & {
   SLUG?: string;
@@ -308,12 +309,16 @@ export async function getWebPostSection(category: WebPostSection): Promise<WebPo
 // API_NEWS — news feed for /news, sorted newest-first. 76 posts as of
 // 2026-07-02 — without the explicit limit, FM's default of 100 would start
 // silently dropping the oldest posts (and their pages) at post #101.
-export function getNews(opts?: FmFindOptions) {
-  return fmFind<WebPost>("API_NEWS", {
+//
+// `shortMessage` is cleaned here, once, rather than at each of its nine call
+// sites: FM hands it over as raw Markdown source (see newsExcerpt).
+export async function getNews(opts?: FmFindOptions) {
+  const posts = await fmFind<WebPost>("API_NEWS", {
     query: [{ Message: "*" }],
     sort: [{ fieldName: "Date", sortOrder: "descend" }],
     limit: 500,
   }, opts);
+  return posts.map((p) => ({ ...p, shortMessage: newsExcerpt(p.shortMessage, p.Message) }));
 }
 
 /**

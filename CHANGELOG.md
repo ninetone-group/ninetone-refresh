@@ -3,6 +3,41 @@
 All notable changes to the Ninetone Group site. Versions follow `MAJOR.MINOR.PATCH.MICRO`
 (the number in `VERSION`).
 
+## [0.3.0.1] - 2026-10-09
+
+### Fixed
+- **Swedish pages show what the editor wrote in FileMaker again.** Reported by Patrik on
+  the newest article: the body rendered as one block with its links run together. Every
+  FM text was being passed through the translation model in both directions, trusting it
+  to hand Swedish back "unchanged" on the Swedish site. It did not. Measured against FM,
+  73 of 80 Swedish news articles differed from their source: 65 had lost their paragraph
+  breaks, 8 had lost links, and wording had been rewritten ("artister" became "Artist",
+  "Vi på NINETONE" became "Vi på Ninetone Management"). Text that is already in the
+  page's language is now served as written and never reaches the model
+  (`detectLanguage` in `src/lib/translate.ts`); short strings it cannot classify keep
+  the old path. English-language posts are still translated for the Swedish site.
+- **Translated articles keep their paragraphs and links.** FileMaker stores a line break
+  as a bare carriage return, and that reached the model un-normalised; 51 of 80 English
+  articles had come back as a single paragraph. Line endings are now normalised before
+  the cache key is computed and before the model call, and a Markdown translation that
+  changes the number of paragraphs or the set of link targets is rejected instead of
+  cached, so the page falls back to the source text rather than a run-on block.
+- **News excerpts are plain text.** FM's `shortMessage` is the raw body up to its first
+  full stop, so cards, the article standfirst and the meta description could show
+  `## `, `**bold**`, `<h2>` or a link cut off mid-URL
+  (`[Jämtlands Bryggeri](https://jamtlandsbryggeri.`). `getNews()` now cleans it once
+  for every consumer (`src/lib/excerpt.ts`); 16 of 80 excerpts change, the other 64 are
+  byte-identical so their cached translations still apply.
+
+### Notes
+- Every source containing a FileMaker line break gets a new translation cache key, so
+  English article bodies and bios show their Swedish source on the first render after
+  deploy and pick up the fresh translation on the next. The old entries are simply no
+  longer read.
+- Verified with unit tests and against the production KV entry for the reported article.
+  The model's behaviour with normalised line endings could not be exercised locally (the
+  dev Anthropic key returns 401); the structure guard covers that case either way.
+
 ## [0.3.0.0] - 2026-10-08
 
 ### Launch

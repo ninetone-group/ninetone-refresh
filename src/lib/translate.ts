@@ -193,8 +193,29 @@ async function sha256Hex(value: string): Promise<string> {
  * class of bug that would go unnoticed until a manual KV diff.
  */
 export async function translationKey(source: string, target: Lang, tier: Tier): Promise<string> {
-  const hash = await sha256Hex(source);
+  const hash = await sha256Hex(normalizeLineEndings(source));
   return keyFromHash(hash, target, tier);
+}
+
+/**
+ * FileMaker returns a paragraph break as a bare carriage return ("\r"), never
+ * "\n". Sent to the model like that, a "\r" is not reliably read as a line
+ * break: measured against the live site on 2026-10-09, 65 of 80 Swedish and
+ * 51 of 80 English news articles had come back with every paragraph merged
+ * into one, and ten of those pages had lost a link as well. `renderBio()`
+ * does convert "\r" to "\n", but only AFTER translation, by which point the
+ * breaks were already gone.
+ *
+ * Applied at the two seams every caller goes through — the cache key above
+ * and `callWithGuard()` — so the request path, the warm script and the queue
+ * consumer all hash and send the same text without each having to remember.
+ *
+ * This changes the key of every source containing a "\r". That is the point:
+ * those are exactly the entries cached with collapsed structure, and a new
+ * key is what retires them.
+ */
+export function normalizeLineEndings(text: string): string {
+  return text.replace(/\r\n?/g, "\n");
 }
 
 /**
@@ -762,6 +783,40 @@ function isRejected(result: AnthropicCallResult): boolean {
   return result.truncated || violatesOutputContract(result.text);
 }
 
+const URL_RE = /https?:\/\/[^\s)\]"'<>]+/g;
+
+function markdownBlockCount(text: string): number {
+  return normalizeLineEndings(text)
+    .split(/\n[ \t]*\n/)
+    .filter((block) => block.trim()).length;
+}
+
+/** Link targets in order-independent form; trailing sentence punctuation is not part of a URL. */
+function linkTargets(text: string): string {
+  return (text.match(URL_RE) ?? [])
+    .map((url) => url.replace(/[.,;:!?]+$/, ""))
+    .sort()
+    .join("\n");
+}
+
+/**
+ * Structure guard for `kind: "markdown"`. The prompt asks the model to keep
+ * Markdown structure and links byte-for-byte; like the output contract, that
+ * is only a request until it is checked on this side. A translation that
+ * merged paragraphs or dropped a link was cached permanently and served as
+ * one run-on block (found 2026-10-09, see `normalizeLineEndings`).
+ *
+ * Two checks, both cheap and both independent of the language pair: the
+ * number of blank-line-separated blocks, and the set of link targets. Single
+ * line breaks inside a block are deliberately NOT compared — a translator
+ * reflowing a hard-wrapped line is legitimate, and a false rejection here
+ * costs a doubled API call on every uncached render (the P0-3 failure mode).
+ */
+export function breaksMarkdownStructure(source: string, output: string): boolean {
+  if (markdownBlockCount(source) !== markdownBlockCount(output)) return true;
+  return linkTargets(source) !== linkTargets(output);
+}
+
 /**
  * Runs one tier, checks the output contract AND truncation, and on
  * rejection retries once at the OTHER tier (decision 10: "on rejection,
@@ -796,14 +851,18 @@ export async function callWithGuard(
   kind: Kind,
   protectedTerms: readonly string[],
 ): Promise<string | null> {
+  const source = normalizeLineEndings(text);
   const system = buildSystemPrompt(target, kind, protectedTerms);
-  const first = await callAnthropic(apiKey, system, text, tier);
-  if (!isRejected(first)) return first.text;
+  const rejected = (result: AnthropicCallResult) =>
+    isRejected(result) || (kind === "markdown" && breaksMarkdownStructure(source, result.text));
+
+  const first = await callAnthropic(apiKey, system, source, tier);
+  if (!rejected(first)) return first.text;
 
   const escalated: Tier = tier === "fast" ? "quality" : "fast";
   if (escalated === tier) return null; // no further tier to try
-  const second = await callAnthropic(apiKey, system, text, escalated);
-  if (!isRejected(second)) return second.text;
+  const second = await callAnthropic(apiKey, system, source, escalated);
+  if (!rejected(second)) return second.text;
 
   return null;
 }
@@ -824,6 +883,56 @@ export async function callWithGuard(
  */
 function guessSourceLang(text: string): Lang {
   return /[åäöÅÄÖ]/.test(text) ? "sv" : "en";
+}
+
+// Function words that are common in one language and rare or absent in the
+// other. Words the two share ("i", "in", "man", "men", "under") are left out
+// of both lists on purpose.
+const SV_HINT_WORDS = new Set(
+  ("och att det som är för på med av har inte den ett en vi från om var sig hon han nu när efter eller " +
+    "också hos där här ska kan kommer sin sitt sina de du jag blir till vid mot utan än så bara alla " +
+    "detta dessa vår vårt våra deras hennes hans").split(" "),
+);
+const EN_HINT_WORDS = new Set(
+  ("the and of to is with for on that this from has have are was were by at as it its his her their an " +
+    "be been will we our you your not but or which who when than more").split(" "),
+);
+
+/**
+ * Which language `text` is written in, or `null` when there is not enough
+ * evidence to say. Unlike `guessSourceLang` above this is allowed to decline,
+ * because its answer decides whether the model is involved at all.
+ *
+ * WHY IT EXISTS (found 2026-10-09): decision 4 gave the model one prompt for
+ * both directions and trusted it to return text "completely unchanged" when
+ * it was already in the target language. It does not. On the Swedish site,
+ * 73 of 80 Swedish news articles were being served as the model's rewrite of
+ * the FM text rather than the FM text: paragraphs merged, links dropped,
+ * "artister" turned into the protected term "Artist", and "Vi på NINETONE"
+ * into "Vi på Ninetone Management". The source-language site must show what
+ * the editor wrote, so same-language text now never reaches the model.
+ *
+ * Deliberately conservative. A wrong "same language" answer leaves a string
+ * untranslated; a `null` only falls back to the model exactly as before. So
+ * it answers only when one language's function words clearly dominate, and
+ * short strings need unanimous evidence. URLs are removed first — a slug like
+ * "hans-och-valter-vinner" is not prose.
+ */
+export function detectLanguage(text: string): Lang | null {
+  const prose = text.replace(URL_RE, " ").toLowerCase();
+  let sv = 0;
+  let en = 0;
+  for (const word of prose.match(/\p{L}+/gu) ?? []) {
+    if (SV_HINT_WORDS.has(word)) sv++;
+    else if (EN_HINT_WORDS.has(word)) en++;
+  }
+  const swedishLetters = /[åäö]/.test(prose);
+
+  if (sv >= 5 && sv >= en * 5) return "sv";
+  if (en >= 5 && en >= sv * 5) return "en";
+  if (en === 0 && (sv >= 2 || (sv === 1 && swedishLetters))) return "sv";
+  if (sv === 0 && en >= 2 && !swedishLetters) return "en";
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -1309,20 +1418,34 @@ export async function storeTranslationBundleIfChanged(
 }
 
 export async function translate(options: TranslateOptions): Promise<TranslateResult> {
-  const { text, target, tier, kind = "plain", protect = [], waitUntil, budget } = options;
+  const { target, tier, kind = "plain", protect = [], waitUntil, budget } = options;
 
-  if (!text || !text.trim()) {
-    return { text, cached: true, lang: target };
+  if (!options.text || !options.text.trim()) {
+    return { text: options.text, cached: true, lang: target };
   }
+
+  const text = normalizeLineEndings(options.text);
 
   // Hashed once (P2) and reused for both the override lookup and the KV
   // cache key below — both are keyed on sha256(source text), and hashing
   // twice per call was pure duplicate work.
   const hash = await sha256Hex(text);
 
-  const override = await lookupOverride(hash, target);
+  // An override written before line endings were normalised is keyed on the
+  // raw FM text; keep honouring it rather than silently dropping a human edit.
+  let override = await lookupOverride(hash, target);
+  if (override === null && text !== options.text) {
+    override = await lookupOverride(await sha256Hex(options.text), target);
+  }
   if (override !== null) {
     return { text: override, cached: true, lang: target };
+  }
+
+  // Already in the target language: serve the source as written. Checked
+  // before the KV read so the rewrites cached under the old behaviour are
+  // never served again (see `detectLanguage`).
+  if (detectLanguage(text) === target) {
+    return { text, cached: true, lang: target };
   }
 
   const key = keyFromHash(hash, target, tier);
