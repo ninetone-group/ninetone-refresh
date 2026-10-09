@@ -11,6 +11,10 @@ import {
   RequestBudget,
   waitUntilFromLocals,
   createT,
+  normalizeLineEndings,
+  detectLanguage,
+  breaksMarkdownStructure,
+  callWithGuard,
 } from "../src/lib/translate.ts";
 import { resolveFmDisplayText } from "../src/lib/t.ts";
 
@@ -712,3 +716,271 @@ test("resolveFmDisplayText skips a second translation for locale-resolved prose"
   assert.equal(await resolveFmDisplayText("Svenska", translateText, false), "Svenska translated");
   assert.equal(calls, 1);
 });
+
+// ---------------------------------------------------------------------------
+// Same-language text and FM line endings (found live 2026-10-09)
+//
+// Patrik reported the newest article rendering as one block with its links
+// run together. Measured against FM: 73 of 80 Swedish articles were being
+// served as the model's "Swedish to Swedish" output instead of the FM text,
+// and FM's bare "\r" paragraph breaks did not survive the model in either
+// direction. The fixture below is that article, shortened.
+// ---------------------------------------------------------------------------
+
+const FM_PARAGRAPHS = [
+  "Agnes Matsdotter satt i juryn när P4 Nästa Stjärna Östergötland avgjordes den 8 oktober 2026. Den här gången medverkade hon som jurymedlem.",
+  "Agnes arbetar som artist, låtskrivare, manusförfattare och skådespelare. Hos NINETONE är hon bland annat aktuell med projektet Äkta Kärlek.",
+  "Vi på NINETONE gratulerar Agnes till juryuppdraget!",
+  "[Läs om den östgötska finalen hos Sveriges Radio](https://www.sverigesradio.se/artikel/hans-och-valter-vinner-p4-nasta-stjarna-ostergotland)",
+  "[Följ Agnes Matsdotter på Instagram](https://www.instagram.com/agnesmatsdotter/)",
+];
+// FileMaker's own shape: paragraphs separated by bare carriage returns.
+const FM_BODY = FM_PARAGRAPHS.join("\r\r");
+// What the model had returned for it, and what was cached and served.
+const MODEL_REWRITE = FM_PARAGRAPHS.join(" ")
+  .replace("som artist,", "som Artist,")
+  .replace("Vi på NINETONE", "Vi på Ninetone Management");
+
+test("normalizeLineEndings: FM's bare CR and CRLF both become LF", () => {
+  assert.equal(normalizeLineEndings("a\r\rb\r\nc\nd"), "a\n\nb\nc\nd");
+});
+
+test("translationKey: the same text keys identically whether its line breaks are CR or LF", async () => {
+  const cr = await translationKey("rad ett\r\rrad två", "en", "fast");
+  const lf = await translationKey("rad ett\n\nrad två", "en", "fast");
+  assert.equal(cr, lf);
+});
+
+test("detectLanguage: Swedish prose is sv, English prose is en", () => {
+  assert.equal(detectLanguage(FM_BODY), "sv");
+  assert.equal(
+    detectLanguage("Chan Fuze is an emerging artist from Chicago who is quickly making a name for himself with his fusion of rock and R&B."),
+    "en",
+  );
+});
+
+test("detectLanguage: English prose stays en when it names Swedish places", () => {
+  assert.equal(
+    detectLanguage("Eva Eastwood, born in 1970 in Örebro, Sweden, is a charismatic force in the rockabilly scene and has toured with the band for years."),
+    "en",
+  );
+});
+
+test("detectLanguage: declines on short strings with no clear evidence", () => {
+  for (const text of [
+    "News",
+    "Publicerad",
+    "Ninetone artister",
+    "Crashdïet Signs with Ninetone",
+    "Tommy Nilsson med The End of the Road",
+    // A short string is never called English: the function words here all
+    // belong to the quoted title, and the headline itself is Swedish.
+    "Ny singel: The Best of You",
+    "Mia Karlsson Joins The Gems on European Tour",
+  ]) {
+    assert.equal(detectLanguage(text), null, text);
+  }
+});
+
+// Extended by the /ship coverage audit (2026-10-09): the last two assertions.
+// Value: protects=Words in a URL slug do not change the language verdict of the prose around the link;
+//   fails_when=the URL removal in detectLanguage is dropped, which turns the second line null and the third "sv";
+//   (second line rewritten when short strings stopped being called English: it is now Swedish prose beside an English slug)
+//   why_new=the first assertion is null with or without the rule, so on its own it could not catch that;
+//   seam=none
+test("detectLanguage: words inside a URL are not evidence", () => {
+  // "hans", "och" are Swedish hint words, but here they are a slug.
+  assert.equal(detectLanguage("Read more: https://example.se/hans-och-valter-vinner-och-firar"), null);
+  // Swedish prose stays Swedish next to an English slug, and a slug alone
+  // does not make a string Swedish.
+  assert.equal(detectLanguage("Läs mer om bandet och turnén: https://example.com/the-story-of-the-band"), "sv");
+  assert.equal(detectLanguage("Listen: https://example.se/hans-och-valter-vinner"), null);
+});
+
+// Added by the /ship coverage audit (2026-10-09).
+// Value: protects=detectLanguage calls a short string Swedish only on unanimous evidence, and never calls one English;
+//   fails_when=a short-string rule is loosened or dropped, so one stray function word or English words beside å/ä/ö decide;
+//   why_new=short strings were only checked for null, and the short "sv" answer had no test;
+//   seam=none
+test("detectLanguage: a short string is answered only on unanimous evidence", () => {
+  const cases = [
+    // Several Swedish function words and no English ones.
+    ["Läs mer om oss och våra artister", "sv"],
+    // One Swedish function word, backed by å/ä/ö.
+    ["Boka artister för ditt event", "sv"],
+    // Several English function words, nothing Swedish: still undecided. A
+    // short string is never called English (see "Ny singel: The Best of You").
+    ["Read more about the artist and the label", null],
+    // "sin" is also an English word: one function word without å/ä/ö decides nothing.
+    ["Original Sin tour dates", null],
+    // A Swedish headline quoting an English title: "släpper" keeps it from reading as English.
+    ["Smash Into Pieces släpper The End of the Road", null],
+  ];
+  for (const [text, expected] of cases) {
+    assert.equal(detectLanguage(text), expected, text);
+  }
+});
+
+test("translate: Swedish text on the Swedish site is served as written — a cached rewrite is ignored and the model is never called", () =>
+  withEnv({ ANTHROPIC_API_KEY: "test-key" }, async () => {
+    // The cache holds the bad output under this article's key, so the
+    // assertion cannot pass by merely missing the cache.
+    const kv = fakeKv({
+      [await translationKey(FM_BODY, "sv", "fast")]: MODEL_REWRITE,
+    });
+    await withStubbedFetch(
+      router(() => anthropicResponse(MODEL_REWRITE)),
+      async (calls) => {
+        const scheduler = collectingWaitUntil();
+        const result = await translate({
+          text: FM_BODY,
+          target: "sv",
+          tier: "fast",
+          kind: "markdown",
+          kv,
+          waitUntil: scheduler.waitUntil,
+        });
+        assert.equal(result.text, FM_PARAGRAPHS.join("\n\n"));
+        assert.equal(result.lang, "sv");
+        assert.equal(scheduler.scheduled.length, 0);
+        assert.equal(calls.length, 0);
+        assert.equal(kv.puts.length, 0);
+      },
+    );
+  }));
+
+test("translate: English text on the English site is served as written", async () => {
+  const text = "Chan Fuze is an emerging artist from Chicago who is quickly making a name for himself with his fusion of rock and R&B.";
+  const kv = fakeKv({ [await translationKey(text, "en", "fast")]: "a rewrite that must not be served" });
+  await withStubbedFetch(
+    router(() => anthropicResponse("should not be used")),
+    async (calls) => {
+      const result = await translate({ text, target: "en", tier: "fast", kv, waitUntil: waitUntilInline });
+      assert.equal(result.text, text);
+      assert.equal(calls.length, 0);
+    },
+  );
+});
+
+test("translate: Swedish text on the English site still translates (cache hit is used)", async () => {
+  const kv = fakeKv({ [await translationKey(FM_BODY, "en", "fast")]: "English body" });
+  await withStubbedFetch(
+    router(() => anthropicResponse("should not be used")),
+    async (calls) => {
+      const result = await translate({ text: FM_BODY, target: "en", tier: "fast", kind: "markdown", kv, waitUntil: waitUntilInline });
+      assert.equal(result.text, "English body");
+      assert.equal(result.cached, true);
+      assert.equal(calls.length, 0);
+    },
+  );
+});
+
+test("translate: a Swedish headline that quotes an English title is still translated for the English site", async () => {
+  const text = "Ny singel: The Best of You";
+  const kv = fakeKv({ [await translationKey(text, "en", "fast")]: "New single: The Best of You" });
+  await withStubbedFetch(
+    router(() => anthropicResponse("should not be used")),
+    async (calls) => {
+      const result = await translate({ text, target: "en", tier: "fast", kind: "title", kv, waitUntil: waitUntilInline });
+      assert.equal(result.text, "New single: The Best of You");
+      assert.equal(calls.length, 0);
+    },
+  );
+});
+
+test("translate: the model is sent LF line endings, never FM's bare CR", () =>
+  withEnv({ ANTHROPIC_API_KEY: "test-key" }, async () => {
+    const kv = fakeKv();
+    const english = FM_PARAGRAPHS.map((p, i) => (i < 3 ? `English paragraph ${i + 1}.` : p)).join("\n\n");
+    const sent = [];
+    await withStubbedFetch(
+      router((url, init) => {
+        sent.push(JSON.stringify(JSON.parse(init.body).messages));
+        return anthropicResponse(english);
+      }),
+      async () => {
+        const scheduler = collectingWaitUntil();
+        await translate({ text: FM_BODY, target: "en", tier: "fast", kind: "markdown", kv, waitUntil: scheduler.waitUntil });
+        await scheduler.flush();
+        assert.equal(sent.length, 1);
+        assert.equal(sent[0].includes("\\r"), false);
+        assert.equal(sent[0].includes("\\n\\n"), true);
+        assert.deepEqual(kv.puts, [[await translationKey(FM_PARAGRAPHS.join("\n\n"), "en", "fast"), english]]);
+      },
+    );
+  }));
+
+// Added by the /ship coverage audit (2026-10-09).
+// Value: protects=callWithGuard itself sends LF line endings when handed raw FM text, as the warm script and queue consumer do;
+//   fails_when=the normalizeLineEndings call inside callWithGuard is removed as a duplicate of the one in translate();
+//   why_new=the LF test above enters through translate(), which normalises first, so it cannot see this seam;
+//   seam=none
+test("callWithGuard: raw FM text from a direct caller is sent with LF, and the faithful answer is accepted first time", async () => {
+  const faithful = FM_PARAGRAPHS.map((p, i) => (i < 3 ? `English paragraph ${i + 1}.` : p)).join("\n\n");
+  const sent = [];
+  await withStubbedFetch(
+    router((url, init) => {
+      sent.push(JSON.parse(init.body).messages[0].content);
+      return anthropicResponse(faithful);
+    }),
+    async () => {
+      const result = await callWithGuard("test-key", FM_BODY, "en", "fast", "markdown", []);
+      assert.equal(result, faithful);
+      // One call, so the CR source was not held against the LF answer by the structure guard.
+      assert.deepEqual(sent, [FM_PARAGRAPHS.join("\n\n")]);
+    },
+  );
+});
+
+test("breaksMarkdownStructure: merged paragraphs and dropped links are caught", () => {
+  const source = FM_PARAGRAPHS.join("\n\n");
+  assert.equal(breaksMarkdownStructure(source, FM_PARAGRAPHS.join(" ")), true);
+  assert.equal(breaksMarkdownStructure(source, FM_PARAGRAPHS.slice(0, 4).concat("Follow Agnes on Instagram").join("\n\n")), true);
+});
+
+test("breaksMarkdownStructure: a faithful translation passes, including a reflowed line and a moved full stop after a URL", () => {
+  assert.equal(
+    breaksMarkdownStructure(
+      "Första stycket\nmed radbrytning.\n\nLäs mer på https://example.se/nyhet.",
+      "First paragraph with a line break.\n\nMore at https://example.se/nyhet, as promised.",
+    ),
+    false,
+  );
+});
+
+test("translate: a markdown translation that merges paragraphs is rejected, retried at quality, and only the faithful result is cached", () =>
+  withEnv({ ANTHROPIC_API_KEY: "test-key" }, async () => {
+    const kv = fakeKv();
+    const faithful = FM_PARAGRAPHS.map((p, i) => (i < 3 ? `English paragraph ${i + 1}.` : p)).join("\n\n");
+    const seenModels = [];
+    await withStubbedFetch(
+      router((url, init) => {
+        const { model } = JSON.parse(init.body);
+        seenModels.push(model);
+        return anthropicResponse(model === "claude-haiku-4-5" ? faithful.replaceAll("\n\n", " ") : faithful);
+      }),
+      async () => {
+        const scheduler = collectingWaitUntil();
+        await translate({ text: FM_BODY, target: "en", tier: "fast", kind: "markdown", kv, waitUntil: scheduler.waitUntil });
+        await scheduler.flush();
+        assert.deepEqual(seenModels, ["claude-haiku-4-5", "claude-sonnet-5"]);
+        assert.equal(kv.puts.length, 1);
+        assert.equal(kv.puts[0][1], faithful);
+      },
+    );
+  }));
+
+test("translate: when both tiers merge the paragraphs nothing is cached — the page keeps the source", () =>
+  withEnv({ ANTHROPIC_API_KEY: "test-key" }, async () => {
+    const kv = fakeKv();
+    await withStubbedFetch(
+      router(() => anthropicResponse("One run-on English paragraph with every break gone.")),
+      async () => {
+        const scheduler = collectingWaitUntil();
+        const result = await translate({ text: FM_BODY, target: "en", tier: "fast", kind: "markdown", kv, waitUntil: scheduler.waitUntil });
+        await scheduler.flush();
+        assert.equal(result.text, FM_PARAGRAPHS.join("\n\n"));
+        assert.equal(kv.puts.length, 0);
+      },
+    );
+  }));
