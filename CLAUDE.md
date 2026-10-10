@@ -1,11 +1,11 @@
 # Ninetone Refresh
 
-Astro + Tailwind v4 site for Ninetone Group, built statically and deployed to GitHub Pages. FileMaker-driven content. Cloudflare Worker handles image bytes (the runtime layer GH Pages lacks).
+Astro + Tailwind v4 site for Ninetone Group. **Live at www.ninetone.com since 2026-10-08** as a Cloudflare Worker (`ninetone-site`, SSR, FileMaker read live with KV/edge caching); a second Worker serves FM image bytes. The GitHub Pages build still exists as a static preview only.
 
 ## Stack
 
 - **Framework:** Astro 7. `output` is conditional on `DEPLOY_TARGET` ([astro.config.mjs](astro.config.mjs)): `"static"` for the GH Pages build, `"server"` via `@astrojs/cloudflare` for `build:cf`. The adapter was dropped once and is back — read the config comment before removing it again.
-- **Hosting:** GitHub Pages via GitHub Actions ([.github/workflows/deploy.yml](.github/workflows/deploy.yml))
+- **Hosting:** production = Cloudflare Worker `ninetone-site` on Ninetone's account (custom domains `www.ninetone.com` + apex 301), deployed from your machine with `npm run deploy:cf`. GitHub Actions ([.github/workflows/deploy.yml](.github/workflows/deploy.yml)) only publishes the GH Pages preview.
 - **Image proxy:** Cloudflare Worker at [worker-fm-proxy/](worker-fm-proxy/) — see [DEPLOY.md](DEPLOY.md) for *why* this exists; it's load-bearing
 - **Styling:** Tailwind v4 (Vite plugin) + `@tailwindcss/typography`. Stylesheets are
   **inlined** into every page (`build.inlineStylesheets: "always"`, Lighthouse 2026-09-14) —
@@ -85,11 +85,12 @@ Release bookkeeping lives in `VERSION` (`MAJOR.MINOR.PATCH.MICRO`) and
 - **Homepage copy comes from FM**: `API_WEBPOSTS`, category "Ninetone Group", parsed by [src/lib/homepage-copy.ts](src/lib/homepage-copy.ts). Blocks are bound to homepage slots by FM's portal row id (the subject is the editable headline, so it cannot be the key); a missing block falls back to the built-in copy in [src/pages/index.astro](src/pages/index.astro), and a new block does nothing until it is added to `SLOT_BY_RECORD_ID`. Swedish is shown verbatim; only `/en/` goes through `t()`.
 - **`/admin` is one endpoint and a session**: every admin page talks to `POST /api/admin` ([src/lib/admin-api.ts](src/lib/admin-api.ts)); the Publish password is exchanged once for an eight-hour token ([src/lib/admin-auth.ts](src/lib/admin-auth.ts)), signed with a random key the Worker keeps in KV (`admin-session-key:v1`). Never sign a session with the password or anything an outsider can compute; that turns the token check into a password-guessing oracle (caught in review, 2026-10-09). The texts the review and health pages know about are listed in [src/lib/admin-content.ts](src/lib/admin-content.ts) with the exact source, kind and tier each page passes to the translator. Change how a page reads a field and you must change it there too, or the admin reports it as waiting forever.
 - **Editor locks never add a KV read to `translate()`.** Locked wordings ([src/lib/translation-locks.ts](src/lib/translation-locks.ts)) are one KV key each (`tr-lock:v1:<lang>:<hash>`); the middleware lists and bulk-reads them next to the translation bundle, once per isolate per minute, and `translate()` only peeks at memory. Never go back to one shared value that a save reads and rewrites: KV has no compare-and-swap and no fresh read, so that loses locks silently. `test/translate-bundle.test.mjs` pins the read counts; don't move the read into `translate()`.
+- **Contact forms send through Cloudflare Email Sending from `noreply@send.ninetone.com`** ([src/pages/api/contact.ts](src/pages/api/contact.ts), binding `CONTACT_EMAIL`). The sending domain is the `send.` subdomain on purpose: onboarding the apex would write a `p=reject` DMARC on `ninetone.com`, whose mail records belong to Google Workspace. Never onboard the apex, never enable Email Routing, and treat every apex MX/SPF/DMARC/DKIM record as off limits without Patrik.
 - **Don't propose changes on the FM side.** Ninetone's FM is a sophisticated production platform doing heavy real-time aggregation. The Data API is our integration surface. No new endpoints, no schema changes, no extended session timeouts, no "could FM expose X" asks. Work with the system, not against it.
 
 ## Path-aware URLs
 
-The site is served from a sub-path (`/ninetone-refresh/`) on GH Pages. **Every internal link / image src / fetch URL must go through `url()` from [src/lib/url.ts](src/lib/url.ts)**, OR be rendered by a component that already wraps it (BentoTile, etc.). Plain `href="/foo"` 404s. When going public on the production domain, drop `base` from `astro.config.mjs` and the helper becomes a no-op.
+Production serves from the domain root, but the GH Pages preview still lives under `/ninetone-refresh/`, so the rule stands: **every internal link / image src / fetch URL goes through `url()` from [src/lib/url.ts](src/lib/url.ts)**, OR is rendered by a component that already wraps it (BentoTile, etc.). Plain `href="/foo"` 404s on the preview.
 
 ## Design system
 
@@ -125,7 +126,7 @@ The skill has specialized workflows that produce better results than ad-hoc answ
 Key routing rules:
 - Product ideas, "is this worth building", brainstorming → invoke office-hours
 - Bugs, errors, "why is this broken", 500 errors → invoke investigate
-- Ship, deploy, push, create PR → invoke ship
+- Ship, deploy, push, create PR → do it directly (commit, push, `npm run deploy:cf`, PR, merge). The `ship` skill's full review pipeline takes 1–2 h; use it only when Mikael asks for it by name. For a risky change, offer one focused independent review instead.
 - QA, test the site, find bugs → invoke qa
 - Code review, check my diff → invoke review
 - Update docs after shipping → invoke document-release

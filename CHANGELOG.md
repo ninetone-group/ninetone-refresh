@@ -3,6 +3,21 @@
 All notable changes to the Ninetone Group site. Versions follow `MAJOR.MINOR.PATCH.MICRO`
 (the number in `VERSION`).
 
+## [0.3.2.5] - 2026-10-10
+
+### Fixed
+- **Artists without a Shopify collection no longer trigger a failed merch request on every
+  render.** FileMaker holds the word "Upcoming" in `collectionId` for them (Tommy Nilsson,
+  Tim Liljegren, Corroded, Joakim Lundell today); the pages sent it to Shopify, which
+  answered 400, and each render logged a merch failure. A collection id that is not numeric
+  now means "no merch", decided once in `src/lib/shopify.ts`. Nothing visible changes: the
+  merch section was already hidden for them.
+
+### Changed
+- `CLAUDE.md` describes the launched setup (Cloudflare Worker in production, GitHub Pages
+  as preview only, ship directly rather than through the review pipeline) and records why
+  contact email goes out from `send.ninetone.com` and the apex mail records are off limits.
+
 ## [0.3.2.4] - 2026-10-10
 
 ### Fixed
