@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFile } from "node:fs/promises";
 
 import {
   translate,
@@ -16,6 +17,7 @@ import {
   breaksMarkdownStructure,
   callWithGuard,
   leftUntranslated,
+  MODEL_IDS,
 } from "../src/lib/translate.ts";
 import { resolveFmDisplayText } from "../src/lib/t.ts";
 
@@ -296,7 +298,7 @@ test("translate: a contract-violating fast response is retried once at quality; 
       router((url, init) => {
         const body = JSON.parse(init.body);
         seenModels.push(body.model);
-        if (body.model === "claude-haiku-4-5") {
+        if (body.model === "claude-haiku-5-5") {
           return anthropicResponse("Here is the translation: Hello");
         }
         return anthropicResponse("Hello");
@@ -317,7 +319,82 @@ test("translate: a contract-violating fast response is retried once at quality; 
 
         await scheduler.flush();
 
-        assert.deepEqual(seenModels, ["claude-haiku-4-5", "claude-sonnet-5"]);
+        assert.deepEqual(seenModels, ["claude-haiku-5-5", "claude-sonnet-5-5"]);
+        assert.equal(kv.puts.length, 1);
+        assert.equal(kv.puts[0][1], "Hello");
+      },
+    );
+  }));
+
+// The 5.5 models think by default and each is told not to in its own way. A
+// setting the model rejects is a 400 on every call (no new translation at
+// all), so the exact request each tier sends is pinned here.
+test("translate: each tier sends the request settings its 5.5 model accepts, and nothing either rejects", () =>
+  withEnv({ ANTHROPIC_API_KEY: "test-key" }, async () => {
+    const bodies = {};
+    await withStubbedFetch(
+      router((url, init) => {
+        const body = JSON.parse(init.body);
+        bodies[body.model] = body;
+        return anthropicResponse("Hello there");
+      }),
+      async () => {
+        for (const tier of ["fast", "quality"]) {
+          const scheduler = collectingWaitUntil();
+          await translate({ text: `Hej på dig ${tier}`, target: "en", tier, kv: fakeKv(), waitUntil: scheduler.waitUntil });
+          await scheduler.flush();
+        }
+        const fast = bodies["claude-haiku-5-5"];
+        const quality = bodies["claude-sonnet-5-5"];
+        assert.ok(fast && quality, "both models were called");
+
+        // Haiku 5.5: effort is the lever; no thinking switch is sent.
+        assert.deepEqual(fast.output_config, { effort: "low" });
+        assert.equal("thinking" in fast, false);
+        // Sonnet 5.5: "disabled" is a 400; "between_tools" without tools is text only.
+        assert.deepEqual(quality.thinking, { type: "between_tools" });
+
+        for (const body of [fast, quality]) {
+          for (const rejected of ["temperature", "top_p", "top_k"]) assert.equal(rejected in body, false, rejected);
+          assert.equal(body.messages.at(-1).role, "user"); // no prefilled assistant turn
+          assert.notEqual(body.thinking?.type, "disabled");
+          assert.notEqual(body.thinking?.type, "enabled");
+        }
+      },
+    );
+  }));
+
+// scripts/translate-warm.mjs prices a run by looking the request's model up in
+// its own table; a model missing there is counted as "unknown" and silently
+// left out of the cost total.
+test("the warm script's cost table knows every model the site calls", async () => {
+  const script = await readFile(new URL("../scripts/translate-warm.mjs", import.meta.url), "utf8");
+  for (const [tier, model] of Object.entries(MODEL_IDS)) {
+    assert.ok(script.includes(`"${model}": "${tier}"`), `${model} is not mapped to "${tier}" in TIER_BY_MODEL`);
+  }
+});
+
+test("translate: a response that opens with a thinking block is read by its text block", () =>
+  withEnv({ ANTHROPIC_API_KEY: "test-key" }, async () => {
+    const kv = fakeKv();
+    await withStubbedFetch(
+      router(
+        () =>
+          new Response(
+            JSON.stringify({
+              content: [
+                { type: "thinking", thinking: "", signature: "sig" },
+                { type: "text", text: "Hello" },
+              ],
+              stop_reason: "end_turn",
+            }),
+            { status: 200 },
+          ),
+      ),
+      async () => {
+        const scheduler = collectingWaitUntil();
+        await translate({ text: "Hej", target: "en", tier: "fast", kv, waitUntil: scheduler.waitUntil });
+        await scheduler.flush();
         assert.equal(kv.puts.length, 1);
         assert.equal(kv.puts[0][1], "Hello");
       },
@@ -575,7 +652,7 @@ test("createT: binds to locals.lang and translates through the same pipeline (qu
         const out = await t("Boka oss");
         assert.equal(out, "Boka oss"); // never blocks — source back immediately
         await scheduler.flush();
-        assert.deepEqual(seenModels, ["claude-sonnet-5"]); // decision 3: chrome strings -> quality tier
+        assert.deepEqual(seenModels, ["claude-sonnet-5-5"]); // decision 3: chrome strings -> quality tier
       },
     );
   }));
@@ -958,13 +1035,13 @@ test("translate: a markdown translation that merges paragraphs is rejected, retr
       router((url, init) => {
         const { model } = JSON.parse(init.body);
         seenModels.push(model);
-        return anthropicResponse(model === "claude-haiku-4-5" ? faithful.replaceAll("\n\n", " ") : faithful);
+        return anthropicResponse(model === "claude-haiku-5-5" ? faithful.replaceAll("\n\n", " ") : faithful);
       }),
       async () => {
         const scheduler = collectingWaitUntil();
         await translate({ text: FM_BODY, target: "en", tier: "fast", kind: "markdown", kv, waitUntil: scheduler.waitUntil });
         await scheduler.flush();
-        assert.deepEqual(seenModels, ["claude-haiku-4-5", "claude-sonnet-5"]);
+        assert.deepEqual(seenModels, ["claude-haiku-5-5", "claude-sonnet-5-5"]);
         assert.equal(kv.puts.length, 1);
         assert.equal(kv.puts[0][1], faithful);
       },
@@ -1018,13 +1095,13 @@ test("translate: a fast-tier answer that returns the Swedish source for English 
       router((url, init) => {
         const { model } = JSON.parse(init.body);
         seenModels.push(model);
-        return anthropicResponse(model === "claude-haiku-4-5" ? source : english);
+        return anthropicResponse(model === "claude-haiku-5-5" ? source : english);
       }),
       async () => {
         const scheduler = collectingWaitUntil();
         await translate({ text: FM_BODY, target: "en", tier: "fast", kind: "markdown", kv, waitUntil: scheduler.waitUntil });
         await scheduler.flush();
-        assert.deepEqual(seenModels, ["claude-haiku-4-5", "claude-sonnet-5"]);
+        assert.deepEqual(seenModels, ["claude-haiku-5-5", "claude-sonnet-5-5"]);
         assert.deepEqual(kv.puts.map((put) => put[1]), [english]);
       },
     );

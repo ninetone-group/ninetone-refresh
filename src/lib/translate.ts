@@ -16,15 +16,19 @@
  * Provider: raw `fetch` against the Anthropic Messages API, no SDK — the
  * brief is explicit that this repo does not take on `@anthropic-ai/sdk` as a
  * dependency for what is, at the volumes involved, a handful of fields per
- * request. Model IDs below were pulled from the bundled `claude-api` skill at
- * implementation time (skill cache date 2026-06-24), not from training-data
- * memory, because model ID strings drift and a stale one is a silent 404 in
- * production:
+ * request. Model IDs below were checked against Anthropic's live model table
+ * (2026-10-10), not taken from training-data memory, because model ID
+ * strings drift and a stale one is a silent 404 in production:
  *
- *   fast    → claude-haiku-4-5   ($1 / $5 per MTok)  — bios, releases, news, blurbs
- *   quality → claude-sonnet-5    ($2 / $10 per MTok) — chrome, landing/category
- *                                                       copy, guides, contact
- *                                                       copy, meta descriptions
+ *   fast    → claude-haiku-5-5   ($0.10 / $0.50 per MTok) — bios, releases, news, blurbs
+ *   quality → claude-sonnet-5-5  ($2 / $10 per MTok)      — chrome, landing/category
+ *                                                            copy, guides, contact
+ *                                                            copy, meta descriptions
+ *
+ * Until v0.3.2.3 these were claude-haiku-4-5 ($1 / $5) and claude-sonnet-5.
+ * The cache key does not name the model, so translations stored before that
+ * release are still served for unchanged text; only new or edited text is
+ * translated by the 5.5 models.
  *
  * WHY A PERMANENT KV CACHE (decision 7): FM content barely changes week to
  * week, and a translation of a given source string never needs to change
@@ -672,12 +676,29 @@ export function waitUntilFromLocals(
 const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION = "2023-06-01";
 
-// Model IDs from the claude-api skill's current model table (cached
-// 2026-06-24) — NOT from training-data recall. `fast`/`quality` map exactly
-// to decision 3's tier assignment.
-const MODEL_IDS: Record<Tier, string> = {
-  fast: "claude-haiku-4-5",
-  quality: "claude-sonnet-5",
+// Model IDs from Anthropic's live model table (checked 2026-10-10) — NOT
+// from training-data recall. `fast`/`quality` map exactly to decision 3's
+// tier assignment.
+export const MODEL_IDS: Record<Tier, string> = {
+  fast: "claude-haiku-5-5",
+  quality: "claude-sonnet-5-5",
+};
+
+// Both 5.5 models think by default; thinking is billed as output and counts
+// toward max_tokens. A translation needs none, but the two models are told so
+// differently, which is why this is per tier and must not be merged into one
+// shared setting (Haiku 5.5 and Sonnet 5.5 migration guides, 2026-10-10):
+//   fast    — Haiku 5.5's documented lever is effort; at "low" it can skip
+//             thinking for a simple request. Its guide names no "off" value.
+//   quality — Sonnet 5.5 answers 400 to thinking {type: "disabled"}. On a
+//             request without tools, "between_tools" returns text only.
+// A value the model rejects is a 400 on every call, which means no new
+// translation at all, so read the guide before changing either line. Neither
+// model accepts a non-default temperature / top_p / top_k or a prefilled
+// assistant turn; this request sends none of them.
+export const MODEL_REQUEST_POLICY: Record<Tier, Record<string, unknown>> = {
+  fast: { output_config: { effort: "low" } },
+  quality: { thinking: { type: "between_tools" } },
 };
 
 const MAX_RETRIES = 1; // one retry beyond the initial attempt, per transient status
@@ -696,13 +717,18 @@ function sleep(ms: number): Promise<void> {
 // written into the permanent, content-addressed, no-TTL cache with no way to
 // self-heal (P1-5). 16000 output tokens covers this site's longest FM prose
 // fields with headroom and stays well inside Haiku/Sonnet's non-streaming
-// timeout budget for a single short system+user exchange.
+// timeout budget for a single short system+user exchange. On the 5.5 models
+// the same text is about 30% more tokens than on Haiku 4.5 and any thinking
+// is counted here too; the longest prose field still fits several times over.
 const MAX_OUTPUT_TOKENS = 16000;
 
 type AnthropicCallResult = { text: string; truncated: boolean };
 
 /**
- * One call to the Messages API for a given tier. No thinking, no tools — this
+ * One call to the Messages API for a given tier. No tools, and thinking kept
+ * to the minimum each model allows (`MODEL_REQUEST_POLICY`; a response may
+ * still open with a `thinking` block, which is why the text is found by block
+ * type below and never by position) — this
  * is a single short-prompt, short-output text transform, the "Single text
  * classification/summarization/extraction/Q&A" case the skill's own
  * surface-selection table calls out for the plain Messages API rather than
@@ -740,6 +766,7 @@ async function callAnthropic(apiKey: string, system: string, userText: string, t
         },
         body: JSON.stringify({
           model: MODEL_IDS[tier],
+          ...MODEL_REQUEST_POLICY[tier],
           max_tokens: MAX_OUTPUT_TOKENS,
           system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
           messages: [{ role: "user", content: userText }],
