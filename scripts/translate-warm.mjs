@@ -316,14 +316,23 @@ const KV_BINDING = "CACHE_STATE"; // wrangler.jsonc — the same namespace trans
 const LANGS = ["sv", "en"]; // both directions — decision 4, and note C for chrome specifically.
 
 // ---------------------------------------------------------------------------
-// Pricing (per MTok) — claude-api skill, cached 2026-06-24, same table
-// translate.ts's own header comment cites. Not invented: matches
-// translate.ts's MODEL_IDS comment verbatim (fast=Haiku 4.5 $1/$5,
-// quality=Sonnet 5 $2/$10).
+// Pricing (per MTok) — Anthropic's pricing page, checked 2026-10-10. Matches
+// translate.ts's MODEL_IDS comment (fast=Haiku 5.5 $0.10/$0.50,
+// quality=Sonnet 5.5 $2/$10). Haiku 5.5's base rate applies to prompts under
+// 100,000 tokens, which every translation request is. Cache-read tokens are
+// reported below but not priced, so the printed cost is a slight overestimate.
 // ---------------------------------------------------------------------------
 const PRICING_PER_MTOK = {
-  fast: { input: 1.0, output: 5.0 },
+  fast: { input: 0.1, output: 0.5 },
   quality: { input: 2.0, output: 10.0 },
+};
+
+// Which tier a request's `model` belongs to. Keep in step with MODEL_IDS in
+// src/lib/translate.ts: an id missing here is counted as "unknown" and left
+// out of the cost total.
+const TIER_BY_MODEL = {
+  "claude-haiku-5-5": "fast",
+  "claude-sonnet-5-5": "quality",
 };
 
 // ---------------------------------------------------------------------------
@@ -932,7 +941,7 @@ function withUsageTracking(totalsByTier) {
           // `model` field (translate.ts's callAnthropic sends MODEL_IDS[tier]).
           const body = init?.body ? JSON.parse(String(init.body)) : null;
           const model = body?.model;
-          const tier = model === "claude-haiku-4-5" ? "fast" : model === "claude-sonnet-5" ? "quality" : "unknown";
+          const tier = TIER_BY_MODEL[model] ?? "unknown";
           const bucket = totalsByTier[tier] ?? (totalsByTier[tier] = { input: 0, output: 0, cacheRead: 0, calls: 0 });
           bucket.input += usage.input_tokens ?? 0;
           bucket.output += usage.output_tokens ?? 0;

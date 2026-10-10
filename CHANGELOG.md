@@ -3,6 +3,37 @@
 All notable changes to the Ninetone Group site. Versions follow `MAJOR.MINOR.PATCH.MICRO`
 (the number in `VERSION`).
 
+## [0.3.2.3] - 2026-10-10
+
+### Changed
+- **New and edited text is translated by the 5.5 models.** The fast tier (news, bios,
+  releases) moves from `claude-haiku-4-5` to `claude-haiku-5-5`, the quality tier (homepage
+  voice, page chrome) from `claude-sonnet-5` to `claude-sonnet-5-5`. Haiku 5.5 is priced at
+  $0.10 / $0.50 per million tokens against $1 / $5; it counts about 30% more tokens for the
+  same text, so the fast tier costs roughly an eighth of what it did. Sonnet 5.5 is priced
+  as Sonnet 5 was. Model names, prices and settings were checked against Anthropic's live
+  documentation on the day, not recalled.
+- **Each model is asked not to think in the way it accepts.** Both 5.5 models think by
+  default, and thinking is billed as output. Haiku 5.5 is sent `output_config.effort: "low"`;
+  Sonnet 5.5 rejects `thinking: "disabled"` with a 400 and is sent `thinking: "between_tools"`,
+  which on a request without tools returns text only. A setting the model rejects would stop
+  every new translation, so `test/translate.test.mjs` pins the exact request per tier and
+  that a reply opening with a thinking block is still read correctly.
+- `scripts/translate-warm.mjs` prices a run with the new rates and recognises the new model
+  names (it counted any other model as "unknown" and left it out of the total); a test keeps
+  its table in step with the site's.
+
+### Not changed, on purpose
+- **Translations already stored are kept.** The cache key names the text, not the model, so
+  the 14,662 translations in production are served as they are and nothing goes untranslated
+  at deploy. Retiring them (the audit's "new generation" step) needs every page translated
+  again before the switch, and is a separate decision.
+- The real 5.5 output could not be measured before release: the API key exists only as a
+  Cloudflare secret. The first translations are checked on production right after deploy;
+  rolling back is one command and affects only text not yet translated.
+- When a model's answer is rejected the other tier is still tried once, in both directions,
+  as before.
+
 ## [0.3.2.2] - 2026-10-10
 
 Fixes from the Codex audit of the admin area (`docs/admin-articles-translations-audit-2026-10-10.md`), first batch: F01, F12, F11, F14.
