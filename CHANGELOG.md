@@ -3,6 +3,46 @@
 All notable changes to the Ninetone Group site. Versions follow `MAJOR.MINOR.PATCH.MICRO`
 (the number in `VERSION`).
 
+## [0.3.2.2] - 2026-10-10
+
+Fixes from the Codex audit of the admin area (`docs/admin-articles-translations-audit-2026-10-10.md`), first batch: F01, F12, F11, F14.
+
+### Fixed
+- **Saving a locked wording can no longer erase another one.** Every lock used to live in
+  one KV value that each save read and wrote back. KV has no compare-and-swap and can
+  return a minute-old value even where it was just written, so a second save could drop
+  the first and an unlock could bring a removed lock back, with both reported as saved.
+  The "one person at a time" advice in 0.3.2.0 was not enough either. Each lock is now
+  its own key (`tr-lock:v1:<lang>:<hash>`); a save writes that key and reads nothing
+  else, so a stale read can only delay a lock, never lose one. `translate()` still reads
+  locks from memory only. No lock existed in production (the old key was never written),
+  so nothing is migrated.
+- **A lock is seen as soon as it is saved, and a removed one is gone as soon.** A KV
+  listing can lag a write by up to a minute, so the listing alone no longer decides what
+  is locked: a refresh confirms, by key, everything listed, everything the isolate already
+  holds, and the ids in a small "recently changed" note that each save updates.
+- **A site refresh can no longer pin an out-of-date page for hours.** For two minutes
+  after Publish or the admin's "show changes now", pages are cached for one minute
+  instead of their full tier, because what the refresh reveals can take a minute to reach
+  another location (`x-cache-settling: 1` marks those responses).
+- **A lock can no longer be pinned to text the editor never saw.** A page left open while
+  the FileMaker text was rewritten would lock the old wording onto the new text. Review
+  now hands out the hash of the source and the timestamp of the lock on screen, a lock
+  or unlock must send both back, and the answer is 409 with nothing written when either
+  has changed. The check for "another editor saved first" is best effort: it reads KV,
+  which can be up to 30 s behind across locations, so two people saving the same text in
+  that window still end with the later one winning. No other lock is affected.
+- **Sign-in storage failures answer properly.** A KV error while issuing or checking a
+  session escaped as an unhandled failure. Both now answer 503 with a clear message, and
+  the session-key read is bounded at 1.5 s.
+- A first-ever sign-in signs with the key it reads back after storing one, which narrows
+  (not closes) the case where two simultaneous first sign-ins leave one of them having to
+  sign in again.
+
+### Changed
+- The Lock and Remove buttons are disabled while their request runs. KV allows one write
+  a second to a key; a refused write now says nothing was changed and to try again.
+
 ## [0.3.2.1] - 2026-10-09
 
 ### Fixed
@@ -62,7 +102,7 @@ All notable changes to the Ninetone Group site. Versions follow `MAJOR.MINOR.PAT
   read and written back. Two saves at the same moment, or within about a minute from
   different Cloudflare locations, can drop one of them while both report success. The fix
   is one KV key per lock; until then, a save that cannot read the current list is refused
-  and nothing is overwritten.
+  and nothing is overwritten. *(Fixed in 0.3.2.2.)*
 - Found before first deploy by the coverage audit and the security review, and fixed here:
   a save could erase other locks when its read failed; a lock could add a `mailto:`,
   `tel:` or site-relative link; and sessions were first signed with the password itself,

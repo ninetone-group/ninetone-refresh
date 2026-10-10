@@ -38,14 +38,41 @@ export async function safeEqual(a: string, b: string): Promise<boolean> {
   return timingSafeEqual(new Uint8Array(ha), new Uint8Array(hb));
 }
 
-/** The signing key. Created only at login (`create`); a token check never mints one. */
+const KEY_READ_TIMEOUT_MS = 1_500;
+
+/** `kv.get` that gives up instead of holding the request; the caller answers 503. */
+async function readKey(kv: KvLike): Promise<string | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      kv.get(SESSION_KEY),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error("session key read timed out")), KEY_READ_TIMEOUT_MS);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+/**
+ * The signing key. Created only at login (`create`); a token check never
+ * mints one. Throws when KV cannot be read or written.
+ *
+ * Two first-ever logins at the same instant can each find no key and each
+ * write one. Reading back what is stored and signing with THAT makes both
+ * tokens agree whenever the read reflects the later write; where it does not
+ * (KV does not promise it), one editor is asked to sign in again. It cannot
+ * let anyone in. Only the very first login, or one after the key was deleted
+ * on purpose, can meet this.
+ */
 async function signingKey(kv: KvLike, create: boolean): Promise<string | null> {
-  const stored = await kv.get(SESSION_KEY);
+  const stored = await readKey(kv);
   if (stored) return stored;
   if (!create) return null;
   const fresh = hex(crypto.getRandomValues(new Uint8Array(32)));
   await kv.put(SESSION_KEY, fresh);
-  return fresh;
+  return (await readKey(kv)) || fresh;
 }
 
 async function sign(key: string, expires: number, password: string): Promise<string> {

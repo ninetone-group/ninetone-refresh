@@ -1,0 +1,245 @@
+{
+  "apiRequestsMocked": true,
+  "productionWrites": 0,
+  "paidModelCalls": 0,
+  "desktop": {
+    "viewport": 1280,
+    "pageWidth": 1280,
+    "areas": [
+      {
+        "id": "",
+        "ariaLabel": null,
+        "labelledBy": null,
+        "labelCount": 0
+      },
+      {
+        "id": "",
+        "ariaLabel": null,
+        "labelledBy": null,
+        "labelCount": 0
+      }
+    ],
+    "targets": [
+      {
+        "text": "Admin",
+        "width": 41,
+        "height": 16
+      },
+      {
+        "text": "Publish",
+        "width": 54,
+        "height": 16
+      },
+      {
+        "text": "Homepage blocks",
+        "width": 123,
+        "height": 16
+      },
+      {
+        "text": "Translations",
+        "width": 95,
+        "height": 16
+      },
+      {
+        "text": "Content health",
+        "width": 113,
+        "height": 16
+      },
+      {
+        "text": "Lock this wording",
+        "width": 177,
+        "height": 32
+      },
+      {
+        "text": "Lock this wording",
+        "width": 177,
+        "height": 32
+      }
+    ],
+    "colors": {
+      "text": "oklab(0.188273 -0.00808202 -0.0276022 / 0.55)",
+      "background": "rgb(245, 243, 238)"
+    },
+    "compositedForeground": [
+      116,
+      120,
+      125
+    ],
+    "textContrast": 4.01,
+    "selection": {
+      "width": 708,
+      "visibleSelection": "Homepage"
+    }
+  },
+  "unsavedDraft": {
+    "bodyAfterSavingHeadline": "We play in Stockholm.\n\nTickets are here.",
+    "draftLost": true,
+    "mockedSaves": 1
+  },
+  "responseRace": {
+    "selected": "news:b",
+    "displayedHeadlines": [
+      "Article B: Ny singel",
+      "Vi spelar i Stockholm.\n\nBiljetter finns här.",
+      "Article A: Ny singel",
+      "Vi spelar i Stockholm.\n\nBiljetter finns här."
+    ],
+    "renderedSections": 4
+  },
+  "mobileTranslations": {
+    "viewport": 390,
+    "pageWidth": 390,
+    "areas": [
+      {
+        "id": "",
+        "ariaLabel": null,
+        "labelledBy": null,
+        "labelCount": 0
+      },
+      {
+        "id": "",
+        "ariaLabel": null,
+        "labelledBy": null,
+        "labelCount": 0
+      }
+    ],
+    "targets": [
+      {
+        "text": "Admin",
+        "width": 41,
+        "height": 16
+      },
+      {
+        "text": "Publish",
+        "width": 54,
+        "height": 16
+      },
+      {
+        "text": "Homepage blocks",
+        "width": 123,
+        "height": 16
+      },
+      {
+        "text": "Translations",
+        "width": 95,
+        "height": 16
+      },
+      {
+        "text": "Content health",
+        "width": 113,
+        "height": 16
+      },
+      {
+        "text": "Lock this wording",
+        "width": 177,
+        "height": 32
+      },
+      {
+        "text": "Lock this wording",
+        "width": 177,
+        "height": 32
+      }
+    ],
+    "colors": {
+      "text": "oklab(0.188273 -0.00808202 -0.0276022 / 0.55)",
+      "background": "rgb(245, 243, 238)"
+    },
+    "compositedForeground": [
+      116,
+      120,
+      125
+    ],
+    "textContrast": 4.01,
+    "selection": {
+      "width": 74,
+      "visibleSelection": "Homepage"
+    }
+  },
+  "mobileHomepage": {
+    "viewport": 390,
+    "pageWidth": 390,
+    "areas": [],
+    "targets": [
+      {
+        "text": "Admin",
+        "width": 41,
+        "height": 16
+      },
+      {
+        "text": "Publish",
+        "width": 54,
+        "height": 16
+      },
+      {
+        "text": "Homepage blocks",
+        "width": 123,
+        "height": 16
+      },
+      {
+        "text": "Translations",
+        "width": 95,
+        "height": 16
+      },
+      {
+        "text": "Content health",
+        "width": 113,
+        "height": 16
+      }
+    ],
+    "colors": {
+      "text": "oklab(0.188273 -0.00808202 -0.0276022 / 0.55)",
+      "background": "rgb(245, 243, 238)"
+    },
+    "compositedForeground": [
+      116,
+      120,
+      125
+    ],
+    "textContrast": 4.01,
+    "selection": null
+  },
+  "mobileHealth": {
+    "viewport": 390,
+    "pageWidth": 390,
+    "areas": [],
+    "targets": [
+      {
+        "text": "Admin",
+        "width": 41,
+        "height": 16
+      },
+      {
+        "text": "Publish",
+        "width": 54,
+        "height": 16
+      },
+      {
+        "text": "Homepage blocks",
+        "width": 123,
+        "height": 16
+      },
+      {
+        "text": "Translations",
+        "width": 95,
+        "height": 16
+      },
+      {
+        "text": "Content health",
+        "width": 113,
+        "height": 16
+      }
+    ],
+    "colors": {
+      "text": "oklab(0.188273 -0.00808202 -0.0276022 / 0.55)",
+      "background": "rgb(245, 243, 238)"
+    },
+    "compositedForeground": [
+      116,
+      120,
+      125
+    ],
+    "textContrast": 4.01,
+    "selection": null
+  },
+  "consoleErrors": []
+}

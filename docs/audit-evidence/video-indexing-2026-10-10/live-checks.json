@@ -1,0 +1,90 @@
+{
+  "auditDate": "2026-10-10",
+  "timezone": "Europe/Stockholm",
+  "method": "Direct HTTPS GET using system curl with TLS verification. No Googlebot impersonation. Only response HTML and relevant headers were inspected.",
+  "checks": [
+    {
+      "url": "https://www.ninetone.com/records/artists/joakim_lundell",
+      "finalUrl": "https://www.ninetone.com/records/artists/joakim_lundell",
+      "status": 200,
+      "headers": {
+        "content-type": "text/html",
+        "cf-cache-status": "HIT",
+        "cache-control": "public, max-age=60, s-maxage=3600, stale-while-revalidate=3600"
+      },
+      "htmlBytes": 201663,
+      "title": "Joakim Lundell \u00b7 Artist | Ninetone Records",
+      "canonical": [
+        "<link rel=\"canonical\" href=\"https://www.ninetone.com/records/artists/joakim_lundell\">"
+      ],
+      "robotsMeta": [],
+      "jsonLdTypes": [
+        "Organization",
+        "WebSite",
+        "BreadcrumbList",
+        "MusicGroup"
+      ],
+      "videoObjectCount": 0,
+      "youtubeIframes": [
+        "<iframe src=\"https://www.youtube.com/embed/4iWjuLc47Nw\" class=\"aspect-video w-full\" title=\"Joakim Lundell video\" loading=\"lazy\" allowfullscreen>",
+        "<iframe src=\"https://www.youtube.com/embed/TVrgkOC4I28\" class=\"aspect-video w-full\" title=\"Joakim Lundell video\" loading=\"lazy\" allowfullscreen>"
+      ],
+      "youtubeWatchLinks": []
+    },
+    {
+      "url": "https://www.ninetone.com/management/clients/joakim_lundell",
+      "finalUrl": "https://www.ninetone.com/management/clients/joakim_lundell",
+      "status": 200,
+      "headers": {
+        "content-type": "text/html",
+        "cf-cache-status": "HIT",
+        "cache-control": "public, max-age=60, s-maxage=3600, stale-while-revalidate=3600"
+      },
+      "htmlBytes": 138756,
+      "title": "Joakim Lundell \u00b7 Client | Ninetone Management",
+      "canonical": [
+        "<link rel=\"canonical\" href=\"https://www.ninetone.com/management/clients/joakim_lundell\">"
+      ],
+      "robotsMeta": [],
+      "jsonLdTypes": [
+        "Organization",
+        "WebSite",
+        "BreadcrumbList",
+        "Person"
+      ],
+      "videoObjectCount": 0,
+      "youtubeIframes": [
+        "<iframe src=\"https://www.youtube.com/embed/4iWjuLc47Nw\" class=\"aspect-video w-full\" title=\"Joakim Lundell video\" loading=\"lazy\" allowfullscreen>",
+        "<iframe src=\"https://www.youtube.com/embed/TVrgkOC4I28\" class=\"aspect-video w-full\" title=\"Joakim Lundell video\" loading=\"lazy\" allowfullscreen>"
+      ],
+      "youtubeWatchLinks": [
+        "https://www.youtube.com/watch?v=zbXQ7bUr2oM",
+        "https://www.youtube.com/watch?v=K7ldt61D4mg",
+        "https://www.youtube.com/watch?v=XgkOKj8V0NM",
+        "https://www.youtube.com/watch?v=AkQVTzc7ePw",
+        "https://www.youtube.com/watch?v=SznB6LnO8Q8"
+      ]
+    },
+    {
+      "url": "https://www.ninetone.com/robots.txt",
+      "finalUrl": "https://www.ninetone.com/robots.txt",
+      "status": 200,
+      "headers": {
+        "content-type": "text/plain; charset=utf-8",
+        "cf-cache-status": "HIT",
+        "cache-control": "public, max-age=60, s-maxage=3600, stale-while-revalidate=3600"
+      },
+      "body": "User-agent: *\nAllow: /\n\nSitemap: https://www.ninetone.com/sitemap-index.xml\nContent-Signal: ai-train=yes, search=yes, ai-input=yes\n"
+    },
+    {
+      "url": "https://www.ninetone.com/sitemap-index.xml",
+      "finalUrl": "https://www.ninetone.com/sitemap-index.xml",
+      "status": 200,
+      "headers": {
+        "content-type": "application/xml; charset=utf-8",
+        "cache-control": "public, max-age=60, s-maxage=3600, stale-while-revalidate=3600"
+      },
+      "body": "<?xml version=\"1.0\" encoding=\"UTF-8\"?><sitemapindex xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\"><sitemap><loc>https://www.ninetone.com/sitemap-pages.xml</loc></sitemap></sitemapindex>"
+    }
+  ]
+}

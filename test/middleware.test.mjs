@@ -1213,6 +1213,26 @@ test("the bypass bundle preload is locale-aware and never writes", async () => {
   assert.equal(puts, 0);
 });
 
+// --- 2026-10-10 settling window: a refresh bumps the cache version at once, ---
+// but what it reveals reaches other locations up to a minute later.
+
+test("for two minutes after a refresh a page is cached for one minute, not its tier; before and after, the tier applies", async () => {
+  const ttlWithVersion = async (version) => {
+    const runtime = createRuntime({ env: { CACHE_STATE: { get: async (key) => (key === "cache-version" ? version : null) } } });
+    const response = await run(new Request("https://www.ninetone.com/team"), async () => new Response("team"), runtime);
+    return [response.headers.get("x-cache-ttl"), response.headers.get("x-cache-settling"), response.headers.get("x-translation")];
+  };
+  const bumped = (msAgo) => (Date.now() - msAgo).toString(36);
+  // /team is the 24 h tier.
+  assert.deepEqual(await ttlWithVersion(bumped(5_000)), ["60", "1", null], "just refreshed: short lease, and not marked untranslated");
+  assert.deepEqual(await ttlWithVersion(bumped(119_000)), ["60", "1", null]);
+  assert.deepEqual(await ttlWithVersion(bumped(121_000)), ["86400", null, null], "settled: full tier again");
+  // Versions that are not a recent time: the default, a small number, junk, a time in the future.
+  for (const version of ["0", "7", "not-a-time", bumped(-60_000)]) {
+    assert.deepEqual(await ttlWithVersion(version), ["86400", null, null], version);
+  }
+});
+
 // --- 2026-10-09 editor locks: translate() only peeks at memory, so the -------
 // middleware is the one thing that loads the lock map for a visitor's render.
 
@@ -1228,10 +1248,14 @@ test("editor locks: the middleware loads the lock map before the render, on the 
   for (const path of ["/en/news", "/en/news?foo=bar"]) {
     const store = new Map([
       [key, "Book an artist (machine)"],
-      ["tr-locks:v1", JSON.stringify({ [lockId]: { text: "Book an act for the party", source, at: "" } })],
+      [`tr-lock:v1:${lockId}`, JSON.stringify({ text: "Book an act for the party", source, at: "" })],
     ]);
     // A new binding per pass: the lock map is held per KV binding, so each pass starts unloaded.
-    const kv = { get: async (k) => (typeof k === "string" && store.has(k) ? store.get(k) : null), put: async () => {} };
+    const kv = {
+      get: async (k) => (typeof k === "string" && store.has(k) ? store.get(k) : null),
+      put: async () => {},
+      list: async ({ prefix }) => ({ keys: [...store.keys()].filter((k) => k.startsWith(prefix)).map((name) => ({ name })), list_complete: true }),
+    };
     // Control: nothing has loaded the map for this binding yet, so the machine translation is served.
     assert.equal((await translate({ text: source, target: "en", tier: "fast", kv })).text, "Book an artist (machine)", path);
 
