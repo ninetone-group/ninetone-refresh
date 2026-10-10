@@ -3,6 +3,18 @@
 All notable changes to the Ninetone Group site. Versions follow `MAJOR.MINOR.PATCH.MICRO`
 (the number in `VERSION`).
 
+## [0.3.2.4] - 2026-10-10
+
+### Fixed
+- **Contact-form enquiries reach Ninetone by email.** Since launch every Records, Management
+  and Nation submission was stored (90 days, `CONTACT_SUBMISSIONS`) but no email went out:
+  Cloudflare Email Sending was never enabled for the domain, and the visitor was still told
+  it had worked. The form now sends from `noreply@send.ninetone.com`, a dedicated subdomain
+  onboarded to Email Sending, so Cloudflare's mail records live under `send.ninetone.com`
+  and the apex records that carry Google Workspace mail are untouched. Enabling it on
+  `ninetone.com` itself would have written a `p=reject` DMARC on the apex. Replies go to
+  the visitor (`replyTo`), so the sender address is never answered.
+
 ## [0.3.2.3] - 2026-10-10
 
 ### Changed

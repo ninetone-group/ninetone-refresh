@@ -35,7 +35,10 @@ const SUBJECT_PREFIX: Record<Division, string> = {
   nation: "[Ninetone Nation] Booking request from",
 };
 
-const FROM_ADDRESS = { email: "noreply@ninetone.com", name: "Ninetone website" };
+// Sent from a dedicated subdomain so Cloudflare Email Sending writes its MX/SPF/DKIM/DMARC
+// under send.ninetone.com and never touches the apex, where Google Workspace mail lives
+// (2026-10-10). Recipients reply to the visitor via replyTo, so the sender is never answered.
+const FROM_ADDRESS = { email: "noreply@send.ninetone.com", name: "Ninetone website" };
 
 /** Fields accepted beyond the required name/email/division, all optional free text. */
 const TEXT_FIELDS = ["links", "about", "message", "details"] as const;
