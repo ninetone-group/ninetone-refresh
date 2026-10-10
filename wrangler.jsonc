@@ -168,12 +168,12 @@
   ],
   // Email Sending binding (src/pages/api/contact.ts) — sends division
   // enquiries via env.CONTACT_EMAIL.send(). Requires the `ninetone.com`
-  // domain onboarded via `wrangler email sending enable ninetone.com`
+  // subdomain onboarded via `wrangler email sending enable send.ninetone.com` (NOT the apex: that would write a p=reject DMARC next to Google Workspace mail)
   // before sends will succeed; see contact.ts for the from/to addresses.
   "send_email": [
     {
       "name": "CONTACT_EMAIL",
-      "allowed_sender_addresses": ["noreply@ninetone.com"]
+      "allowed_sender_addresses": ["noreply@send.ninetone.com"]
     }
   ],
   "vars": {
