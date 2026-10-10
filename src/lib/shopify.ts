@@ -106,6 +106,11 @@ async function fetchProducts(
   return json.products;
 }
 
+/** A real Shopify collection id is all digits; FM placeholders ("Upcoming") are not. */
+export function isShopifyCollectionId(value: string): boolean {
+  return /^\d+$/.test(value.trim());
+}
+
 export type GetProductsOptions = {
   collectionId?: string;
   limit?: number;
@@ -129,6 +134,12 @@ export function getProductsWithKv(
   fetchImpl: typeof fetch = fetch,
 ): Promise<ShopifyProduct[]> {
   const collectionId = opts?.collectionId ?? "";
+  // FileMaker holds the word "Upcoming" in collectionId for artists who have
+  // no Shopify collection yet (seen 2026-10-10 on tommy_nilsson, tim_liljegren,
+  // corroded, joakim_lundell). Shopify answers 400 to that, every page render
+  // logged a merch failure and the section hid anyway. Anything that is not a
+  // numeric Shopify id is "no merch", decided here so every page agrees.
+  if (collectionId && !isShopifyCollectionId(collectionId)) return Promise.resolve([]);
   const limit = opts?.limit ?? 50;
   const cacheOpts = { refresh: opts?.refresh === true };
   return cached(

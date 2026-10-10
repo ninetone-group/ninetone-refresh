@@ -7,7 +7,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { SHOPIFY_KV_TTL_SECONDS, getProductsWithKv } from "../src/lib/shopify.ts";
+import { SHOPIFY_KV_TTL_SECONDS, getProductsWithKv, isShopifyCollectionId } from "../src/lib/shopify.ts";
 
 // Read lazily by the module (process.env under nodejs_compat) — set before
 // the first call, not before the import.
@@ -46,14 +46,14 @@ function fakeFetch(products = PRODUCTS) {
 test("miss → one Shopify fetch, stored under shopify:v1:<epoch>:products:<id>:<limit> for an hour", async () => {
   const kv = fakeKv({ "cache-version": "7" });
   const { calls, impl } = fakeFetch();
-  const products = await getProductsWithKv(kv, { collectionId: "c1", limit: 12 }, impl);
+  const products = await getProductsWithKv(kv, { collectionId: "1001", limit: 12 }, impl);
   assert.deepEqual(products, PRODUCTS);
   assert.equal(calls.length, 1);
-  assert.match(calls[0].url, /\/admin\/api\/[\d-]+\/products\.json\?limit=12&status=active&collection_id=c1$/);
+  assert.match(calls[0].url, /\/admin\/api\/[\d-]+\/products\.json\?limit=12&status=active&collection_id=1001$/);
   assert.equal(calls[0].headers["X-Shopify-Access-Token"], "test-token");
   assert.equal(kv.puts.length, 1);
   const [key, value, opts] = kv.puts[0];
-  assert.equal(key, "shopify:v1:7:products:c1:12");
+  assert.equal(key, "shopify:v1:7:products:1001:12");
   assert.deepEqual(JSON.parse(value), PRODUCTS);
   assert.equal(opts.expirationTtl, SHOPIFY_KV_TTL_SECONDS);
   assert.equal(SHOPIFY_KV_TTL_SECONDS, 3600);
@@ -61,9 +61,9 @@ test("miss → one Shopify fetch, stored under shopify:v1:<epoch>:products:<id>:
 });
 
 test("hit → no fetch at all (another isolate's read is reused)", async () => {
-  const kv = fakeKv({ "cache-version": "7", "shopify:v1:7:products:c2:12": JSON.stringify(PRODUCTS) });
+  const kv = fakeKv({ "cache-version": "7", "shopify:v1:7:products:1002:12": JSON.stringify(PRODUCTS) });
   const { calls, impl } = fakeFetch([]);
-  const products = await getProductsWithKv(kv, { collectionId: "c2", limit: 12 }, impl);
+  const products = await getProductsWithKv(kv, { collectionId: "1002", limit: 12 }, impl);
   assert.deepEqual(products, PRODUCTS);
   assert.equal(calls.length, 0);
   assert.equal(kv.puts.length, 0);
@@ -71,42 +71,57 @@ test("hit → no fetch at all (another isolate's read is reused)", async () => {
 
 test("refresh → fetch + put even on a hit, and the in-memory layer is bypassed too", async () => {
   const fresh = [{ ...PRODUCTS[0], title: "Tee v2" }];
-  const kv = fakeKv({ "cache-version": "7", "shopify:v1:7:products:c3:12": JSON.stringify(PRODUCTS) });
+  const kv = fakeKv({ "cache-version": "7", "shopify:v1:7:products:1003:12": JSON.stringify(PRODUCTS) });
   const { calls, impl } = fakeFetch(fresh);
-  const products = await getProductsWithKv(kv, { collectionId: "c3", limit: 12, refresh: true }, impl);
+  const products = await getProductsWithKv(kv, { collectionId: "1003", limit: 12, refresh: true }, impl);
   assert.deepEqual(products, fresh);
   assert.equal(calls.length, 1);
   assert.equal(kv.puts.length, 1);
-  assert.equal(kv.puts[0][0], "shopify:v1:7:products:c3:12");
+  assert.equal(kv.puts[0][0], "shopify:v1:7:products:1003:12");
   assert.ok(!kv.gets.some(([k]) => k.startsWith("shopify:")), "refresh never reads the entry");
 
   // Now in memory: a second refresh still goes to Shopify.
-  await getProductsWithKv(kv, { collectionId: "c3", limit: 12, refresh: true }, impl);
+  await getProductsWithKv(kv, { collectionId: "1003", limit: 12, refresh: true }, impl);
   assert.equal(calls.length, 2);
   // …while a normal call is served from the in-memory layer (60 s dedup).
-  await getProductsWithKv(kv, { collectionId: "c3", limit: 12 }, impl);
+  await getProductsWithKv(kv, { collectionId: "1003", limit: 12 }, impl);
   assert.equal(calls.length, 2);
 });
 
 test("the Publish epoch is in the key, so a Publish forces a fresh read", async () => {
-  const kv = fakeKv({ "cache-version": "8", "shopify:v1:7:products:c4:12": JSON.stringify(PRODUCTS) });
+  const kv = fakeKv({ "cache-version": "8", "shopify:v1:7:products:1004:12": JSON.stringify(PRODUCTS) });
   const { calls, impl } = fakeFetch();
-  await getProductsWithKv(kv, { collectionId: "c4", limit: 12 }, impl);
+  await getProductsWithKv(kv, { collectionId: "1004", limit: 12 }, impl);
   assert.equal(calls.length, 1, "the epoch-7 entry is not consulted under epoch 8");
-  assert.equal(kv.puts[0][0], "shopify:v1:8:products:c4:12");
+  assert.equal(kv.puts[0][0], "shopify:v1:8:products:1004:12");
 });
 
 test("no KV → plain in-memory as before: fetch once, no KV traffic, dedup on the second call", async () => {
   const { calls, impl } = fakeFetch();
-  assert.deepEqual(await getProductsWithKv(null, { collectionId: "c5" }, impl), PRODUCTS);
-  assert.deepEqual(await getProductsWithKv(null, { collectionId: "c5" }, impl), PRODUCTS);
+  assert.deepEqual(await getProductsWithKv(null, { collectionId: "1005" }, impl), PRODUCTS);
+  assert.deepEqual(await getProductsWithKv(null, { collectionId: "1005" }, impl), PRODUCTS);
   assert.equal(calls.length, 1);
-  assert.match(calls[0].url, /limit=50&status=active&collection_id=c5$/, "default limit stays 50");
+  assert.match(calls[0].url, /limit=50&status=active&collection_id=1005$/, "default limit stays 50");
 });
 
 test("a non-2xx Shopify answer throws and nothing is written", async () => {
   const kv = fakeKv({ "cache-version": "7" });
   const impl = async () => new Response("nope", { status: 500 });
-  await assert.rejects(() => getProductsWithKv(kv, { collectionId: "c6", limit: 12 }, impl), /HTTP 500/);
+  await assert.rejects(() => getProductsWithKv(kv, { collectionId: "1006", limit: 12 }, impl), /HTTP 500/);
   assert.equal(kv.puts.length, 0);
+});
+
+// FileMaker writes the word "Upcoming" where an artist has no Shopify
+// collection yet. Shopify answers 400 to it; the page must simply show no merch.
+test("a non-numeric collectionId means no merch and never reaches Shopify", async () => {
+  let calls = 0;
+  const neverFetch = async () => { calls += 1; throw new Error("Shopify must not be called"); };
+  const kv = fakeKv();
+  assert.deepEqual(await getProductsWithKv(kv, { collectionId: "Upcoming", limit: 8 }, neverFetch), []);
+  assert.deepEqual(await getProductsWithKv(null, { collectionId: " TBD ", limit: 8 }, neverFetch), []);
+  assert.equal(calls, 0);
+  assert.equal(kv.puts?.length ?? 0, 0);
+  assert.equal(isShopifyCollectionId("671820382473"), true);
+  assert.equal(isShopifyCollectionId("Upcoming"), false);
+  assert.equal(isShopifyCollectionId(""), false);
 });
