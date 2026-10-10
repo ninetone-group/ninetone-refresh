@@ -432,7 +432,18 @@ export const onRequest = defineMiddleware((context, next) => withServerTiming(as
     const freshUntil = stamp === null ? Number.NaN : Number(stamp);
     const stale = Number.isFinite(freshUntil) && Date.now() > freshUntil;
     const canRevalidate = typeof self?.fetch === "function" && typeof cfContext?.waitUntil === "function";
-    if (!stale || canRevalidate) {
+    // A copy rendered with untranslated text ("degraded", cached for one
+    // minute below) is never handed out stale. Its translations were ordered
+    // by the render that produced it and are in KV seconds later, so the next
+    // render is the translated page — but serving the stale copy first meant
+    // a page showed source text on the first visit AND the second, however
+    // long apart, and only the third visitor got the translation. After the
+    // v0.3.0.1 key change that was every English article and bio, for hours
+    // (found 2026-10-09: a 75-second-old copy still served Swedish with its
+    // translation long since stored). Rendering costs this one visitor a few
+    // hundred milliseconds instead.
+    const degradedCopy = hit.headers.has("x-translation");
+    if (!stale || (canRevalidate && !degradedCopy)) {
       const res = new Response(hit.body, hit);
       res.headers.set("Cache-Control", visitorCacheControl(hit.headers.get("x-cache-ttl") ?? DEFAULT_TTL));
       res.headers.delete(FRESH_UNTIL_HEADER);
@@ -493,8 +504,10 @@ export const onRequest = defineMiddleware((context, next) => withServerTiming(as
   const translationKv = env.CACHE_STATE ?? null;
   const bundleKey = translationBundleKey(lang, renderTarget ?? rawPathname);
   const bundleUsable = translationKv !== null && bundleKey.length <= MAX_BUNDLE_KEY_LENGTH;
-  // The lock map is primed alongside, in parallel, so it adds no latency:
-  // translate() reads locks from memory only (src/lib/translation-locks.ts).
+  // The locked wordings are primed alongside, in parallel. A no-op while the
+  // isolate's copy is under a minute old; otherwise a listing and a read,
+  // bounded at 1.5 s. translate() reads them from memory only
+  // (src/lib/translation-locks.ts). `trlocks` in Server-Timing shows the cost.
   const [bundle] = await Promise.all([
     bundleUsable ? timeServer("trbundle", () => loadTranslationBundle(translationKv!, bundleKey)) : null,
     timeServer("trlocks", () => primeLocks(translationKv, version)),
@@ -566,7 +579,18 @@ export const onRequest = defineMiddleware((context, next) => withServerTiming(as
   const budget = (locals as { __i18nBudget?: { missCount?: number; refusedCount?: number } }).__i18nBudget;
   const misses = budget?.missCount ?? budget?.refusedCount ?? 0;
   const degraded = misses > 0;
-  const effectiveTtl = degraded ? Math.min(ttl, 60) : ttl;
+  // SETTLING. A refresh (Publish, or the admin's "show changes now") bumps the
+  // cache version at once, but what it is meant to reveal lives in KV, and a
+  // KV write can take a minute to reach another location or another
+  // isolate's copy. A page rendered inside that window may be the old page,
+  // and would otherwise be cached for its whole tier — an hour, six hours —
+  // under the new version. For two minutes after a bump, pages are kept for
+  // one minute instead, so the next render replaces them. The version is the
+  // bump time in base 36 (src/pages/api/publish.ts, src/lib/admin-api.ts);
+  // anything that does not read as a recent time is simply not settling.
+  const bumpedAt = Number.parseInt(version, 36);
+  const settling = Number.isFinite(bumpedAt) && bumpedAt > 1e12 && Date.now() - bumpedAt < 120_000 && Date.now() >= bumpedAt;
+  const effectiveTtl = degraded || settling ? Math.min(ttl, 60) : ttl;
 
   // Browser gets a short lease (60s), the edge holds the tiered TTL, and the
   // production CDN may serve stale while it revalidates in the background.
@@ -582,6 +606,7 @@ export const onRequest = defineMiddleware((context, next) => withServerTiming(as
   // in-band, next to the Server-Timing it explains.
   res.headers.set("x-translation-bundle", bundle ? `hit; entries=${Object.keys(bundle).length}` : "miss");
   if (degraded) res.headers.set("x-translation", `degraded; misses=${misses} refused=${budget?.refusedCount ?? 0}`);
+  if (settling) res.headers.set("x-cache-settling", "1");
 
   const forVisitor = new Response(body, res);
   const forCache = new Response(body, res);

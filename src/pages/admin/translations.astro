@@ -71,21 +71,33 @@ import AdminLayout from "../../layouts/AdminLayout.astro";
         const actions = A.el("div", "mt-2 flex flex-wrap gap-3");
         const lock = A.el("button", "bg-ninetone-ink px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-ninetone-paper transition-colors hover:bg-ninetone-ink-soft", shown.locked ? "Update lock" : "Lock this wording");
         lock.type = "button";
+        // Every save says what it was written against (the FileMaker text and
+        // the lock on screen), so the server can refuse it if either changed.
+        const seen = { item: itemId, string: string.id, lang, sourceHash: string.sourceHash, lockedAt: shown.lockedAt };
         lock.addEventListener("click", async () => {
+          lock.disabled = true;
           note.textContent = "Saving…";
-          const r = await A.call("lock", { item: itemId, string: string.id, lang, text: area.value }).catch(() => ({}));
-          note.textContent = r.ok ? "Locked. It shows when the page next refreshes; the red button speeds that up." : r.error || "Could not save.";
+          const r = await A.call("lock", { ...seen, text: area.value }).catch(() => ({}));
+          note.textContent = r.ok
+            ? "Locked. It shows when the page next refreshes; the red button speeds that up."
+            : r.status === 409
+              ? `${r.error} Your text is still in the box: copy it before you reload.`
+              : r.error || "Could not save.";
           if (r.ok) load();
+          // After a 409 the page is out of date, so saving again from it cannot work: leave the button off.
+          else if (r.status !== 409) lock.disabled = false;
         });
         actions.append(lock);
         if (shown.locked) {
           const unlock = A.el("button", "border border-ninetone-ink/40 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] transition-colors hover:border-ninetone-ink", "Remove lock");
           unlock.type = "button";
           unlock.addEventListener("click", async () => {
+            unlock.disabled = true;
             note.textContent = "Removing…";
-            const r = await A.call("unlock", { item: itemId, string: string.id, lang }).catch(() => ({}));
+            const r = await A.call("unlock", seen).catch(() => ({}));
             note.textContent = r.ok ? "Lock removed. The automatic translation is back." : r.error || "Could not remove.";
             if (r.ok) load();
+            else if (r.status !== 409) unlock.disabled = false;
           });
           actions.append(unlock);
         }
@@ -120,7 +132,7 @@ import AdminLayout from "../../layouts/AdminLayout.astro";
       document.getElementById("flush").addEventListener("click", async () => {
         note.textContent = "Refreshing the site…";
         const r = await A.call("flush").catch(() => ({}));
-        note.textContent = r.ok ? "Done. Pages pick the changes up over the next few minutes." : r.error || "Could not refresh.";
+        note.textContent = r.ok ? "Done. Pages show the changes within a couple of minutes." : r.error || "Could not refresh.";
       });
       load();
     });

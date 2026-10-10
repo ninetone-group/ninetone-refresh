@@ -1,0 +1,95 @@
+{
+  "productionWrites": 0,
+  "paidModelCalls": 0,
+  "findings": [
+    {
+      "id": "F01",
+      "probe": "Sequential saves with stale KV read",
+      "survivingLocks": [
+        "en:second"
+      ]
+    },
+    {
+      "id": "F02",
+      "probe": "relative link",
+      "guardAccepted": true
+    },
+    {
+      "id": "F02",
+      "probe": "email link",
+      "guardAccepted": true
+    },
+    {
+      "id": "F02",
+      "probe": "telephone link",
+      "guardAccepted": true
+    },
+    {
+      "id": "F02",
+      "probe": "link replaced with image",
+      "guardAccepted": true
+    },
+    {
+      "id": "F02",
+      "probe": "clickable link removed",
+      "guardAccepted": true
+    },
+    {
+      "id": "F02",
+      "probe": "heading removed",
+      "guardAccepted": true
+    },
+    {
+      "id": "F02",
+      "probe": "hard line break removed",
+      "guardAccepted": true
+    },
+    {
+      "id": "F03",
+      "probe": "Damaged cached translation",
+      "origin": "cached",
+      "structureBroken": true,
+      "bundleLedgerEntries": 1
+    },
+    {
+      "id": "F09",
+      "probe": "Short Swedish source can be locked in Swedish",
+      "status": 200,
+      "returned": "En annan rubrik"
+    },
+    {
+      "id": "F10",
+      "probe": "Empty content omitted from health",
+      "hero": {
+        "heading": "Audit headline",
+        "body": "",
+        "tagline": ""
+      },
+      "status": {
+        "recordId": "3",
+        "subject": "Audit headline",
+        "fills": "Hero (top of the page)"
+      },
+      "newsStringsChecked": 1
+    },
+    {
+      "id": "N01",
+      "probe": "Concurrent first login key creation",
+      "validSessions": 1,
+      "issuedSessions": 2
+    },
+    {
+      "id": "F11",
+      "probe": "Signing-key outage escapes handleAdmin",
+      "controlledResponse": false
+    },
+    {
+      "id": "F12",
+      "probe": "Source changed between review and save",
+      "reviewedSource": "Ny singel",
+      "currentSource": "Ny turné",
+      "lockedTextForCurrentSource": "New single",
+      "status": 200
+    }
+  ]
+}

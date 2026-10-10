@@ -1,0 +1,59 @@
+
+> ninetone-refresh@0.2.3.0 build:cf
+> DEPLOY_TARGET=cf PUBLIC_NOINDEX=false PUBLIC_CANONICAL_HOST=www.ninetone.com FM_USER= FM_PASS= SHOPIFY_ADMIN_TOKEN= YOUTUBE_API_KEY= PUBLISH_PASSWORD= ANTHROPIC_API_KEY= INDEXNOW_KEY= astro build && node scripts/check-no-baked-secrets.mjs
+
+08:48:56 [@astrojs/cloudflare] Enabling sessions with Cloudflare KV with the "SESSION" KV binding.
+08:48:56 [vite] Re-optimizing dependencies because vite config has changed
+08:48:56 [types] Generated 137ms
+08:48:56 [build] output: "server"
+08:48:56 [build] mode: "server"
+08:48:56 [build] directory: /Users/mikaelohlen/Documents/CursorSites/ninetone_refresh/dist/
+08:48:56 [build] adapter: @astrojs/cloudflare
+08:48:56 [build] Collecting build info...
+08:48:56 [build] ✓ Completed in 189ms.
+08:48:56 [build] Building server entrypoints...
+Using secrets defined in .dev.vars
+[31m✘ [41;31m[[41;97mERROR[41;31m][0m [1mFailed to write to log file Error: EPERM: operation not permitted, open '/Users/mikaelohlen/.wrangler/logs/wrangler-2026-10-10_06-48-56_564.log'[0m
+
+      at async open (node:internal/fs/promises:641:25)
+      at async writeFile (node:internal/fs/promises:1215:14)
+      at async /Users/mikaelohlen/Documents/CursorSites/ninetone_refresh/node_modules/wrangler/wrangler-dist/cli.js:63211:7
+      at async Mutex.runWith (/Users/mikaelohlen/Documents/CursorSites/ninetone_refresh/node_modules/miniflare/dist/src/index.js:55592:16)
+      at async appendToDebugLogFile (/Users/mikaelohlen/Documents/CursorSites/ninetone_refresh/node_modules/wrangler/wrangler-dist/cli.js:63208:3) {
+    errno: -1,
+    code: 'EPERM',
+    syscall: 'open',
+    path: '/Users/mikaelohlen/.wrangler/logs/wrangler-2026-10-10_06-48-56_564.log'
+  }
+
+
+[31m✘ [41;31m[[41;97mERROR[41;31m][0m [1mWould have written: [0m
+
+  --- 2026-10-10T06:48:57.152Z debug
+  🪵  Writing logs to "/Users/mikaelohlen/.wrangler/logs/wrangler-2026-10-10_06-48-56_564.log"
+  ---
+  
+
+
+08:48:57 [vite] ✓ built in 243ms
+08:48:57 [WARN] [router] getStaticPaths() ignored in dynamic page /src/pages/[key].txt.ts. Add `export const prerender = true;` to prerender the page as static HTML during the build process.
+08:48:57 [WARN] [router] getStaticPaths() ignored in dynamic page /src/pages/management/clients/previous/[...page].astro. Add `export const prerender = true;` to prerender the page as static HTML during the build process.
+08:48:57 [WARN] [router] getStaticPaths() ignored in dynamic page /src/pages/management/clients/[slug].astro. Add `export const prerender = true;` to prerender the page as static HTML during the build process.
+08:48:57 [WARN] [router] getStaticPaths() ignored in dynamic page /src/pages/news/[slug].astro. Add `export const prerender = true;` to prerender the page as static HTML during the build process.
+08:48:57 [WARN] [router] getStaticPaths() ignored in dynamic page /src/pages/ninetone-nation/[slug].astro. Add `export const prerender = true;` to prerender the page as static HTML during the build process.
+08:48:57 [WARN] [router] getStaticPaths() ignored in dynamic page /src/pages/guider/[slug].astro. Add `export const prerender = true;` to prerender the page as static HTML during the build process.
+08:48:57 [WARN] [router] getStaticPaths() ignored in dynamic page /src/pages/records/artists/[slug].astro. Add `export const prerender = true;` to prerender the page as static HTML during the build process.
+08:48:57 [WARN] [router] getStaticPaths() ignored in dynamic page /src/pages/records/artists/previous/[...page].astro. Add `export const prerender = true;` to prerender the page as static HTML during the build process.
+08:48:57 [WARN] [router] getStaticPaths() ignored in dynamic page /src/pages/ninetone-nation/kategori/[category].astro. Add `export const prerender = true;` to prerender the page as static HTML during the build process.
+08:48:57 [WARN] [router] getStaticPaths() ignored in dynamic page /src/pages/records/artists/previous/single/[slug].astro. Add `export const prerender = true;` to prerender the page as static HTML during the build process.
+08:48:57 [WARN] [router] getStaticPaths() ignored in dynamic page /src/pages/management/clients/previous/single/[slug].astro. Add `export const prerender = true;` to prerender the page as static HTML during the build process.
+08:48:57 [WARN] [router] getStaticPaths() ignored in dynamic page /src/pages/team/[slug].astro. Add `export const prerender = true;` to prerender the page as static HTML during the build process.
+Using secrets defined in .dev.vars
+08:48:57 [vite] ✓ built in 436ms
+08:48:57 [vite] ✓ built in 55ms
+08:48:57 [build] Rearranging server assets...
+08:48:57 [build] ✓ Completed in 803ms.
+08:48:57 [build] Server built in 1.01s
+08:48:57 [build] Complete!
+🪵  Logs were written to "/Users/mikaelohlen/.wrangler/logs/wrangler-2026-10-10_06-48-56_564.log"
+[secrets-gate] ok: 5 local secret(s) checked against 108 files, none baked.
