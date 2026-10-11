@@ -3,6 +3,15 @@
 All notable changes to the Ninetone Group site. Versions follow `MAJOR.MINOR.PATCH.MICRO`
 (the number in `VERSION`).
 
+## [0.3.2.7] - 2026-10-11
+
+### Fixed
+- **Homepage tiles show their section colour in the hover mark.** The growing bar in a
+  tile's top-left corner was white on every photo and dark tile, so only the paper-coloured
+  "Demos" tile showed Records red while the Nation and Management tiles looked the same. The
+  mark now takes the section colour on photo and dark tiles too; only a tile painted in its
+  own accent (the navy Management tile) keeps a paper mark, where navy on navy would vanish.
+
 ## [0.3.2.6] - 2026-10-11
 
 ### Changed
