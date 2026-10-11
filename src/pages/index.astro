@@ -27,7 +27,7 @@ import {
   getFeaturedArtists,
   getArtistOfTheWeek,
   getArtistBySlug,
-  getLatestClient,
+  getClientOfTheWeek,
   getNews,
   getWebPostSection,
 } from "../lib/ninetone";
@@ -57,7 +57,7 @@ const collectionId =
 const [featuredArtists, heroArtist, heroClient, latestNews, allArtists, allClients, allBooking, prevArtists, prevClients, prevBooking, groupSection] = await Promise.all([
   getFeaturedArtists(20),
   getArtistOfTheWeek(), // rotates Mondays 00:00 UTC — same artist all week
-  getLatestClient(), // newest management addition (FM recordId order)
+  getClientOfTheWeek(), // rotates Thursdays 12:00 UTC — half a week after the artist
   getNews().then((p) => p.slice(0, 4)),
   // All six rosters — active and former, across Records, Management and
   // Nation — for the "since the start" figure in the metrics panel.

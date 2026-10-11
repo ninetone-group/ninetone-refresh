@@ -3,6 +3,16 @@
 All notable changes to the Ninetone Group site. Versions follow `MAJOR.MINOR.PATCH.MICRO`
 (the number in `VERSION`).
 
+## [0.3.2.6] - 2026-10-11
+
+### Changed
+- **"Client in focus" on the homepage rotates weekly, like the artist tile.** It used to show
+  the most recently added Management client and only changed when one was added. It now
+  walks the Management roster one client a week, offset half a week from the artist
+  (artist steps Monday 00:00 UTC, client Thursday 12:00 UTC), so the two tiles never
+  change on the same morning and "updated weekly" is true for both. The rotation lives in
+  `src/lib/rotation.ts` with tests; `getLatestClient()` is gone.
+
 ## [0.3.2.5] - 2026-10-10
 
 ### Fixed
