@@ -119,7 +119,11 @@ const linkProps = href
   <span
     class:list={[
       "absolute left-0 top-0 h-1 w-12 transition-[width] duration-500 ease-out group-hover:w-1/2",
-      effectiveVariant === "ink" || effectiveVariant === "image" || effectiveVariant === "accent" ? "bg-ninetone-paper" : accent.bg,
+      // The hover mark carries the section colour everywhere it can be seen
+      // (DESIGN.md rule 5). Only a tile painted in its own accent gets a paper
+      // mark, since navy on navy would vanish (2026-10-11: the photo and ink
+      // tiles used to get paper too, so only paper tiles showed a colour).
+      effectiveVariant === "accent" ? "bg-ninetone-paper" : accent.bg,
     ]}
     aria-hidden
   ></span>
