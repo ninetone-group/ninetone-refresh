@@ -6,6 +6,7 @@
  */
 
 import { fmFind, type FmFindOptions, fmFindWithPortals } from "./filemaker";
+import { pickOfTheWeek } from "./rotation.ts";
 import { hasProfileImage } from "./profile-image";
 import { isActiveBookingArtist } from "./booking-status";
 import { newsExcerpt } from "./excerpt";
@@ -637,13 +638,6 @@ export async function getFeaturedArtists(limit = 6): Promise<Artist[]> {
  * qualify. On the live site this updates within the homepage cache TTL of a
  * new client being added in FM — no deploy.
  */
-export async function getLatestClient(): Promise<Artist | undefined> {
-  const clients = await getClients();
-  const byNewest = [...clients].sort(
-    (a, b) => Number(b.__recordId ?? 0) - Number(a.__recordId ?? 0),
-  );
-  return byNewest.find((c) => c.artistPicture_big || c.artistPicture_small) ?? clients[0];
-}
 
 /**
  * "Artist in focus" — deterministic artist-of-the-week rotation.
@@ -658,9 +652,17 @@ export async function getLatestClient(): Promise<Artist | undefined> {
 export async function getArtistOfTheWeek(): Promise<Artist | undefined> {
   const artists = await getArtists();
   const pool = artists.filter((a) => a.artistPicture_big || a.artistPicture_small);
-  if (pool.length === 0) return artists[0];
-  const weekIndex = Math.floor((Date.now() / 86_400_000 + 3) / 7);
-  return pool[weekIndex % pool.length];
+  return pickOfTheWeek(pool, Date.now()) ?? artists[0]; // steps Monday 00:00 UTC
+}
+
+// Same rotation over the Management roster, offset half a week so the two
+// homepage tiles never change on the same morning (steps Thursday 12:00 UTC).
+// Replaced getLatestClient() on 2026-10-11, which always showed the newest
+// client and so only changed when Patrik added one.
+export async function getClientOfTheWeek(): Promise<Artist | undefined> {
+  const clients = await getClients();
+  const pool = clients.filter((c) => c.artistPicture_big || c.artistPicture_small);
+  return pickOfTheWeek(pool, Date.now(), 3.5) ?? clients[0];
 }
 
 export async function getFeaturedClients(limit = 6): Promise<Artist[]> {
