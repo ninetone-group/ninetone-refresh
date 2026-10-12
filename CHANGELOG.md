@@ -3,6 +3,20 @@
 All notable changes to the Ninetone Group site. Versions follow `MAJOR.MINOR.PATCH.MICRO`
 (the number in `VERSION`).
 
+## [0.3.2.9] - 2026-10-12
+
+### Added
+- **Search Console baseline.** The GSC export taken four days after launch (Web search,
+  2025-06-11 .. 2026-10-10) is checked in under `docs/seo/gsc/2026-10-12/` with a summary
+  in `docs/seo/gsc/README.md`: 45 clicks and 1,800 impressions a day going in, brand
+  queries a third of all clicks, artist detail pages two thirds of impressions at 1.2% CTR.
+  Every `www.ninetone.com` URL in the export was fetched from production: 196 answer 200
+  directly, 280 reach 200 through the legacy-URL redirects (mostly roster pages that now
+  live under `/records/artists/previous/single/`), 20 are 404s worth 61 clicks in 16 months.
+  Two read-only scripts for the monthly follow-up: `scripts/gsc-compare.mjs` (deltas by
+  host, section, page and query between two exports) and `scripts/gsc-url-probe.mjs`
+  (re-fetches the export's URLs and lists 404s and redirect chains).
+
 ## [0.3.2.8] - 2026-10-12
 
 ### Changed
