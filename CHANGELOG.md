@@ -3,6 +3,17 @@
 All notable changes to the Ninetone Group site. Versions follow `MAJOR.MINOR.PATCH.MICRO`
 (the number in `VERSION`).
 
+## [0.3.2.8] - 2026-10-12
+
+### Changed
+- **Sitemap news entries carry `lastmod`.** Each `/news/...` URL (sv and en) now lists the
+  article's FileMaker publish date, the same value the page already states as
+  datePublished/dateModified in its JSON-LD. Google uses lastmod to choose which sitemap URLs
+  to recrawl, so a freshly posted article is picked up sooner instead of waiting for the
+  regular crawl of the news list. Roster, team and Nation entries still have no date field
+  and still emit none. The FM date converter moved to `src/lib/fm-date.ts` (re-exported from
+  `schema.ts`) so the pure sitemap builder can share it.
+
 ## [0.3.2.7] - 2026-10-11
 
 ### Fixed

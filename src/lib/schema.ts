@@ -14,6 +14,7 @@
  */
 
 import { externalUrl } from "./url.ts";
+import { fmDateToIso } from "./fm-date.ts";
 import { renderBio } from "./markdown.ts";
 
 // ---------------------------------------------------------------------------
@@ -134,20 +135,8 @@ export function descriptionWithBioFallback(
   return bioFallback || trimmedTagline;
 }
 
-/**
- * FM date fields (release dates, news post dates) are "MM/DD/YYYY" — convert
- * to ISO-8601 for JSON-LD, or return undefined when the value doesn't match
- * rather than guess/fabricate a date. Shared by every page that needs to
- * turn an FM date string into a JSON-LD `datePublished`/`dateModified`
- * (previously duplicated in three page files — see PR history).
- */
-export function fmDateToIso(value: string | null | undefined): string | undefined {
-  if (!value) return undefined;
-  const m = String(value).match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  if (!m) return undefined;
-  const [, mm, dd, yyyy] = m;
-  return `${yyyy}-${mm.padStart(2, "0")}-${dd.padStart(2, "0")}`;
-}
+/** Re-exported from src/lib/fm-date.ts (shared with the sitemap builder). */
+export { fmDateToIso };
 
 /** Collect only the http(s) values from a set of candidate social URLs,
  *  reusing the project's existing external-URL validator so JSON-LD never
