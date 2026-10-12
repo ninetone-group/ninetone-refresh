@@ -5,16 +5,17 @@
  * and pass it in as plain arrays. Kept separate and pure so it's unit
  * testable without a build (test/sitemap.test.mjs).
  *
- * `<lastmod>` is intentionally almost always omitted: none of the FM layouts
- * behind these lists expose a modification timestamp distinct from a
- * "published" date (API_NEWS has only `Date`; releases have only
- * `releaseDate`; artists/clients/team/booking rows have no date field at
- * all beyond FM's internal `__recordId`, which is a creation-order serial,
- * not a timestamp). Per the brief: never fabricate a date. Every builder
- * below therefore emits no `lastmod` for any entity — there is nothing
- * truthful to put there today. If a genuine modification-timestamp field
- * ever appears in a fetched layout, thread it through here explicitly
- * rather than guessing from an adjacent date field.
+ * `<lastmod>` is emitted only where a real date exists on the row. News
+ * entries carry API_NEWS's `Date` (the publish date): the article page
+ * already states that same value as both datePublished and dateModified in
+ * its JSON-LD, so the sitemap and the page agree, and Google uses lastmod to
+ * pick which sitemap URLs to recrawl — a new article without it waits for
+ * the regular crawl cadence (2026-10-12). It is a truthful lower bound, never
+ * a claim of a later edit. Artists/clients/team/booking rows have no date
+ * field at all beyond FM's internal `__recordId` (a creation-order serial,
+ * not a timestamp), so they still get no `lastmod`. Per the brief: never
+ * fabricate a date — if a genuine modification timestamp ever appears in a
+ * fetched layout, thread it through here explicitly.
  *
  * Section 5 (i18n Phase 2, docs/i18n-phase-2-brief.md): "both locales for
  * every URL, with xhtml:link alternates." `buildSitemapEntries` below keeps
@@ -31,6 +32,7 @@
 
 import { PREVIOUS_ARTISTS_PAGE_SIZE, PREVIOUS_CLIENTS_PAGE_SIZE, type StaticRoute } from "./routes.ts";
 import { slugifyTag } from "./booking-slug.ts";
+import { fmDateToIso } from "./fm-date.ts";
 import { hasEnglishVersion, localizedPath } from "./i18n.ts";
 import type { Lang } from "./translate.ts";
 
@@ -76,6 +78,28 @@ export function staticRouteEntries(origin: string, routes: StaticRoute[]): Sitem
 export interface SlugSource {
   SLUG?: unknown;
   slug?: unknown;
+}
+
+/** A news row: slug plus API_NEWS's "MM/DD/YYYY" publish `Date`. */
+export interface NewsSource extends SlugSource {
+  Date?: unknown;
+}
+
+/**
+ * News articles: `detailPageEntries` plus a `lastmod` taken from the row's
+ * FM `Date` (see module doc). A row whose date doesn't parse just gets no
+ * lastmod — never a guessed one.
+ */
+export function newsEntries(origin: string, rows: NewsSource[]): SitemapEntry[] {
+  const prefix = "/news";
+  const out: SitemapEntry[] = [];
+  for (const row of rows) {
+    const slug = String(row.SLUG ?? row.slug ?? "");
+    if (!slug) continue;
+    const lastmod = fmDateToIso(row.Date == null ? undefined : String(row.Date));
+    out.push({ loc: joinPath(origin, `${prefix}/${slug}`), changefreq: "monthly", ...(lastmod ? { lastmod } : {}) });
+  }
+  return out;
 }
 
 /**
@@ -215,7 +239,7 @@ export function buildSitemapEntries(
     team: SlugSource[];
     bookingTalent: SlugSource[];
     bookingCategories: BookingCategoryLike[];
-    news: SlugSource[];
+    news: NewsSource[];
     /** Section 7 — guides derived from the "Guider" WebPosts category via
      *  guidesFromCategory(); [] when the category is absent (rule 12). */
     guides?: GuideLike[];
@@ -232,7 +256,7 @@ export function buildSitemapEntries(
     ...detailPageEntries(origin, input.team, "/team", "monthly"),
     ...detailPageEntries(origin, input.bookingTalent, "/ninetone-nation", "weekly"),
     ...bookingCategoryEntries(origin, input.bookingCategories),
-    ...detailPageEntries(origin, input.news, "/news", "monthly"),
+    ...newsEntries(origin, input.news),
     ...guideEntries(origin, input.guides ?? []),
   ];
 }

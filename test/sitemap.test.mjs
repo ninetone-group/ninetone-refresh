@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   staticRouteEntries,
   detailPageEntries,
+  newsEntries,
   previousArtistsPaginationEntries,
   previousClientsPaginationEntries,
   paginationEntries,
@@ -57,9 +58,27 @@ test("detailPageEntries: strips a trailing slash from pathPrefix so no double-sl
   assert.equal(entries[0].loc, "https://ninetone.com/team/x");
 });
 
-test("detailPageEntries: never emits a lastmod — no FM layout in scope exposes a real modification timestamp", () => {
+test("detailPageEntries: never emits a lastmod — roster layouts expose no date field", () => {
   const entries = detailPageEntries(ORIGIN, [{ SLUG: "x" }], "/records/artists");
   assert.equal(entries[0].lastmod, undefined);
+});
+
+test("newsEntries: lastmod is the FM publish Date as ISO, omitted when the date doesn't parse", () => {
+  const entries = newsEntries(ORIGIN, [
+    { SLUG: "a", Date: "10/11/2026" },
+    { SLUG: "b", Date: "" },
+    { SLUG: "c", Date: "not a date" },
+    { SLUG: "" , Date: "10/11/2026" },
+  ]);
+  assert.deepEqual(entries.map((e) => e.loc), [
+    "https://ninetone.com/news/a",
+    "https://ninetone.com/news/b",
+    "https://ninetone.com/news/c",
+  ]);
+  assert.equal(entries[0].lastmod, "2026-10-11");
+  assert.equal(entries[0].changefreq, "monthly");
+  assert.equal(entries[1].lastmod, undefined);
+  assert.equal(entries[2].lastmod, undefined);
 });
 
 test("previousArtistsPaginationEntries: 0 extra pages when the roster fits on page 1", () => {
