@@ -175,7 +175,10 @@ const displayDate = formatDate(date, dateLang);
       <div class="prose lede max-w-none" set:html={messageHtml}></div>
 
       {ytLinks.length > 0 && (
-        <div class="mt-12 grid gap-4 sm:grid-cols-2">
+        <!-- One video per row at the full text-column width. The old
+             two-column grid halved a lone video (most posts carry one),
+             which read as a thumbnail — Mikael, 2026-10-15. -->
+        <div class="mt-12 grid gap-8">
           {ytLinks.map((url) => {
             const idMatch = url.match(/(?:v=|youtu\.be\/|embed\/)([\w-]{11})/);
             const id = idMatch ? idMatch[1] : null;
