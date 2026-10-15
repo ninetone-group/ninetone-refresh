@@ -84,6 +84,7 @@ const HAS_RUNTIME =
 const TTL_RULES: Array<[RegExp, number]> = [
   [/^\/$/, 300], // homepage — promo bar + featured rotate often
   [/^\/search-index\.json$/, 900], // command palette / search data
+  [/^\/news\.xml$/, 900], // RSS feed — same freshness as the pages it mirrors
   [/^\/news(\/|$)/, 900], // news index + articles
   [/^\/team(\/|$)/, 86400], // changes a few times a year
   [/^\/integritet(\/|$)/, 86400], // static legal copy

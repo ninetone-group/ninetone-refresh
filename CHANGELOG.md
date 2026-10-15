@@ -3,6 +3,17 @@
 All notable changes to the Ninetone Group site. Versions follow `MAJOR.MINOR.PATCH.MICRO`
 (the number in `VERSION`).
 
+## [0.3.3.0] - 2026-10-15
+
+### Added
+- **RSS feed for news.** `/news.xml` (Swedish) and `/en/news.xml` (English) carry the 20
+  latest articles with the full body as `content:encoded`, the excerpt as `description`,
+  the proxied image as `media:content`, author, category and the FileMaker publish date.
+  Every page advertises the feed for its own locale with a `rel="alternate"` link, so
+  readers and browsers discover it from any URL. The feed translates through the same
+  `fmText` kinds as the news pages, so it shares their cache keys and adds no new
+  translation work; edge TTL is the news tier (15 min). Asked for by Patrik.
+
 ## [0.3.2.9] - 2026-10-12
 
 ### Added

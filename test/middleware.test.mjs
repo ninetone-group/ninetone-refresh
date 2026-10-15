@@ -557,6 +557,21 @@ test("the en cache key still carries the correct TTL tier despite the /en prefix
   assert.equal(response.headers.get("x-cache-ttl"), "21600");
 });
 
+test("/news.xml and /en/news.xml take the news TTL tier, not the default", async () => {
+  // The RSS feed mirrors /news and must go stale on the same clock. Without
+  // its own rule the path misses /^\/news(\/|$)/ (no slash after "news")
+  // and falls through to DEFAULT_TTL.
+  for (const path of ["/news.xml", "/en/news.xml"]) {
+    const runtime = createRuntime();
+    const response = await run(
+      new Request(`https://ninetone.com${path}`),
+      async () => new Response("<rss/>", { headers: { "content-type": "application/rss+xml" } }),
+      runtime,
+    );
+    assert.equal(response.headers.get("x-cache-ttl"), "900", path);
+  }
+});
+
 // --- i18n Phase 2, section-2 review fixes -----------------------------------
 // Three defects caught in review, each reproduced before being fixed. Every
 // test below fails if its fix is reverted (mutation-verified).
