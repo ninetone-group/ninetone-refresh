@@ -29,8 +29,8 @@
  *     nothing to exclude beyond the contact form paths themselves, which
  *     ARE listed below (the form page is real, crawlable content).
  *   - `/[key].txt` (IndexNow key file, Section 10) — not content.
- *   - `/robots.txt`, `/llms.txt`, `/sitemap-index.xml`, `/sitemap-pages.xml`
- *     themselves — meta-routes, not pages to list inside themselves.
+ *   - `/robots.txt`, `/llms.txt`, `/sitemap-index.xml`, `/sitemap-pages.xml`,
+ *     `/news.xml` themselves — meta-routes, not pages to list inside themselves.
  *
  * Keep this list and the routes it names in sync by hand — there is no way
  * to derive it from the filesystem without also pulling in every dynamic

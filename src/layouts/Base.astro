@@ -13,6 +13,7 @@ import { url } from "../lib/url";
 import { siteOrigin, isProductionShaped, resolveSitePath, jsonLdOrigin } from "../lib/site";
 import { organization, website } from "../lib/schema";
 import { hreflangLinks, localizedPath } from "../lib/i18n";
+import { feedPath } from "../lib/rss";
 import { noindexFor } from "../lib/noindex";
 import type { Lang } from "../lib/translate";
 
@@ -451,6 +452,12 @@ const tiktokEnabled = tracking && !isPlaceholder(TIKTOK_PIXEL_ID);
     {!omitCanonical && hreflangs.map((link) => (
       <link rel="alternate" hreflang={link.hreflang} href={link.href} />
     ))}
+
+    <!-- RSS discovery (news feed, 2026-10-15). One per locale: the English
+         pages point at /en/news.xml, which the middleware serves from the
+         same endpoint. Not gated on omitCanonical — a 404 page may still
+         offer the feed. -->
+    <link rel="alternate" type="application/rss+xml" title="Ninetone Group — News" href={`${jsonLdSafeOrigin}${feedPath(lang)}`} />
 
     <!-- Open Graph -->
     <meta property="og:site_name" content="Ninetone Group" />

@@ -11,6 +11,7 @@ import type { HomepageCopy } from "./homepage-copy.ts";
  * When a page changes how it reads a field, change it here too:
  *
  *   news     src/pages/news/index.astro, src/pages/news/[slug].astro  (fmText: fast tier)
+ *            src/pages/news.xml.ts reads the same three fields the same way (RSS)
  *   homepage src/pages/index.astro                                    (t(): quality tier, plain)
  *
  * Chrome strings written in the page files themselves are not listed. They
