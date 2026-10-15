@@ -3,6 +3,13 @@
 All notable changes to the Ninetone Group site. Versions follow `MAJOR.MINOR.PATCH.MICRO`
 (the number in `VERSION`).
 
+## [0.3.3.1] - 2026-10-15
+
+### Changed
+- **News videos span the text column.** YouTube embeds on an article were laid out in a
+  two-column grid, so a post with one video showed it at half width. Videos now stack one
+  per row at the full width of the article text.
+
 ## [0.3.3.0] - 2026-10-15
 
 ### Added
