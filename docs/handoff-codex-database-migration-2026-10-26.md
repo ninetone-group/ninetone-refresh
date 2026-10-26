@@ -435,11 +435,11 @@ fails. Then open a pull request against main with a description that lists what
 changed, what was verified, and what still needs a human (secrets to set, the image
 source, anything from section 10 that was answered with "later").
 
-Step 5, when everything above is done: write a handover report for Mikael, the
-developer who built this site and will review and deploy the change. Save it as
-docs/handoff-codex-report-<today's date>.md and commit it to the same pull request.
-Write it for a reader who knows this codebase but has not seen your work. It must
-contain, in this order:
+Step 5, when everything above is done: write a report for Mikael, the developer who
+built this site, so he knows what was done. He is not deploying this; Patrik is.
+Save it as docs/handoff-codex-report-<today's date>.md and commit it to the same
+pull request. Write it for a reader who knows this codebase but has not seen your
+work. It must contain, in this order:
 
 - What the new database is (technology, where it runs, how the site authenticates)
   and where the adapter lives.
@@ -452,15 +452,15 @@ contain, in this order:
   Cloudflare build, which routes you rendered, which images you checked.
 - What you did not do or could not verify, and what Patrik's answers to section 10
   left open.
-- What a person has to do before deploy: secrets to set with `wrangler secret put`,
+- What Patrik has to do before deploy: secrets to set with `wrangler secret put`,
   settings in wrangler.jsonc, anything in Cloudflare, anything in the new database.
-- Risks you see, ranked, with the one thing you would check first after deploy.
+- Risks you see, ranked, with the one thing to check first after deploy.
 
 Be factual. If a test failed and you could not fix it, say so with the output. Do not
 describe work you did not do.
 
-Rules: never run `npm run deploy:cf` or `wrangler deploy`; deployment is done by a
-person. Never change anything on the FileMaker side. Never commit a secret. If
+Rules: never run `npm run deploy:cf` or `wrangler deploy`; Patrik deploys after
+reading the report. Never change anything on the FileMaker side. Never commit a secret. If
 something in the handover disagrees with the code, trust the code and tell me. If you
 are unsure, ask; do not guess the shape of the new database.
 ```
