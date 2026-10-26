@@ -382,13 +382,28 @@ None of this needs field changes, but Codex should know it exists.
 
 ## Appendix: prompt to paste into Codex
 
-Open Codex in a checkout of `ninetone-group/ninetone-refresh` on `main` and paste the
-text below as the first message. Answer its questions when it asks; it is told to ask
-before it writes code.
+Open Codex in a checkout of `ninetone-group/ninetone-refresh` and paste the text below
+as the first message. It pulls `main` first, so the checkout may be old. Answer its
+questions when it asks; it is told to ask before it writes code. The version check
+in step 0 assumes this PR is merged; until then, Codex can check out the branch
+`docs/handoff-codex-database-migration` instead of `main`.
 
 ```text
 You are migrating the Astro site in this repository from the FileMaker Data API to a
-new database. Read these two files completely before anything else:
+new database.
+
+Step 0: make sure you are on the latest code. Run, and show me the output:
+
+    git checkout main
+    git pull origin main
+    git log -1 --oneline
+    cat VERSION
+
+The version must be 0.3.3.2 or higher and the file
+docs/handoff-codex-database-migration-2026-10-26.md must exist. If either is not
+true, stop and tell me; do not continue on old code.
+
+Then read these two files completely before anything else:
 
 1. CLAUDE.md
 2. docs/handoff-codex-database-migration-2026-10-26.md
