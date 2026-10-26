@@ -382,85 +382,94 @@ None of this needs field changes, but Codex should know it exists.
 
 ## Appendix: prompt to paste into Codex
 
-Open Codex in a checkout of `ninetone-group/ninetone-refresh` and paste the text below
-as the first message. It pulls `main` first, so the checkout may be old. Answer its
-questions when it asks; it is told to ask before it writes code. The version check
-in step 0 assumes this PR is merged; until then, Codex can check out the branch
-`docs/handoff-codex-database-migration` instead of `main`.
+Patrik: fill in the seven "Facts from Patrik" lines at the bottom (one line each is
+enough; leave a line blank if you do not know), open Codex in a checkout of
+`ninetone-group/ninetone-refresh`, and paste the whole text as the first message. It
+pulls `main` itself, runs the migration end to end without check-ins, opens a pull
+request, and writes a report for Mikael. You deploy when it is done; Mikael audits the
+code afterwards.
 
 ```text
 You are migrating the Astro site in this repository from the FileMaker Data API to a
-new database.
+new database. You do the whole job in one run: no plan approvals, no check-ins.
+Patrik, who is running you, deploys when you are done. Mikael, the developer who
+built the site, audits the result afterwards from your report. Ask a question only
+if you truly cannot continue without the answer; otherwise decide, and write the
+decision and the assumption down in the report.
 
-Step 0: make sure you are on the latest code. Run, and show me the output:
+Step 0: get on the latest code.
 
     git checkout main
     git pull origin main
-    git log -1 --oneline
     cat VERSION
 
-The version must be 0.3.3.2 or higher and the file
-docs/handoff-codex-database-migration-2026-10-26.md must exist. If either is not
-true, stop and tell me; do not continue on old code.
+The version must be 0.3.3.2 or higher and
+docs/handoff-codex-database-migration-2026-10-26.md must exist. If not, stop and say
+so; do not work on old code.
 
-Then read these two files completely before anything else:
-
-1. CLAUDE.md
-2. docs/handoff-codex-database-migration-2026-10-26.md
-
-The handover is the specification. Follow its plan (section 3): write a new adapter
-that exposes the same `fmFind` and `fmFindWithPortals` functions as
+Step 1: read CLAUDE.md and docs/handoff-codex-database-migration-2026-10-26.md
+completely. The handover is the specification. Its plan (section 3) is the approach:
+a new adapter that exposes the same `fmFind` and `fmFindWithPortals` functions as
 src/lib/filemaker.ts, returning records with the same field names, portal row keys
 and value formats listed in sections 4 and 5. Do not rename fields across the site.
 Do not edit the pages, components, feeds or sitemaps that consume the records unless
-the handover says a specific change is needed (section 6 for the homepage block ids,
-section 7 for images).
+the handover names the change (section 6 for the homepage block ids, section 7 for
+images). Keep src/lib/cache.ts, src/lib/fm-kv.ts, the Publish epoch, the crons and
+the translation subsystem unchanged.
 
-Step 1, before writing any code: ask me the seven questions in section 10 of the
-handover, one message, numbered. Wait for my answers.
+Step 2: the facts about the new database are in the "Facts from Patrik" block at the
+end of this message, answering section 10 of the handover. Where a fact is missing,
+inspect the database or its code if you can reach it; if you still cannot tell,
+choose the simplest option, keep it in one place in the adapter, and record it as an
+assumption in the report.
 
-Step 2: write a short plan as a markdown file in docs/ (adapter design, how each of
-the queries in section 4 maps to the new database, what happens to images, which
-secrets change). Show it to me and wait for approval.
+Step 3: implement on a branch named feat/new-database-adapter. Read secrets only
+through src/lib/env.ts (`secretEnv`), never through `import.meta.env`. Put new
+non-secret settings in `vars` in wrangler.jsonc. Never write a secret into a file
+that is committed; list the `wrangler secret put` commands in the report instead.
+Keep the `.fm-img-frame` / `.fm-img` markup on images.
 
-Step 3: implement on a branch named feat/new-database-adapter. Keep the caching
-layers in src/lib/cache.ts and src/lib/fm-kv.ts, the Publish epoch, the crons and the
-translation subsystem unchanged. Read secrets only through src/lib/env.ts
-(`secretEnv`), never through `import.meta.env`. Add new secrets with `wrangler secret
-put` instructions in the plan, not in code. Keep the `.fm-img-frame` / `.fm-img`
-markup on images.
+Step 4: run `npm test` and `npm run build:cf` (Node 22: `nvm use 22`). Fix what
+fails. Render the main routes with `npm run dev` (homepage, /records/artists, one
+artist, /management/clients, one client, /ninetone-nation/booking, one talent,
+/team, one team member, /news, one article, /news.xml, /sitemap-sv.xml) and check
+that images load. Bump VERSION and add a CHANGELOG.md entry, as the repo does for
+every change. Commit, push the branch, and open a pull request against main.
 
-Step 4: run `npm test` and `npm run build:cf` (Node 22, `nvm use 22`) and fix what
-fails. Then open a pull request against main with a description that lists what
-changed, what was verified, and what still needs a human (secrets to set, the image
-source, anything from section 10 that was answered with "later").
-
-Step 5, when everything above is done: write a report for Mikael, the developer who
-built this site, so he knows what was done. He is not deploying this; Patrik is.
-Save it as docs/handoff-codex-report-<today's date>.md and commit it to the same
-pull request. Write it for a reader who knows this codebase but has not seen your
-work. It must contain, in this order:
+Step 5: write the report for Mikael. Save it as
+docs/handoff-codex-report-<today's date>.md and commit it to the same pull request.
+Write it for a reader who knows this codebase but has not seen your work, in this
+order:
 
 - What the new database is (technology, where it runs, how the site authenticates)
   and where the adapter lives.
 - The mapping table: every layout and field from sections 4 and 5 of the handover,
   what it maps to in the new database, and every value the adapter normalises
   (dates, "Active", "Ja", "true", image URLs, block ids).
+- Every decision you took without an answer from Patrik, and the assumption behind it.
 - What you changed outside the adapter, file by file, and why each change was
   unavoidable.
 - What you verified, with the actual commands and their results: tests, the
   Cloudflare build, which routes you rendered, which images you checked.
-- What you did not do or could not verify, and what Patrik's answers to section 10
-  left open.
-- What Patrik has to do before deploy: secrets to set with `wrangler secret put`,
+- What you did not do or could not verify.
+- What Patrik must do before deploy: secrets to set with `wrangler secret put`,
   settings in wrangler.jsonc, anything in Cloudflare, anything in the new database.
 - Risks you see, ranked, with the one thing to check first after deploy.
 
 Be factual. If a test failed and you could not fix it, say so with the output. Do not
 describe work you did not do.
 
-Rules: never run `npm run deploy:cf` or `wrangler deploy`; Patrik deploys after
-reading the report. Never change anything on the FileMaker side. Never commit a secret. If
-something in the handover disagrees with the code, trust the code and tell me. If you
-are unsure, ask; do not guess the shape of the new database.
+Deploy: only when Patrik tells you to, and only with `npm run deploy:cf` as one
+command (never a bare `wrangler deploy`, see CLAUDE.md). Never change anything on the
+FileMaker side. Never commit a secret. If the handover disagrees with the code, trust
+the code and note it in the report.
+
+Facts from Patrik (section 10 of the handover):
+1. The new database's API (REST, GraphQL, SQL, something else) and its base URL:
+2. Field names: same as FileMaker, or new ones (where is the mapping):
+3. Where images live and whether their URLs are stable:
+4. The stable id of a web post block (homepage copy):
+5. What the team "Active" flag means in the new database:
+6. Whether "Active" / "Not Active" and MM/DD/YYYY dates are kept or changed:
+7. Whether SLUG values stay the same:
 ```
