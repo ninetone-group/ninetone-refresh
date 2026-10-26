@@ -379,3 +379,49 @@ None of this needs field changes, but Codex should know it exists.
 - Images load on artist, client, talent, team and news pages, and survive a Publish.
 - `/admin` content health shows the same items as before.
 - Deploy with `npm run deploy:cf`, bump `VERSION` and `CHANGELOG.md` in the same commit.
+
+## Appendix: prompt to paste into Codex
+
+Open Codex in a checkout of `ninetone-group/ninetone-refresh` on `main` and paste the
+text below as the first message. Answer its questions when it asks; it is told to ask
+before it writes code.
+
+```text
+You are migrating the Astro site in this repository from the FileMaker Data API to a
+new database. Read these two files completely before anything else:
+
+1. CLAUDE.md
+2. docs/handoff-codex-database-migration-2026-10-26.md
+
+The handover is the specification. Follow its plan (section 3): write a new adapter
+that exposes the same `fmFind` and `fmFindWithPortals` functions as
+src/lib/filemaker.ts, returning records with the same field names, portal row keys
+and value formats listed in sections 4 and 5. Do not rename fields across the site.
+Do not edit the pages, components, feeds or sitemaps that consume the records unless
+the handover says a specific change is needed (section 6 for the homepage block ids,
+section 7 for images).
+
+Step 1, before writing any code: ask me the seven questions in section 10 of the
+handover, one message, numbered. Wait for my answers.
+
+Step 2: write a short plan as a markdown file in docs/ (adapter design, how each of
+the queries in section 4 maps to the new database, what happens to images, which
+secrets change). Show it to me and wait for approval.
+
+Step 3: implement on a branch named feat/new-database-adapter. Keep the caching
+layers in src/lib/cache.ts and src/lib/fm-kv.ts, the Publish epoch, the crons and the
+translation subsystem unchanged. Read secrets only through src/lib/env.ts
+(`secretEnv`), never through `import.meta.env`. Add new secrets with `wrangler secret
+put` instructions in the plan, not in code. Keep the `.fm-img-frame` / `.fm-img`
+markup on images.
+
+Step 4: run `npm test` and `npm run build:cf` (Node 22, `nvm use 22`) and fix what
+fails. Then open a pull request against main with a description that lists what
+changed, what was verified, and what still needs a human (secrets to set, the image
+source, anything from section 10 that was answered with "later").
+
+Rules: never run `npm run deploy:cf` or `wrangler deploy`; deployment is done by a
+person. Never change anything on the FileMaker side. Never commit a secret. If
+something in the handover disagrees with the code, trust the code and tell me. If you
+are unsure, ask; do not guess the shape of the new database.
+```
