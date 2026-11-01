@@ -367,3 +367,13 @@ Private public verification:live/route-render-results.json, live/route-image-res
 production-performance-before.json, production-performance-after.json,
 site-deployments-after.json. Existing publication epoch was not bumped; the new build
 id provides a fresh HTML generation and the Office cache namespace isolates old data.
+
+Management follow-up:7 requests, all200, median TTFB103.1ms (initial
+three-sample result was variable). First new-deployment homepage request2082ms;
+first public image sweep median240.5ms, max1573.1ms. Those include fresh edge-cache
+misses. The representative news image subsequently reports cf-cache-status:HIT,
+Age56 and public,max-age=31536000,immutable. This separates warm behavior from
+cold-start behavior instead of claiming every first request is equally fast.
+
+The exact nightly all-artist portal query also returned schema1 successfully:
+391 artists, 2191 release rows, 5579ms, inside the15s transport deadline.
