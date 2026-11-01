@@ -10,6 +10,7 @@ import { pickOfTheWeek } from "./rotation.ts";
 import { hasProfileImage } from "./profile-image";
 import { isActiveBookingArtist } from "./booking-status";
 import { newsExcerpt } from "./excerpt";
+import { usesOffice } from "./office.ts";
 
 export type Artist = Record<string, unknown> & {
   SLUG?: string;
@@ -151,7 +152,7 @@ export async function getArtistDetailWithReleases(slug: string): Promise<ArtistD
       album: pickReleasePortal(r, "Green Web Category::Album"),
       type: pickReleasePortal(r, "Green Web Category::Type"),
       releaseDate: pickReleasePortal(r, "Green Web Category::Releasedate First"),
-      cover: "",
+      cover: usesOffice() ? pickReleasePortal(r, "Green Web Category::coverPicture_webp") : "",
       pitch: pickReleasePortal(r, "Green Web Album::spotifyPitch"),
       social: pickReleasePortal(r, "Green Web Album::socialMedia"),
       urlRelease: pickReleasePortal(r, "Green Web Category::urlRelease"),
@@ -165,7 +166,7 @@ export async function getArtistDetailWithReleases(slug: string): Promise<ArtistD
     }))
     .filter((r) => r.album)
     .sort((a, b) => parseFmDate(b.releaseDate) - parseFmDate(a.releaseDate))
-    .map((r) => ({ ...r, cover: releaseCoverUrl(slug, r.album) }));
+    .map((r) => ({ ...r, cover: usesOffice() ? r.cover : releaseCoverUrl(slug, r.album) }));
 
   return { fieldData: row.fieldData, releases };
 }

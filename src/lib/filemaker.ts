@@ -17,6 +17,7 @@ import { getCfEnv } from "./cf.ts";
 import { mirrorRecordImages } from "./fm-image-mirror.ts";
 import { fmFindViaKv } from "./fm-kv.ts";
 import { timeServer } from "./server-timing.ts";
+import { usesOffice, officeFind, officeScope } from "./office.ts";
 
 /**
  * Env resolution that works in all four contexts:
@@ -155,12 +156,12 @@ export function fmFind<T = Record<string, unknown>>(
 ): Promise<T[]> {
   return timeServer("fmread", () =>
     cached(
-      `fm-${layout}`,
+      `fm-${officeScope(layout)}`,
       body,
       async () =>
         fmFindViaKv<T>(
           await liveKv(opts),
-          layout,
+          officeScope(layout),
           body,
           false,
           (version) => fmFindUncached<T>(layout, body, version),
@@ -186,12 +187,12 @@ export function fmFindWithPortals<T = Record<string, unknown>>(
 ): Promise<FmRecord<T>[]> {
   return timeServer("fmread", () =>
     cached(
-      `fm-portals-${layout}`,
+      `fm-portals-${officeScope(layout)}`,
       body,
       async () =>
         fmFindViaKv<FmRecord<T>>(
           await liveKv(opts),
-          layout,
+          officeScope(layout),
           body,
           true,
           (version) => fmFindUncachedWithPortals<T>(layout, body, version),
@@ -216,6 +217,7 @@ async function fmRequestUntimed<T>(
   body: FmFindBody,
   isRetry: boolean,
 ): Promise<FmFindResponse<T> | null> {
+  if (usesOffice()) return officeFind<T>(layout, body);
   const token = await getToken();
 
   // portalLimits is our ergonomic alias — FM wants flat `limit.<portal>` keys.

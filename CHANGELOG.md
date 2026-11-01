@@ -3,6 +3,21 @@
 All notable changes to the Ninetone Group site. Versions follow `MAJOR.MINOR.PATCH.MICRO`
 (the number in `VERSION`).
 
+## [0.3.3.3] - 2026-11-01
+
+### Changed
+- Serve website content from Ninetone Office through a compatible server-only adapter;
+  retain the existing field names, slugs, Publish/cache and translation behavior.
+- Serve prepared, immutable WebP images through the same-origin Cloudflare image cache.
+  Release covers use the Office image URL; the GitHub Pages preview uses production
+  image URLs and its own server build credential.
+- Add bounded transport validation, redirect rejection, source-specific cache keys,
+  image integrity/type checks, and transport tests. Disable Astro's development-only
+  dependency discovery to avoid parsing raw Astro frontmatter as JavaScript.
+- Preserve the existing roster and explicitly include reactivated Margaux Dietz and
+  new Records artist Annika Ljungberg. See the dated migration report for database
+  mapping, one-time image import, verification and remaining editorial work.
+
 ## [0.3.3.2] - 2026-10-26
 
 ### Added

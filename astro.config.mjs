@@ -128,8 +128,14 @@ export default defineConfig({
   // cross-page CSS caching — a fair trade at ~100 KiB pages.
   build: { inlineStylesheets: "always" },
   vite: {
+    // Astro 7's CF dev scanner can parse raw .astro frontmatter as JS.
+    // Route modules are transformed on demand; production builds are unchanged.
+    ...(process.env.NODE_ENV === 'development' ? { optimizeDeps: { noDiscovery: true } } : {}),
     plugins: [tailwindcss()],
     define: {
+      // A dedicated boolean avoids optional import.meta.env expansion copying
+      // local Cloudflare bindings into the server transport bundle.
+      __OFFICE_STATIC_PREVIEW__: JSON.stringify(TARGET !== "cf"),
       // Baked per build. Part of every edge-cache key (src/middleware.ts) so a
       // DEPLOY naturally starts a fresh cache generation — old-code pages are
       // never served after a release. Content freshness is the KV epoch's job.
