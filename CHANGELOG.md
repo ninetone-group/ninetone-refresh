@@ -3,6 +3,18 @@
 All notable changes to the Ninetone Group site. Versions follow `MAJOR.MINOR.PATCH.MICRO`
 (the number in `VERSION`).
 
+## [0.3.3.2] - 2026-10-26
+
+### Added
+- **Handover to Codex for the database migration.** Patrik is replacing the FileMaker
+  database with a new one on Google Cloud. `docs/handoff-codex-database-migration-2026-10-26.md`
+  documents, from the code, how the site reads FileMaker today (one adapter in
+  `src/lib/filemaker.ts`), the complete field map per layout with query filters and
+  value formats, the homepage slot binding to portal row ids, what the image pipeline
+  needs from a new source, the secrets, and the parts wired to FileMaker semantics.
+  Recommends a new adapter under the existing getters rather than editing the 38 files
+  that mention field names. Docs only; no code change.
+
 ## [0.3.3.1] - 2026-10-15
 
 ### Changed
