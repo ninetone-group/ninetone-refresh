@@ -3,6 +3,12 @@
 All notable changes to the Ninetone Group site. Versions follow `MAJOR.MINOR.PATCH.MICRO`
 (the number in `VERSION`).
 
+## [0.3.3.5] - 2026-11-01
+
+### Fixed
+- Keep former Management clients with valid Office image URLs in lists, detail pages, sitemap and legacy redirects.
+- Restore original team profile addresses and redirect the nine temporary Office-generated URLs permanently.
+
 ## [0.3.3.4] - 2026-11-01
 
 ### Changed
