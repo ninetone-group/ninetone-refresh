@@ -38,10 +38,9 @@ jobs:
 
       - name: Build
         env:
-          FM_HOST: ${{ secrets.FM_HOST }}
-          FM_DB: ${{ secrets.FM_DB }}
-          FM_USER: ${{ secrets.FM_USER }}
-          FM_PASS: ${{ secrets.FM_PASS }}
+          CONTENT_SOURCE: 'office'
+          OFFICE_API_ORIGIN: 'https://office.ninetone.com'
+          OFFICE_API_TOKEN: ${{ secrets.OFFICE_API_TOKEN }}
           SHOPIFY_SHOP_DOMAIN: ${{ secrets.SHOPIFY_SHOP_DOMAIN }}
           SHOPIFY_PUBLIC_STORE_URL: ${{ secrets.SHOPIFY_PUBLIC_STORE_URL }}
           SHOPIFY_ADMIN_TOKEN: ${{ secrets.SHOPIFY_ADMIN_TOKEN }}

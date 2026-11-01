@@ -177,6 +177,8 @@
     }
   ],
   "vars": {
+    "CONTENT_SOURCE": "office",
+    "OFFICE_API_ORIGIN": "https://office.ninetone.com",
     // Non-secret runtime config. FM_HOST/FM_DB have code defaults; set here
     // to be explicit. PUBLIC_NOINDEX stays true until launch.
     "FM_HOST": "files.ninetone.com",
