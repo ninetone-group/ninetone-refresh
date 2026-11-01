@@ -3,6 +3,18 @@
 All notable changes to the Ninetone Group site. Versions follow `MAJOR.MINOR.PATCH.MICRO`
 (the number in `VERSION`).
 
+## [0.3.3.7] - 2026-11-01
+
+### Added
+- **Office data-parity audit.** `scripts/office-parity-audit.mjs` runs every find the site
+  issues against FileMaker and Office (read-only) and diffs them record by record and field
+  by field, separating the normalisations the Codex report declares from real differences.
+  Findings in `docs/office-parity-audit-2026-11-01.md`, every differing value under
+  `docs/audit-evidence/office-parity-2026-11-01/`, follow-ups for Codex in
+  `docs/handoff-codex-parity-2026-11-01.md`. No slug or image lost; one visible
+  regression (Spotify pitch text on 945 releases) and 42 corrected release dates, both
+  Office-side. Docs and script only; no site code change.
+
 ## [0.3.3.6] - 2026-11-01
 
 ### Added
