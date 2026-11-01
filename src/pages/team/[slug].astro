@@ -1,4 +1,5 @@
 ---
+import { canonicalTeamSlug } from "../../lib/team-aliases";
 import Base from "../../layouts/Base.astro";
 import { getTeam } from "../../lib/ninetone";
 import { renderBio, isAiSpeculative } from "../../lib/markdown";
@@ -12,6 +13,8 @@ import { fmText, sharedT } from "../../lib/t";
 // English page must keep the /en prefix, or one click drops the visitor
 // back to Swedish. Shadows the plain url() import for this component.
 const url = urlFor(Astro.locals);
+const canonicalSlug = canonicalTeamSlug(Astro.params.slug ?? "");
+if (canonicalSlug) return Astro.redirect(url(`/team/${canonicalSlug}`), 301);
 
 
 export async function getStaticPaths() {

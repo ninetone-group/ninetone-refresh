@@ -14,7 +14,8 @@ const t = sharedT(Astro.locals);
 const description = await t(
   "Backoffice for public people. Ninetone Management builds structure and strategy for Sweden's creators, influencers and public figures.",
 );
-const clientsLabel = await t("Clients");
+// Keep this editorial label exact rather than machine-translating it as “Kunder”.
+const clientsLabel = Astro.locals.lang === "en" ? "Clients" : "Klienter";
 const clientsBlurb = await t("A roster of Sweden's most extraordinary creators and influencers.");
 const theTeamLabel = await t("The team");
 const theTeamBlurb = await t("Day-to-day partners — the people building careers alongside our clients.");

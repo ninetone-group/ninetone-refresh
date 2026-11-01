@@ -18,11 +18,15 @@
  * time this runs, and any other non-URL garbage should fail the same way.
  */
 const URL_SHAPE = /^https?:\/\//i;
+// Office returns same-origin, content-addressed image URLs. Accept only its
+// exact proxy route; arbitrary relative paths and protocol-relative URLs fail.
+const OFFICE_IMAGE = /^\/api\/office-images\/(?:web|team|profile|presentation|release)\/[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\/[0-9a-f]{64}\/(?:cover|small|medium|large)\.webp$/;
+const usable = (value: string) => URL_SHAPE.test(value) || OFFICE_IMAGE.test(value);
 
 type PictureFields = { artistPicture_small?: unknown; artistPicture_big?: unknown };
 
 export function hasProfileImage(row: PictureFields): boolean {
   const small = String(row.artistPicture_small ?? "").trim();
   const big = String(row.artistPicture_big ?? "").trim();
-  return URL_SHAPE.test(small) || URL_SHAPE.test(big);
+  return usable(small) || usable(big);
 }
