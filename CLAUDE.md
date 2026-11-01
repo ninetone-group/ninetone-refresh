@@ -55,6 +55,23 @@ never deployed from CI — it ships from your machine with the command above.
 Release bookkeeping lives in `VERSION` (`MAJOR.MINOR.PATCH.MICRO`) and
 [CHANGELOG.md](CHANGELOG.md). Bump both in the same commit as the change they describe.
 
+## Workflow (two people and two agents share this repo)
+
+**`main` is what production runs. Always.** On 2026-11-01 production ran a branch that
+was not in `main`, and anyone starting from `main` would have re-broken the former
+clients list. These rules apply to every change, whether a person, Claude or Codex makes it:
+
+1. **Start from fresh `main`:** `git checkout main && git pull origin main` before any work.
+2. **One branch per change**, named for the change (`fix/...`, `feat/...`, `docs/...`).
+   Never commit to `main` directly and never reuse a branch for a second change.
+3. **Pull request before deploy.** Open a PR against `main`, merge it, deploy from the
+   merged `main` with `npm run deploy:cf`. If something must ship first, merge right
+   after; never skip the PR.
+4. **Bump `VERSION` and `CHANGELOG.md`** in the same commit (see above).
+5. **Agents get these rules in the prompt.** When briefing Codex, include: "Start from
+   fresh main, work on a new branch, open a PR against main when done, deploy only from
+   merged main."
+
 ## Layout
 
 - `src/pages/` — Astro routes

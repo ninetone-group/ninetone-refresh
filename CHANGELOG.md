@@ -3,6 +3,14 @@
 All notable changes to the Ninetone Group site. Versions follow `MAJOR.MINOR.PATCH.MICRO`
 (the number in `VERSION`).
 
+## [0.3.3.6] - 2026-11-01
+
+### Added
+- **Workflow rules in CLAUDE.md.** `main` is what production runs; one branch per
+  change from fresh `main`; pull request before deploy; version and changelog in the
+  same commit; the same rules go into every agent brief. Written after production ran
+  an unmerged branch on 2026-11-01. Docs only.
+
 ## [0.3.3.5] - 2026-11-01
 
 ### Fixed
