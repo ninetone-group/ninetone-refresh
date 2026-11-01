@@ -299,7 +299,7 @@ npx wrangler secret put OFFICE_API_TOKEN
 gh secret set OFFICE_API_TOKEN
 ```
 
-For this cutover, the intended single deployment command is
+For this cutover, the single deployment command used was
 `npm run deploy:cf -- --secrets-file /private/path/office-secrets.env`, which atomically
 adds the new secret with the freshly built version; omitted secrets are retained.
 The actual private file is mode600 outside the repository. Never deploy bare wrangler
@@ -324,3 +324,46 @@ or separate the build and deploy. No DNS/mail/capacity change is required.
 6. Keep additive data if rolling back code. Office rollback target223 retains the new
  registry/cache; the previous website deployment is preserved in the private pre-cutover
  receipt. A deliberate FileMaker-source redeploy is available, not an automatic fallback.
+
+
+## 9. Public cutover results
+
+Published with the one combined `npm run deploy:cf -- --secrets-file ...` command,
+build and secrets gate successful. Cloudflare version
+`bbaf7457-474c-489b-b2ac-d7248ba89bcc`, custom domains www.ninetone.com/ninetone.com,
+workers.dev staging, all three existing crons and queue producer/consumer retained.
+The new credential was independently verified as a **secret_text** binding through
+Cloudflare's version API. No secret is a plaintext var or part of the code bundle.
+
+Public route verification:all16 intended HTML/feed/sitemap routes200, including the
+additional Annika and Margaux details; existing /sitemap-sv.xml404 unchanged.152 unique
+public image URLs:all200 image/webp, no FileMaker image references. Apex301 to www;
+sitemap-index.xml200; Margaux's old previous URL301 to her active URL. Annika and
+Margaux are present in the actual public roster HTML. Browser screenshot shows the
+live Mika hero and presentation; private proof site-live-mika.jpg.
+
+Three HTTPS timing samples per route before/after (median TTFB, milliseconds):
+
+| Route | Old source, existing warm deployment | Office, warm deployment |
+|---|---:|---:|
+| / | 239.4 | 106.7 |
+| /records/artists | 197.3 | 84.6 |
+| /records/artists/mika | 101.2 | 90.6 |
+| /news | 128.4 | 94.4 |
+| /news/{article} | 98.6 | 107.5 |
+| /management/clients | 95.7 | 196.4 |
+
+These small network samples are not a controlled Lighthouse/mobile comparison or a
+promise that every route is faster. Management was more variable in this sample.
+The first fresh deployment sweep includes cold caches and is recorded separately;
+new image URLs necessarily start with an edge-cache miss. The representative news
+article's old/new large WebP bytes are identical (13,422 bytes); new image response
+retains one-year immutable caching. A proposed Mika byte comparison was excluded:
+the old page had no usable hero and its first proxied image was a different news
+picture; Office supplies a genuine current profile photo. Comparing those payloads
+would be misleading.
+
+Private public verification:live/route-render-results.json, live/route-image-results.json,
+production-performance-before.json, production-performance-after.json,
+site-deployments-after.json. Existing publication epoch was not bumped; the new build
+id provides a fresh HTML generation and the Office cache namespace isolates old data.
