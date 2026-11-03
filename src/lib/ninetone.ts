@@ -388,7 +388,7 @@ export async function getPreviousClients(opts?: FmFindOptions) {
     sort: [{ fieldName: "Head Artist", sortOrder: "ascend" }],
     limit: 500,
   }, opts);
-  return rows.filter(hasProfileImage);
+  return rows.filter(row => hasProfileImage(row) || (usesOffice() && row.officePublished === '1'));
 }
 
 // Former Nation booking talent ("Not Active"). 17 records as of 2026-09-13.

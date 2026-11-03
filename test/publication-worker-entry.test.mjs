@@ -269,3 +269,15 @@ describeOrSkip("publicationMode defaults to shadow in the shipped bundle", () =>
   assert.equal(bundle.publicationMode({ PUBLICATION_SERVING: "ON" }), "shadow", "exact match only");
   assert.equal(bundle.publicationMode(undefined), "shadow");
 });
+
+describeOrSkip('Office minute tick observes a committed revision even while FM publication tick is off', async () => {
+ const kv=fakeKv();const ctx=fakeCtx();const oldFetch=globalThis.fetch;
+ const previous={origin:process.env.OFFICE_API_ORIGIN,token:process.env.OFFICE_API_TOKEN};
+ process.env.OFFICE_API_ORIGIN='https://office.example.test';process.env.OFFICE_API_TOKEN='t'.repeat(43);
+ let reads=0;
+ globalThis.fetch=async(input,init)=>{reads++;assert.equal(String(input),'https://office.example.test/api/integrations/website/v1/publication-version');assert.equal(init.headers.Authorization,'Bearer '+'t'.repeat(43));return new Response(JSON.stringify({version:'42'}),{headers:{'Content-Type':'application/json'}})};
+ try{
+  await bundle.default.scheduled({cron:'* * * * *',scheduledTime:Date.now()},{CONTENT_SOURCE:'office',CACHE_STATE:kv,PUBLICATION_TICK:'off'},ctx);await Promise.all(ctx.promises);
+  assert.equal(reads,1);assert.equal(kv.map.get('cache-version'),'office-42');assert.equal(kv.map.get('office-publication-version'),'42');
+ }finally{globalThis.fetch=oldFetch;if(previous.origin===undefined)delete process.env.OFFICE_API_ORIGIN;else process.env.OFFICE_API_ORIGIN=previous.origin;if(previous.token===undefined)delete process.env.OFFICE_API_TOKEN;else process.env.OFFICE_API_TOKEN=previous.token;}
+});

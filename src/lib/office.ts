@@ -96,3 +96,13 @@ export async function officeImage(path: string, ifNoneMatch: string | null, head
     return new Response(head ? null : bytes, { status: 200, headers: { ...headers, 'Content-Length': String(bytes.length) } });
   } catch { return new Response(null, { status: 503, headers: { 'Cache-Control': 'no-store' } }); }
 }
+
+/** Minimal authenticated origin read; never served to visitor JavaScript. */
+export async function officePublicationVersion(): Promise<string> {
+ const response=await request('publication-version');
+ if(!response.ok||!response.headers.get('content-type')?.includes('application/json'))throw new Error('Office publication revision unavailable');
+ const raw=await response.text();if(raw.length>512)throw new Error('Oversized publication revision');
+ const value=JSON.parse(raw);
+ if(!value||Object.keys(value).length!==1||typeof value.version!=='string'||!/^[1-9][0-9]{0,18}$/.test(value.version))throw new Error('Invalid Office publication revision');
+ return value.version;
+}
