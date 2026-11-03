@@ -3,6 +3,12 @@
 All notable changes to the Ninetone Group site. Versions follow `MAJOR.MINOR.PATCH.MICRO`
 (the number in `VERSION`).
 
+## [0.3.3.8] - 2026-11-03
+
+### Added
+- Refresh the website cache automatically from Office's committed public-content revision every minute.
+- Keep explicitly published Office clients without photos visible when they move to the former-client roster.
+
 ## [0.3.3.7] - 2026-11-01
 
 ### Added

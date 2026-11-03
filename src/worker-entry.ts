@@ -1,3 +1,5 @@
+import { syncOfficePublication } from "./lib/office-publication.ts";
+import { officePublicationVersion } from "./lib/office.ts";
 /**
  * Worker entrypoint — adds `scheduled`, `queue` and the publication Durable
  * Object alongside Astro's `fetch`.
@@ -68,6 +70,7 @@ import { loadSourceRecords } from "./lib/publication/fm-source.ts";
 
 /** Bindings the publication handlers use. All optional: absence disables them. */
 interface PublicationEnv {
+  CONTENT_SOURCE?: string;
   readonly CACHE_STATE?: KvBindingLike;
   readonly PUBLICATION_STATE?: KvBindingLike;
   readonly PUBLICATION_RELEASES?: KvBindingLike;
@@ -157,6 +160,10 @@ export default {
     env: PublicationEnv,
     ctx: ExecutionContextLike,
   ): Promise<void> {
+    if(event.cron==='* * * * *' && env.CONTENT_SOURCE==='office' && env.CACHE_STATE){
+      const kv=env.CACHE_STATE;
+      ctx.waitUntil(syncOfficePublication(kv,officePublicationVersion).catch(()=>{console.error('[office-publication] revision sync failed; existing content retained');}));
+    }
     // FM warm-up (src/lib/fm-warm.ts) — dispatched by cron expression and
     // returned from before the publication branch below, which stays exactly
     // as it was. Same posture as the tick: a var kill switch, then bindings.
