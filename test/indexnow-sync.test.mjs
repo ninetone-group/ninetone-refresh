@@ -159,7 +159,7 @@ test("a ping that throws is a failure, not a crash, and keeps what was already r
   await run({ kv, entries: BASE });
   const next = [...BASE, ["/records/artists/annika_ljungberg", ""]];
   const { result } = await run({ kv, entries: next, throws: true, now: 9_000_000 });
-  assert.deepEqual(result, { outcome: "failed", count: 1 });
+  assert.deepEqual(result, { outcome: "failed", count: 1, why: "ping threw: network" });
   assert.equal(Object.keys(kv.stored().urls).length, 4, "the earlier report is kept");
   assert.equal(kv.stored().failedAt, 9_000_000);
   // After the back-off only the one new URL is sent — not the whole sitemap again.
@@ -212,4 +212,28 @@ test("indexNowSyncDisabled: exactly 'off' and nothing else", () => {
   assert.equal(indexNowSyncDisabled({ INDEXNOW_SYNC: "OFF" }), false);
   assert.equal(indexNowSyncDisabled({ INDEXNOW_SYNC: "" }), false);
   assert.equal(indexNowSyncDisabled({}), false);
+});
+
+test("a refusal keeps IndexNow's answer in the record and in the result", async () => {
+  const kv = fakeKv();
+  const result = await syncIndexNow({
+    kv,
+    loadSitemap: async () => sitemap(BASE),
+    ping: async () => ({ ok: false, why: "HTTP 403: key file not found" }),
+    now: () => 7_000_000,
+  });
+  assert.deepEqual(result, { outcome: "failed", count: 4, why: "HTTP 403: key file not found" });
+  assert.equal(kv.stored().failedWhy, "HTTP 403: key file not found");
+  assert.equal(kv.stored().failedAt, 7_000_000);
+
+  // Accepted in the object form too, and the reason is cleared from the record.
+  const accepted = await syncIndexNow({
+    kv,
+    loadSitemap: async () => sitemap(BASE),
+    ping: async () => ({ ok: true }),
+    now: () => 7_000_000 + INDEXNOW_RETRY_AFTER_MS,
+  });
+  assert.deepEqual(accepted, { outcome: "seeded", count: 4 });
+  assert.equal(kv.stored().failedWhy, undefined);
+  assert.equal(kv.stored().failedAt, undefined);
 });
