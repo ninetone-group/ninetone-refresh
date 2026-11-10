@@ -3,6 +3,11 @@
 All notable changes to the Ninetone Group site. Versions follow `MAJOR.MINOR.PATCH.MICRO`
 (the number in `VERSION`).
 
+## [0.3.3.13] - 2026-11-10
+
+### Added
+- New pages are reported to IndexNow (Bing and the engines that share its feed) without anyone pressing Publish. Every five minutes the Worker compares its own sitemap with the one it last reported and sends the new URLs, plus news articles whose date changed. The first run reports the whole sitemap once. A refused ping waits six hours before the next try, and a sitemap that suddenly lost most of its URLs is ignored. Set the `INDEXNOW_SYNC` var to `off` to pause it. An edit to an existing profile is not reported, because the sitemap does not change.
+
 ## [0.3.3.12] - 2026-11-10
 
 ### Changed

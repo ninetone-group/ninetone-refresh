@@ -281,3 +281,78 @@ describeOrSkip('Office minute tick observes a committed revision even while FM p
   assert.equal(reads,1);assert.equal(kv.map.get('cache-version'),'office-42');assert.equal(kv.map.get('office-publication-version'),'42');
  }finally{globalThis.fetch=oldFetch;if(previous.origin===undefined)delete process.env.OFFICE_API_ORIGIN;else process.env.OFFICE_API_ORIGIN=previous.origin;if(previous.token===undefined)delete process.env.OFFICE_API_TOKEN;else process.env.OFFICE_API_TOKEN=previous.token;}
 });
+
+// ---------------------------------------------------------------------------
+// IndexNow sitemap sync on the five-minute cron (src/lib/indexnow-sync.ts)
+// ---------------------------------------------------------------------------
+// Needs a bundle built by `npm run build:cf` (it bakes the production host the
+// sync is gated on). A bundle from before the sync existed has no such export
+// and is skipped rather than failed.
+const indexNowOrSkip = bundle?.indexNowSitemapSync ? test : test.skip;
+
+indexNowOrSkip("five-minute cron reports the site's own sitemap to IndexNow once, then only what is new", async () => {
+  const ORIGIN = "https://www.ninetone.com";
+  const urlset = (paths) =>
+    `<?xml version="1.0" encoding="UTF-8"?><urlset>${paths.map((p) => `<url><loc>${ORIGIN}${p}</loc></url>`).join("")}</urlset>`;
+  let paths = ["/", "/news", "/records/artists/karakou"];
+  const selfRequests = [];
+  const self = {
+    fetch: async (request) => {
+      selfRequests.push(request.url);
+      return new Response(urlset(paths), { headers: { "Content-Type": "application/xml" } });
+    },
+  };
+  const kv = fakeKv();
+  const oldFetch = globalThis.fetch;
+  const oldKey = process.env.INDEXNOW_KEY;
+  process.env.INDEXNOW_KEY = "k".repeat(32);
+  const posts = [];
+  globalThis.fetch = async (input, init) => {
+    assert.equal(String(input), "https://api.indexnow.org/IndexNow");
+    posts.push(JSON.parse(init.body));
+    return new Response(null, { status: 202 });
+  };
+  // FM_WARM off: the warm-up shares this cron and must stay out of the test.
+  const env = { CACHE_STATE: kv, SELF: self, FM_WARM: "off" };
+  const tick = async (extra = {}) => {
+    const ctx = fakeCtx();
+    await bundle.default.scheduled({ cron: "*/5 * * * *", scheduledTime: Date.now() }, { ...env, ...extra }, ctx);
+    await Promise.all(ctx.promises);
+  };
+  try {
+    await tick();
+    assert.deepEqual(selfRequests, [`${ORIGIN}/sitemap-pages.xml`]);
+    assert.equal(posts.length, 1);
+    assert.equal(posts[0].host, "www.ninetone.com");
+    assert.equal(posts[0].keyLocation, `${ORIGIN}/${"k".repeat(32)}.txt`);
+    assert.deepEqual(posts[0].urlList, paths.map((p) => `${ORIGIN}${p}`));
+    assert.ok(kv.map.has("indexnow-sitemap:v1"));
+
+    await tick();
+    assert.equal(posts.length, 1, "an unchanged sitemap is not reported again");
+
+    paths = [...paths, "/news/a_new_article"];
+    await tick();
+    assert.equal(posts.length, 2);
+    assert.deepEqual(posts[1].urlList, [`${ORIGIN}/news/a_new_article`]);
+
+    // Kill switch, and the every-minute cron, never reach IndexNow.
+    paths = [...paths, "/news/another"];
+    await tick({ INDEXNOW_SYNC: "off" });
+    const minute = fakeCtx();
+    await bundle.default.scheduled({ cron: "* * * * *", scheduledTime: Date.now() }, { ...env, PUBLICATION_TICK: "off" }, minute);
+    await Promise.all(minute.promises);
+    assert.equal(posts.length, 2);
+
+    // No key: nothing is fetched or sent.
+    delete process.env.INDEXNOW_KEY;
+    const before = selfRequests.length;
+    await tick();
+    assert.equal(selfRequests.length, before);
+    assert.equal(posts.length, 2);
+  } finally {
+    globalThis.fetch = oldFetch;
+    if (oldKey === undefined) delete process.env.INDEXNOW_KEY;
+    else process.env.INDEXNOW_KEY = oldKey;
+  }
+});
