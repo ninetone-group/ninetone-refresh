@@ -259,6 +259,12 @@ const featuredNewsHeading = await fm(String(featuredNewsItem?.Title ?? ""), "tit
 
 const viewProfileCta = await t("View profile");
 
+// <title> names the group and its three divisions. "Ninetone Group" alone gave
+// a search for "Ninetone Records" — the name Wikipedia and most press use —
+// nothing in the title to match (2026-11-10). Brand names only, so it reads
+// the same in both languages and is not translated.
+const HOME_TITLE = "Ninetone Group – Ninetone Records, Management & Nation";
+
 // Meta description through t() (SEO audit P2). It was a fixed English string
 // for BOTH locales, so the Swedish homepage — lang="sv" — described itself in
 // English in <meta name="description">, og:description and twitter:description.
@@ -363,7 +369,8 @@ const closingBody = await t(
 ---
 
 <Base
-  title="Ninetone Group"
+  title={HOME_TITLE}
+  appendSiteName={false}
   theme="group"
   description={metaDescription}
 >

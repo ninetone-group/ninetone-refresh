@@ -16,6 +16,7 @@
 import { externalUrl } from "./url.ts";
 import { fmDateToIso } from "./fm-date.ts";
 import { renderBio } from "./markdown.ts";
+import { FOUNDED_YEAR } from "./metrics.ts";
 
 // ---------------------------------------------------------------------------
 // Rendering helper (shared by src/components/JsonLd.astro)
@@ -163,9 +164,43 @@ export interface OrganizationOptions {
    *  out explicitly as conditional; everything else in the base list is
    *  always included. */
   instagram?: string | null;
+  /** Language of the page the node is on; picks the description. Default "sv". */
+  lang?: "sv" | "en";
 }
 
+/**
+ * The names the company is searched for and written about under. The site's
+ * own name is "Ninetone Group", while Wikipedia, Wikidata and most press call
+ * it "Ninetone Records" — without these, nothing on the page said the two are
+ * the same organisation (checked 2026-11-10, when an assistant asked about
+ * "Ninetone" answered from Wikipedia and business directories only).
+ */
+export const ORG_ALTERNATE_NAMES = ["Ninetone", "Ninetone Records"] as const;
+
+/** Registered company name, as the founder's own team page gives it. */
+export const ORG_LEGAL_NAME = "Ninetone Group AB";
+
+/** One plain sentence pair saying what the company is, per language. Facts only,
+ *  each already stated elsewhere on the site (llms.txt, the homepage metrics,
+ *  the team page). */
+export const ORG_DESCRIPTION: Readonly<Record<"sv" | "en", string>> = {
+  sv:
+    `Ninetone Group är ett svenskt musik- och talangbolag i Sundsvall och Stockholm, grundat ${FOUNDED_YEAR} av Patrik Frisk. ` +
+    "Gruppen driver skivbolaget Ninetone Records, Ninetone Management för artister och kreatörer samt Ninetone Nation för bokning.",
+  en:
+    `Ninetone Group is a Swedish music and talent company based in Sundsvall and Stockholm, founded in ${FOUNDED_YEAR} by Patrik Frisk. ` +
+    "It runs the record label Ninetone Records, Ninetone Management for artists and creators, and the booking arm Ninetone Nation.",
+};
+
+/** The three divisions, as their own nodes under the group. */
+const ORG_DIVISIONS = [
+  { slug: "records", name: "Ninetone Records", sv: "Skivbolag", en: "Record label" },
+  { slug: "management", name: "Ninetone Management", sv: "Management för artister och kreatörer", en: "Artist and creator management" },
+  { slug: "ninetone-nation", name: "Ninetone Nation", sv: "Bokning av artister och talare", en: "Booking of artists and speakers" },
+] as const;
+
 export function organization(origin: string, opts: OrganizationOptions = {}): Record<string, unknown> {
+  const lang = opts.lang === "en" ? "en" : "sv";
   const sameAs = sameAsFrom(
     "https://www.wikidata.org/wiki/Q7038555",
     // Both the English and Swedish Wikipedia articles exist (verified via the
@@ -187,6 +222,9 @@ export function organization(origin: string, opts: OrganizationOptions = {}): Re
     "@type": "Organization",
     "@id": orgId(origin),
     name: ORG_NAME,
+    alternateName: [...ORG_ALTERNATE_NAMES],
+    legalName: ORG_LEGAL_NAME,
+    description: ORG_DESCRIPTION[lang],
     url: origin,
     logo: {
       "@type": "ImageObject",
@@ -194,6 +232,23 @@ export function organization(origin: string, opts: OrganizationOptions = {}): Re
       width: ORG_LOGO_SIZE,
       height: ORG_LOGO_SIZE,
     },
+    foundingDate: String(FOUNDED_YEAR),
+    // The same @id the founder's team page gives its Person node, so the two
+    // resolve to one entity.
+    founder: {
+      "@type": "Person",
+      "@id": `${origin}/team/patrik_frisk/#entity`,
+      name: "Patrik Frisk",
+      url: `${origin}/team/patrik_frisk`,
+    },
+    subOrganization: ORG_DIVISIONS.map((d) => ({
+      "@type": "Organization",
+      "@id": `${origin}/${d.slug}/#org`,
+      name: d.name,
+      description: d[lang],
+      url: `${origin}/${d.slug}`,
+      parentOrganization: { "@id": orgId(origin) },
+    })),
     sameAs,
     contactPoint: [
       {
@@ -227,6 +282,7 @@ export function website(origin: string): Record<string, unknown> {
     "@type": "WebSite",
     "@id": `${origin}/#website`,
     name: ORG_NAME,
+    alternateName: [...ORG_ALTERNATE_NAMES],
     url: origin,
     publisher: { "@id": orgId(origin) },
     // No SearchAction. Its only possible target, /search-result, is

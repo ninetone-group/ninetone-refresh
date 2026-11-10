@@ -200,7 +200,7 @@ const ogLocaleAlternate = lang === "sv" ? "en_GB" : "sv_SE";
 // prop supplies is reachable too.
 const jsonLdSafeOrigin = jsonLdOrigin(origin, basePrefix, productionShaped);
 const baseJsonLd = [
-  organization(jsonLdSafeOrigin, { instagram: "https://www.instagram.com/ninetonemanagement/" }),
+  organization(jsonLdSafeOrigin, { instagram: "https://www.instagram.com/ninetonemanagement/", lang }),
   website(jsonLdSafeOrigin),
 ];
 const pageJsonLd = jsonLd ? (Array.isArray(jsonLd) ? jsonLd : [jsonLd]) : [];
