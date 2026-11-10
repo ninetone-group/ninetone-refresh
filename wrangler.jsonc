@@ -133,6 +133,10 @@
   //                   expires on a quiet host. FM_WARM: "off" in "vars"
   //                   pauses it from the dashboard; it is deliberately NOT
   //                   set below (default on).
+  //                   The same schedule also runs the IndexNow sitemap sync
+  //                   (src/lib/indexnow-sync.ts): new sitemap URLs are
+  //                   reported to IndexNow. INDEXNOW_SYNC: "off" in "vars"
+  //                   pauses it; also deliberately not set below.
   //   "0 4 * * *"   — nightly release count (src/lib/release-count.ts): one
   //                   9 s / 6 MB FM find storing the homepage's releases
   //                   figure in KV. Same FM_WARM switch.

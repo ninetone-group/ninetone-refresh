@@ -62,6 +62,8 @@ import { DurableObject } from "cloudflare:workers";
 
 import { FM_WARM_CRON, HOMEPAGE_MERCH_LIMIT, warmDisabled, warmReadThrough } from "./lib/fm-warm.ts";
 import { RELEASE_COUNT_CRON, refreshReleaseCount } from "./lib/release-count.ts";
+import { indexNowKey, pingIndexNow } from "./lib/indexnow.ts";
+import { INDEXNOW_SYNC_CRON, indexNowSyncDisabled, syncIndexNow } from "./lib/indexnow-sync.ts";
 import { callCoordinator, makeCoordinatorClass } from "./lib/publication/coordinator-do.ts";
 import { consumeJob, runTick } from "./lib/publication/orchestrate.ts";
 import { publicationMode } from "./lib/publication/serving.ts";
@@ -87,6 +89,52 @@ interface PublicationEnv {
   /** The homepage's merch collection — the warm-up must fetch the same one
    *  (src/pages/index.astro reads it from process.env under nodejs_compat). */
   readonly SHOPIFY_HOMEPAGE_COLLECTION_ID?: string;
+  /** This Worker, bound to itself (wrangler.jsonc "services"). The IndexNow
+   *  sync reads the site's own sitemap through it. */
+  readonly SELF?: { fetch(input: Request): Promise<Response> };
+  /** Exactly "off" pauses the IndexNow sitemap sync (src/lib/indexnow-sync.ts). */
+  readonly INDEXNOW_SYNC?: string;
+}
+
+/**
+ * The IndexNow sitemap sync for this deployment, or null when it must not run:
+ * no production host baked into the build (dev, the static preview), a missing
+ * binding or key, or the INDEXNOW_SYNC kill switch. Same host rule as the
+ * Publish ping (src/pages/api/publish.ts): ninetone.com and its subdomains
+ * only, so a staging build can never report URLs.
+ *
+ * Never rejects: a failure is logged and the next tick tries again.
+ */
+export function indexNowSitemapSync(env: PublicationEnv): Promise<void> | null {
+  const host = import.meta.env?.PUBLIC_CANONICAL_HOST as string | undefined;
+  const kv = env.CACHE_STATE;
+  const self = env.SELF;
+  if (!host || !kv || !self || indexNowSyncDisabled(env) || !indexNowKey()) return null;
+  if (host !== "ninetone.com" && !host.endsWith(".ninetone.com")) return null;
+  const origin = `https://${host}`;
+  return syncIndexNow({
+    kv,
+    loadSitemap: async () => {
+      try {
+        const res = await self.fetch(
+          new Request(`${origin}/sitemap-pages.xml`, { headers: { "user-agent": "ninetone-indexnow-sync" } }),
+        );
+        return res.ok ? await res.text() : null;
+      } catch {
+        return null;
+      }
+    },
+    // IndexNow rejects a list that mixes hosts; the sitemap only holds this one.
+    ping: (urls) => pingIndexNow(origin, urls.filter((u) => u === origin || u.startsWith(`${origin}/`))),
+  })
+    .then((result) => {
+      if (result.outcome !== "unchanged" && result.outcome !== "backoff") {
+        console.log(`[indexnow-sync] ${result.outcome}: ${result.count} URL(s)`);
+      }
+    })
+    .catch(() => {
+      console.error("[indexnow-sync] failed; will try again on the next tick");
+    });
 }
 
 /** Is the scheduled tick switched off by the PUBLICATION_TICK var? */
@@ -163,6 +211,13 @@ export default {
     if(event.cron==='* * * * *' && env.CONTENT_SOURCE==='office' && env.CACHE_STATE){
       const kv=env.CACHE_STATE;
       ctx.waitUntil(syncOfficePublication(kv,officePublicationVersion).catch(()=>{console.error('[office-publication] revision sync failed; existing content retained');}));
+    }
+    // IndexNow for content that went live without Publish
+    // (src/lib/indexnow-sync.ts). Shares the warm-up's five-minute schedule
+    // and nothing else, so it sits ahead of that branch's early returns.
+    if (event.cron === INDEXNOW_SYNC_CRON) {
+      const sync = indexNowSitemapSync(env);
+      if (sync) ctx.waitUntil(sync);
     }
     // FM warm-up (src/lib/fm-warm.ts) — dispatched by cron expression and
     // returned from before the publication branch below, which stays exactly
