@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { displayTitle, paginatedTitle, shouldAppendSiteName } from "../src/lib/display-title.ts";
+import { displayTitle, paginatedTitle, shouldAppendSiteName, taglineWithoutName } from "../src/lib/display-title.ts";
 
 test("plain title is unchanged", () => {
   assert.equal(displayTitle("Artists"), "Artists");
@@ -70,4 +70,33 @@ test("shouldAppendSiteName: false once the title exceeds 60 characters", () => {
 
 test("shouldAppendSiteName: trims surrounding whitespace before measuring length", () => {
   assert.equal(shouldAppendSiteName(`  ${"A".repeat(60)}  `), true);
+});
+
+// Headlines as Office returned them on 2026-11-10.
+test("taglineWithoutName: a headline that opens with the name loses it and starts with a capital", () => {
+  assert.equal(
+    taglineWithoutName("Walter FM – gitarrdriven indie mellan vemod och hopp", "Walter FM"),
+    "Gitarrdriven indie mellan vemod och hopp",
+  );
+  assert.equal(taglineWithoutName("Karakou - En resa genom hjärtskärande indierock", "Karakou"), "En resa genom hjärtskärande indierock");
+  assert.equal(taglineWithoutName("Hälsingefyr: rock, folkton och hälsingehumor", "Hälsingefyr"), "Rock, folkton och hälsingehumor");
+});
+
+test("taglineWithoutName: the name is matched whatever its letter case and spacing", () => {
+  assert.equal(taglineWithoutName("ANJO – dokumentära berättelser, personliga samtal och musik", "Anjo"), "Dokumentära berättelser, personliga samtal och musik");
+  assert.equal(taglineWithoutName(" Tim Liljegren – från rallyskogen till dansgolvet", "Tim  Liljegren "), "Från rallyskogen till dansgolvet");
+  assert.equal(taglineWithoutName("J.O.X – svenska melodier möter elektronisk dansenergi", "J.O.X"), "Svenska melodier möter elektronisk dansenergi");
+});
+
+test("taglineWithoutName: a headline that does not open with the name and a separator is left alone", () => {
+  // Stage name in the headline, legal name on the record.
+  assert.equal(taglineWithoutName("Guldleo – spelglädje, humor och digitala idéer", "Leo Johansson"), "Guldleo – spelglädje, humor och digitala idéer");
+  // The name is only the start of a longer word or phrase.
+  assert.equal(taglineWithoutName("Mika-fans samlas i Göteborg", "Mika"), "Mika-fans samlas i Göteborg");
+  assert.equal(taglineWithoutName("Apollo tar nästa steg", "Apollo"), "Apollo tar nästa steg");
+  // Nothing after the name: keep the line rather than show an empty tile.
+  assert.equal(taglineWithoutName("Karakou –", "Karakou"), "Karakou –");
+  assert.equal(taglineWithoutName("", "Karakou"), "");
+  assert.equal(taglineWithoutName(undefined, undefined), "");
+  assert.equal(taglineWithoutName("Svensk indiepop", ""), "Svensk indiepop");
 });

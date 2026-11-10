@@ -22,6 +22,27 @@ export function displayTitle(raw: string | undefined | null): string {
 }
 
 /**
+ * A profile headline for a place that already shows the name above it.
+ *
+ * Presentation titles open with the name ("Karakou – svensk indiepop där vemod
+ * möter starka melodier"). Under a heading that reads "Karakou" the line would
+ * say the name twice, so a leading "Name – " / "Name - " / "Name: " is dropped
+ * and the rest starts with a capital. A headline that does not open with the
+ * name and a separator is returned as it is.
+ */
+export function taglineWithoutName(tagline: unknown, name: unknown): string {
+  const line = String(tagline ?? "").replace(/\s+/g, " ").trim();
+  const who = String(name ?? "").replace(/\s+/g, " ").trim();
+  if (!who || line.slice(0, who.length).toLowerCase() !== who.toLowerCase()) return line;
+
+  const separator = /^\s*[–—:|-]\s+/.exec(line.slice(who.length));
+  if (!separator) return line;
+
+  const rest = line.slice(who.length + separator[0].length);
+  return rest ? rest.charAt(0).toLocaleUpperCase("sv") + rest.slice(1) : line;
+}
+
+/**
  * <title> suffix for a paginated listing page (seo-phase-1b-brief.md P1
  * item 7). Astro's paginate() puts page 1 at the route's bare path — its
  * title is unchanged. Pages 2+ each need a distinct <title> or they read as

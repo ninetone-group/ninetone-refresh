@@ -57,3 +57,43 @@ export function newsExcerpt(shortMessage: unknown, message: unknown): string {
   // back out of the entity decoding above as visible "<h2>" text.
   return markdownToText(excerpt.replace(/<\/?[a-z][^>]*>/gi, " "));
 }
+
+/** Longest profile blurb a homepage tile takes. FileMaker's short texts were all about this long. */
+const TEASER_MAX = 200;
+/** A cut at a sentence end is only used when it leaves at least this much text. */
+const TEASER_MIN_SENTENCE = 80;
+
+/**
+ * A profile's short text, held to tile length.
+ *
+ * Office returns the whole biography in `artistPresentationShort` /
+ * `clientPresentationShort` (about 800 characters since 2026-11; FileMaker cut
+ * the field at 200), which filled the homepage "of the week" tiles with the
+ * full bio. Text that already fits is returned as it is, so a real short text
+ * is shown verbatim. Longer text ends at the last full sentence that fits, or
+ * at a word boundary with an ellipsis when the first sentence alone is too long.
+ *
+ * Call it on the text that will be shown, after translation: the translator
+ * then still gets the field as the profile page sends it, and its stored
+ * translation is reused.
+ */
+export function profileTeaser(text: unknown, max = TEASER_MAX): string {
+  const line = String(text ?? "").replace(/\s+/g, " ").trim();
+  if (line.length <= max) return line;
+
+  // A sentence ends at . ! or ? (and a closing quote or bracket) when the next
+  // word starts with a capital, a digit or an opening quote. That keeps
+  // "J.O.X", "bl.a. musik" and "3.5 miljoner" in one piece.
+  let end = -1;
+  for (const m of line.matchAll(/[.!?]["”’)]?(?=\s[\p{Lu}\d"“‘(])/gu)) {
+    const stop = m.index + m[0].length;
+    if (stop > max) break;
+    end = stop;
+  }
+  if (end >= Math.min(TEASER_MIN_SENTENCE, max)) return line.slice(0, end);
+
+  const head = line.slice(0, max);
+  const space = /\s/.test(line[max]) ? max : head.lastIndexOf(" ");
+  const words = (space > 0 ? head.slice(0, space) : head).replace(/[\s.,;:!?–—-]+$/, "");
+  return `${words}…`;
+}
