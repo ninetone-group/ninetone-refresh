@@ -9,6 +9,12 @@
  * are attached to the Worker as Custom Domains (wrangler.jsonc "routes");
  * this redirect is the only thing the naked host does.
  *
+ * The canonical host itself is served over HTTPS only: a plain-HTTP request
+ * for it gets the same 301. This covers every response the Worker renders.
+ * Files the asset layer answers on its own (images, /_astro/*) never reach
+ * the Worker and still load over http:// until "Always Use HTTPS" is switched
+ * on in the Cloudflare dashboard.
+ *
  * Gated on PUBLIC_CANONICAL_HOST (set by package.json "build:cf"): absent
  * in the static build, in dev and in the middleware test bundle, so none of
  * those see a redirect. The decision is a pure function; src/middleware.ts
@@ -18,7 +24,11 @@ export function canonicalHostRedirect(url: URL, canonicalHost: string | undefine
   if (!canonicalHost) return null;
   const canonical = canonicalHost.toLowerCase();
   const host = url.hostname.toLowerCase();
-  if (host === canonical) return null;
+  // Right host, plain HTTP: send it to HTTPS. Cloudflare's "Always Use HTTPS"
+  // is off for the zone, so http://www.ninetone.com/ answered 200 with the
+  // full page (found 2026-11-10; Wikipedia links the http:// address). The
+  // naked host below already lands on https in the same hop.
+  if (host === canonical) return url.protocol === "http:" ? `https://${canonical}${url.pathname}${url.search}` : null;
   // Only the naked twin of the canonical host redirects. Any other host the
   // Worker answers on (the *.workers.dev staging URL, previews) is left alone.
   const naked = canonical.replace(/^www\./, "");
