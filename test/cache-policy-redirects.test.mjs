@@ -43,6 +43,19 @@ test("legacyRedirectTarget: re-slugged client URLs from the GSC export reach the
   assert.equal(legacyRedirectTarget("/management/clients/constructor"), null);
 });
 
+test("legacyRedirectTarget: artist URLs with no division reach the Records artist pages (Wikipedia's Harley Huke reference, 2026-11-10)", () => {
+  assert.equal(legacyRedirectTarget("/artists/harley_huke"), "/records/artists/harley_huke");
+  assert.equal(legacyRedirectTarget("/artists/harley_huke/"), "/records/artists/harley_huke");
+  assert.equal(legacyRedirectTarget("/artists/joakim_lundell"), "/records/artists/joakim_lundell");
+  assert.equal(legacyRedirectTarget("/artists"), "/records/artists");
+  assert.equal(legacyRedirectTarget("/artists/"), "/records/artists");
+  // Only the two shapes that existed: nothing deeper, and no look-alike prefix.
+  assert.equal(legacyRedirectTarget("/artists/a/b"), null);
+  assert.equal(legacyRedirectTarget("/artistsx/harley_huke"), null);
+  assert.equal(legacyRedirectTarget("/records/artists"), null);
+  assert.equal(legacyRedirectTarget("/records/artists/harley_huke"), null);
+});
+
 test("legacyRedirectTarget: real routes and unrelated paths are never rewritten", () => {
   assert.equal(legacyRedirectTarget("/ninetone-nation/booking"), null, "the booking LISTING is a real page");
   assert.equal(legacyRedirectTarget("/ninetone-nation/booking/"), null);

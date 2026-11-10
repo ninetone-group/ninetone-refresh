@@ -39,3 +39,7 @@
 /blog/:slug                     /news/:slug                              301
 # Old Nation talent pages hung under the booking listing; the listing itself is a real route.
 /ninetone-nation/booking/:slug  /ninetone-nation/:slug                   301
+# Artist URLs with no division, older than the site this one replaced. English
+# Wikipedia's reference for Harley Huke links /artists/harley_huke (404 until 2026-11-10).
+/artists                        /records/artists                         301
+/artists/:slug                  /records/artists/:slug                   301

@@ -146,6 +146,16 @@ export function trailingSlashRedirectTarget(pathname: string): string | null {
  *                                     never rewritten; new category pages live
  *                                     under /ninetone-nation/kategori/)
  *
+ *   /artists, /artists/{slug}       → /records/artists, /records/artists/{slug}
+ *                                     (an artist URL with no division, older
+ *                                     than the site this one replaced. English
+ *                                     Wikipedia's reference for Harley Huke
+ *                                     links /artists/harley_huke and Search
+ *                                     Console has seen /artists/joakim_lundell;
+ *                                     both were 404 until 2026-11-10. The
+ *                                     artist page sends a former artist on to
+ *                                     the previous roster itself.)
+ *
  * The old current-artist shape /records/artists/{slug} for artists who have
  * since moved to "Not Active" is NOT a pattern — it needs the roster — and is
  * handled by the detail route itself (src/lib/roster-redirect.ts).
@@ -175,6 +185,8 @@ export function legacyRedirectTarget(pathname: string): string | null {
   if (blog) return `/news/${blog[1]}`;
   const booking = /^\/ninetone-nation\/booking\/([^/]+)\/?$/.exec(pathname);
   if (booking) return `/ninetone-nation/${booking[1]}`;
+  const artist = /^\/artists(?:\/([^/]+))?\/?$/.exec(pathname);
+  if (artist) return artist[1] ? `/records/artists/${artist[1]}` : "/records/artists";
   return null;
 }
 
