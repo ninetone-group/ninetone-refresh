@@ -3,6 +3,11 @@
 All notable changes to the Ninetone Group site. Versions follow `MAJOR.MINOR.PATCH.MICRO`
 (the number in `VERSION`).
 
+## [0.3.3.9] - 2026-11-10
+
+### Fixed
+- Use the exact Swedish label Klienter in the Management roster heading and tabs, keeping Clients in English.
+
 ## [0.3.3.8] - 2026-11-03
 
 ### Added

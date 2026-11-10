@@ -63,7 +63,7 @@ const sortedTags = Array.from(tagCounts.entries())
 
 // t() bound to this request (docs/i18n-phase-2-brief.md section 4).
 const t = sharedT(Astro.locals);
-const clientsTitle = await t("Clients");
+const clientsTitle = Astro.locals.lang === "en" ? "Clients" : "Klienter";
 const description = await t(
   "The Ninetone Management roster — creators, influencers and public figures we build structure and strategy around.",
 );

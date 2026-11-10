@@ -31,7 +31,9 @@ const tabsByDivision: Record<"records" | "management", { key: "current" | "previ
   ],
 };
 const tabs = await Promise.all(
-  tabsByDivision[division].map(async (tb) => ({ ...tb, label: await t(tb.label) })),
+  tabsByDivision[division].map(async (tb) => ({ ...tb, label: division === "management"
+    ? (Astro.locals.lang === "en" ? tb.label : tb.key === "current" ? "Klienter" : "Tidigare klienter")
+    : await t(tb.label) })),
 );
 const activeBorder = sectionAccent[division].border;
 
