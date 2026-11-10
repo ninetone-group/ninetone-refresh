@@ -53,6 +53,8 @@ interface Snapshot {
   urls: Record<string, string>;
   /** Epoch ms of the last ping that did not go through. */
   failedAt?: number;
+  /** What IndexNow answered that time ("HTTP 403: …"), for whoever reads the record. */
+  failedWhy?: string;
 }
 
 export type IndexNowSyncOutcome =
@@ -69,6 +71,8 @@ export interface IndexNowSyncResult {
   outcome: IndexNowSyncOutcome;
   /** URLs sent (or that would have been sent, for "failed"). */
   count: number;
+  /** For "failed": what IndexNow answered. */
+  why?: string;
 }
 
 export interface IndexNowSyncDeps {
@@ -78,8 +82,9 @@ export interface IndexNowSyncDeps {
   };
   /** The site's own sitemap XML, or null when it cannot be had. */
   loadSitemap: () => Promise<string | null>;
-  /** Report these URLs. Resolves true when IndexNow accepted the request. */
-  ping: (urls: string[]) => Promise<boolean>;
+  /** Report these URLs. `ok` when IndexNow accepted the request; `why` says
+   *  what it answered when it did not. A plain boolean is accepted too. */
+  ping: (urls: string[]) => Promise<boolean | { ok: boolean; why?: string }>;
   now?: () => number;
 }
 
@@ -124,7 +129,8 @@ function readSnapshot(raw: string | null): Snapshot | null {
     const parsed = JSON.parse(raw) as Partial<Snapshot> | null;
     if (!parsed || parsed.v !== 1 || typeof parsed.urls !== "object" || parsed.urls === null) return null;
     const failedAt = typeof parsed.failedAt === "number" ? parsed.failedAt : undefined;
-    return { v: 1, urls: parsed.urls, failedAt };
+    const failedWhy = typeof parsed.failedWhy === "string" ? parsed.failedWhy : undefined;
+    return { v: 1, urls: parsed.urls, failedAt, failedWhy };
   } catch {
     return null;
   }
@@ -156,10 +162,15 @@ export async function syncIndexNow(deps: IndexNowSyncDeps): Promise<IndexNowSync
   }
 
   const changed = changedUrls(previous, current).slice(0, INDEXNOW_MAX_URLS);
-  const record = (urls: ReadonlyMap<string, string>, failedAt?: number): Promise<unknown> =>
+  const record = (urls: ReadonlyMap<string, string>, failedAt?: number, failedWhy?: string): Promise<unknown> =>
     deps.kv.put(
       INDEXNOW_SNAPSHOT_KEY,
-      JSON.stringify({ v: 1, urls: Object.fromEntries(urls), ...(failedAt === undefined ? {} : { failedAt }) } satisfies Snapshot),
+      JSON.stringify({
+        v: 1,
+        urls: Object.fromEntries(urls),
+        ...(failedAt === undefined ? {} : { failedAt }),
+        ...(failedWhy === undefined ? {} : { failedWhy }),
+      } satisfies Snapshot),
     );
 
   if (changed.length === 0) {
@@ -170,14 +181,17 @@ export async function syncIndexNow(deps: IndexNowSyncDeps): Promise<IndexNowSync
   }
 
   let accepted = false;
+  let why: string | undefined;
   try {
-    accepted = await deps.ping(changed);
-  } catch {
-    accepted = false;
+    const answer = await deps.ping(changed);
+    if (typeof answer === "boolean") accepted = answer;
+    else ({ ok: accepted, why } = answer);
+  } catch (error) {
+    why = `ping threw: ${error instanceof Error ? error.message : String(error)}`.slice(0, 300);
   }
   if (!accepted) {
-    await record(previous, now);
-    return { outcome: "failed", count: changed.length };
+    await record(previous, now, why);
+    return { outcome: "failed", count: changed.length, ...(why === undefined ? {} : { why }) };
   }
 
   // URLs beyond the request limit stay out of the record, so the next pass

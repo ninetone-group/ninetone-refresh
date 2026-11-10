@@ -25,31 +25,66 @@ export function indexNowKey(): string | undefined {
   return secretEnv("INDEXNOW_KEY");
 }
 
+/** The IndexNow request itself (https://www.indexnow.org/documentation). Rejects on a network failure. */
+function postIndexNow(origin: string, key: string, urls: string[]): Promise<Response> {
+  return fetch("https://api.indexnow.org/IndexNow", {
+    method: "POST",
+    headers: { "Content-Type": "application/json; charset=utf-8" },
+    body: JSON.stringify({
+      host: new URL(origin).host,
+      key,
+      keyLocation: `${origin}/${key}.txt`,
+      urlList: urls,
+    }),
+  });
+}
+
+/** What IndexNow answered. `why` is filled only when the request was not accepted. */
+export interface IndexNowResult {
+  ok: boolean;
+  /** HTTP status, or 0 when no request was made or it never got an answer. */
+  status: number;
+  why?: string;
+}
+
 /**
- * Notify IndexNow that `urls` changed. `origin` must be a bare origin (see
- * src/lib/site.ts `siteOrigin()`) — `host` is derived from it, and every
- * entry in `urlList` must share that host per the IndexNow spec.
+ * Notify IndexNow that `urls` changed and say what it answered. `origin` must
+ * be a bare origin (see src/lib/site.ts `siteOrigin()`) — `host` is derived
+ * from it, and every entry in `urlList` must share that host per the IndexNow
+ * spec.
  *
- * Returns `false` (never throws) when `INDEXNOW_KEY` is unset or `urls` is
- * empty — there is nothing to ping, and callers (the Publish handler) must
- * never let this block or fail an otherwise-successful publish.
+ * Never throws. The reason for a refusal is kept because a yes/no is not
+ * enough to act on: the first live run of the sitemap sync (2026-11-10) was
+ * refused and nothing recorded whether that was the key, the key file or the
+ * URL list. The key itself is cut out of the reason before it is returned.
+ */
+export async function submitIndexNow(origin: string, urls: string[]): Promise<IndexNowResult> {
+  const key = indexNowKey();
+  if (!key) return { ok: false, status: 0, why: "INDEXNOW_KEY is not set" };
+  if (urls.length === 0) return { ok: false, status: 0, why: "no URLs to report" };
+
+  try {
+    const res = await postIndexNow(origin, key, urls);
+    if (res.ok) return { ok: true, status: res.status };
+    const text = (await res.text().catch(() => "")).split(key).join("<key>").replace(/\s+/g, " ").trim();
+    return { ok: false, status: res.status, why: `HTTP ${res.status}${text ? `: ${text.slice(0, 300)}` : ""}` };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return { ok: false, status: 0, why: `request failed: ${message.split(key).join("<key>").slice(0, 300)}` };
+  }
+}
+
+/**
+ * Yes/no form of submitIndexNow, for the Publish handler.
+ *
+ * Returns `false` when `INDEXNOW_KEY` is unset or `urls` is empty — there is
+ * nothing to ping, and callers (the Publish handler) must never let this block
+ * or fail an otherwise-successful publish. A network failure rejects, as it
+ * always has; the Publish handler catches it.
  */
 export async function pingIndexNow(origin: string, urls: string[]): Promise<boolean> {
   const key = indexNowKey();
   if (!key || urls.length === 0) return false;
 
-  const host = new URL(origin).host;
-  const body = {
-    host,
-    key,
-    keyLocation: `${origin}/${key}.txt`,
-    urlList: urls,
-  };
-
-  const res = await fetch("https://api.indexnow.org/IndexNow", {
-    method: "POST",
-    headers: { "Content-Type": "application/json; charset=utf-8" },
-    body: JSON.stringify(body),
-  });
-  return res.ok;
+  return (await postIndexNow(origin, key, urls)).ok;
 }

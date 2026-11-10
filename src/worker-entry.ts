@@ -62,7 +62,7 @@ import { DurableObject } from "cloudflare:workers";
 
 import { FM_WARM_CRON, HOMEPAGE_MERCH_LIMIT, warmDisabled, warmReadThrough } from "./lib/fm-warm.ts";
 import { RELEASE_COUNT_CRON, refreshReleaseCount } from "./lib/release-count.ts";
-import { indexNowKey, pingIndexNow } from "./lib/indexnow.ts";
+import { indexNowKey, submitIndexNow } from "./lib/indexnow.ts";
 import { INDEXNOW_SYNC_CRON, indexNowSyncDisabled, syncIndexNow } from "./lib/indexnow-sync.ts";
 import { callCoordinator, makeCoordinatorClass } from "./lib/publication/coordinator-do.ts";
 import { consumeJob, runTick } from "./lib/publication/orchestrate.ts";
@@ -125,10 +125,12 @@ export function indexNowSitemapSync(env: PublicationEnv): Promise<void> | null {
       }
     },
     // IndexNow rejects a list that mixes hosts; the sitemap only holds this one.
-    ping: (urls) => pingIndexNow(origin, urls.filter((u) => u === origin || u.startsWith(`${origin}/`))),
+    ping: (urls) => submitIndexNow(origin, urls.filter((u) => u === origin || u.startsWith(`${origin}/`))),
   })
     .then((result) => {
-      if (result.outcome !== "unchanged" && result.outcome !== "backoff") {
+      if (result.outcome === "failed") {
+        console.error(`[indexnow-sync] failed: ${result.count} URL(s) not reported — ${result.why ?? "no reason given"}`);
+      } else if (result.outcome !== "unchanged" && result.outcome !== "backoff") {
         console.log(`[indexnow-sync] ${result.outcome}: ${result.count} URL(s)`);
       }
     })

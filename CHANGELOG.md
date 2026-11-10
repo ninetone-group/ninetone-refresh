@@ -3,6 +3,11 @@
 All notable changes to the Ninetone Group site. Versions follow `MAJOR.MINOR.PATCH.MICRO`
 (the number in `VERSION`).
 
+## [0.3.3.14] - 2026-11-10
+
+### Fixed
+- When IndexNow refuses a report, the sitemap sync now keeps what it answered (HTTP status and message, with the key removed) in its record and in the Worker log. The first live run was refused and left no trace of why.
+
 ## [0.3.3.13] - 2026-11-10
 
 ### Added

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { pingIndexNow, indexNowKey } from "../src/lib/indexnow.ts";
+import { pingIndexNow, indexNowKey, submitIndexNow } from "../src/lib/indexnow.ts";
 import { notifyIndexNow } from "../src/pages/api/publish.ts";
 
 // This module reads INDEXNOW_KEY via `process.env` when running outside Vite
@@ -49,6 +49,50 @@ function okResponse() {
 // ---------------------------------------------------------------------------
 // src/lib/indexnow.ts — pingIndexNow / indexNowKey
 // ---------------------------------------------------------------------------
+
+test("submitIndexNow: a refusal comes back with the status and IndexNow's message, without the key", () =>
+  withEnv({ INDEXNOW_KEY: "abc123" }, () =>
+    withStubbedFetch(
+      () => new Response('{"code":"UserForbiddedToAccessSite","message":"User is unauthorized to access the site. Key abc123 not found."}', { status: 403 }),
+      async () => {
+        const result = await submitIndexNow("https://www.ninetone.com", ["https://www.ninetone.com/"]);
+        assert.equal(result.ok, false);
+        assert.equal(result.status, 403);
+        assert.match(result.why, /^HTTP 403: /);
+        assert.match(result.why, /unauthorized to access the site/);
+        assert.ok(!result.why.includes("abc123"), "the key is cut out of the reason");
+        assert.ok(result.why.includes("<key>"));
+      },
+    ),
+  ));
+
+test("submitIndexNow: accepted (200 and 202), a network failure, no key and no URLs", async () => {
+  await withEnv({ INDEXNOW_KEY: "abc123" }, async () => {
+    for (const status of [200, 202]) {
+      await withStubbedFetch(
+        () => new Response(null, { status }),
+        async () => assert.deepEqual(await submitIndexNow("https://www.ninetone.com", ["https://www.ninetone.com/"]), { ok: true, status }),
+      );
+    }
+    await withStubbedFetch(
+      () => {
+        throw new Error("connect timeout to abc123 host");
+      },
+      async () => {
+        const result = await submitIndexNow("https://www.ninetone.com", ["https://www.ninetone.com/"]);
+        assert.deepEqual(result, { ok: false, status: 0, why: "request failed: connect timeout to <key> host" });
+      },
+    );
+    assert.deepEqual(await submitIndexNow("https://www.ninetone.com", []), { ok: false, status: 0, why: "no URLs to report" });
+  });
+  await withEnv({ INDEXNOW_KEY: undefined }, async () => {
+    assert.deepEqual(await submitIndexNow("https://www.ninetone.com", ["https://www.ninetone.com/"]), {
+      ok: false,
+      status: 0,
+      why: "INDEXNOW_KEY is not set",
+    });
+  });
+});
 
 test("indexNowKey: reads INDEXNOW_KEY from process.env", () =>
   withEnv({ INDEXNOW_KEY: "abc123" }, () => {
