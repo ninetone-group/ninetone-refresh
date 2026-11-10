@@ -474,3 +474,52 @@ test("article() uses the same inline publisher and optional author", () => {
   assert.deepEqual(a.author, { "@type": "Person", name: "Team" });
   assert.ok(!("author" in article(ORIGIN, { path: "/guider/g", headline: "G" })));
 });
+
+// --- Organization entity signals (2026-11-10) --------------------------------
+test("organization: says it is also known as Ninetone Records, with legal name, founding year and founder", () => {
+  const org = organization(ORIGIN);
+  assert.deepEqual(org.alternateName, ["Ninetone", "Ninetone Records"]);
+  assert.equal(org.legalName, "Ninetone Group AB");
+  assert.equal(org.foundingDate, "2006");
+  assert.equal(org.founder["@type"], "Person");
+  assert.equal(org.founder.name, "Patrik Frisk");
+  assert.equal(org.founder.url, "https://ninetone.com/team/patrik_frisk");
+  // Same @id as the Person node on the founder's team page.
+  assert.equal(org.founder["@id"], "https://ninetone.com/team/patrik_frisk/#entity");
+});
+
+test("organization: the description names the three divisions and follows the page language", () => {
+  const sv = organization(ORIGIN).description;
+  const en = organization(ORIGIN, { lang: "en" }).description;
+  assert.match(sv, /^Ninetone Group är ett svenskt/);
+  assert.match(en, /^Ninetone Group is a Swedish/);
+  for (const text of [sv, en]) {
+    for (const part of ["Ninetone Records", "Ninetone Management", "Ninetone Nation", "Sundsvall", "2006", "Patrik Frisk"]) {
+      assert.ok(text.includes(part), `${part} in: ${text}`);
+    }
+    assert.ok(text.length <= 300, String(text.length));
+  }
+  assert.equal(organization(ORIGIN, { lang: "sv" }).description, sv, "Swedish is the default");
+});
+
+test("organization: the three divisions are sub-organisations that point back at the group", () => {
+  const org = organization(ORIGIN, { lang: "en" });
+  assert.deepEqual(
+    org.subOrganization.map((d) => [d.name, d.url, d.description]),
+    [
+      ["Ninetone Records", "https://ninetone.com/records", "Record label"],
+      ["Ninetone Management", "https://ninetone.com/management", "Artist and creator management"],
+      ["Ninetone Nation", "https://ninetone.com/ninetone-nation", "Booking of artists and speakers"],
+    ],
+  );
+  for (const d of org.subOrganization) {
+    assert.equal(d["@type"], "Organization");
+    assert.deepEqual(d.parentOrganization, { "@id": org["@id"] });
+    assert.notEqual(d["@id"], org["@id"]);
+  }
+  assert.equal(organization(ORIGIN).subOrganization[0].description, "Skivbolag");
+});
+
+test("website: carries the same alternate names as the organization", () => {
+  assert.deepEqual(website(ORIGIN).alternateName, ["Ninetone", "Ninetone Records"]);
+});

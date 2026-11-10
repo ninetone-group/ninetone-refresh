@@ -3,6 +3,12 @@
 All notable changes to the Ninetone Group site. Versions follow `MAJOR.MINOR.PATCH.MICRO`
 (the number in `VERSION`).
 
+## [0.3.3.12] - 2026-11-10
+
+### Changed
+- The site now states that Ninetone Group and Ninetone Records are the same organisation. The structured data on every page carries the alternate names "Ninetone" and "Ninetone Records", the legal name, a plain description in the page's language, founding year 2006, founder Patrik Frisk (linked to his team page) and the three divisions as sub-organisations.
+- Homepage title is "Ninetone Group – Ninetone Records, Management & Nation" instead of "Ninetone Group".
+
 ## [0.3.3.11] - 2026-11-10
 
 ### Fixed
