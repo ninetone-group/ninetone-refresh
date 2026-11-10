@@ -50,3 +50,18 @@ test("no canonical host configured (static build, dev, tests) -> never redirects
   assert.equal(canonicalHostRedirect(new URL("https://ninetone.com/"), undefined), null);
   assert.equal(canonicalHostRedirect(new URL("https://ninetone.com/"), ""), null);
 });
+
+test("canonicalHostRedirect: plain HTTP on the canonical host goes to HTTPS, path and query kept (2026-11-10)", () => {
+  assert.equal(canonicalHostRedirect(new URL("http://www.ninetone.com/"), CANON), "https://www.ninetone.com/");
+  assert.equal(
+    canonicalHostRedirect(new URL("http://www.ninetone.com/en/records/artists/anjo?x=1"), CANON),
+    "https://www.ninetone.com/en/records/artists/anjo?x=1",
+  );
+  assert.equal(canonicalHostRedirect(new URL("http://WWW.NINETONE.COM/news"), CANON), "https://www.ninetone.com/news");
+  // HTTPS on the canonical host is the one address that never redirects.
+  assert.equal(canonicalHostRedirect(new URL("https://www.ninetone.com/"), CANON), null);
+  // Other hosts are still left alone whatever the scheme, and nothing happens without a configured host.
+  assert.equal(canonicalHostRedirect(new URL("http://ninetone-site.ninetone.workers.dev/news"), CANON), null);
+  assert.equal(canonicalHostRedirect(new URL("http://localhost:4321/"), CANON), null);
+  assert.equal(canonicalHostRedirect(new URL("http://www.ninetone.com/"), undefined), null);
+});

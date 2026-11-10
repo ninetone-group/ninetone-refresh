@@ -3,6 +3,11 @@
 All notable changes to the Ninetone Group site. Versions follow `MAJOR.MINOR.PATCH.MICRO`
 (the number in `VERSION`).
 
+## [0.3.3.15] - 2026-11-10
+
+### Fixed
+- `http://www.ninetone.com/...` now redirects to HTTPS. Plain HTTP on the www host answered with the full page; only the naked domain redirected.
+
 ## [0.3.3.14] - 2026-11-10
 
 ### Fixed
