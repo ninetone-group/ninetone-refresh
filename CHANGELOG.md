@@ -3,6 +3,11 @@
 All notable changes to the Ninetone Group site. Versions follow `MAJOR.MINOR.PATCH.MICRO`
 (the number in `VERSION`).
 
+## [0.3.3.10] - 2026-11-10
+
+### Fixed
+- Homepage "Artist of the week" and "Client in focus" tiles show the profile's headline (the subheading on its page, without the name) instead of the full biography. Office returns the whole biography in the "short" text fields, which filled both tiles. A profile with no headline falls back to its short text, held to about 200 characters and ended at a full sentence.
+
 ## [0.3.3.9] - 2026-11-10
 
 ### Fixed

@@ -32,6 +32,9 @@ import {
   getWebPostSection,
 } from "../lib/ninetone";
 import { parseHomepageCopy } from "../lib/homepage-copy";
+import { profileTeaser } from "../lib/excerpt";
+import { taglineWithoutName } from "../lib/display-title";
+import { withoutPlaceholder } from "../lib/fm-placeholder";
 import { liveRosterCount, roundedPlus, yearsSince } from "../lib/metrics";
 import { readReleaseCount } from "../lib/release-count";
 import { getCfEnv } from "../lib/cf";
@@ -234,8 +237,24 @@ const artistOfWeekKicker = await t("Artist of the week");
 // on /en/ while the chrome around them was English. Names are protected so
 // "Hälsingefyr" and "Avdelning 44" are never "translated".
 const fm = fmText(Astro.locals, { protect: [heroArtistName, heroClientName].filter(Boolean) });
-const heroArtistBlurb = await fm(String(heroArtist?.artistPresentationShort ?? ""));
-const heroClientBlurb = await fm(String(heroClient?.clientPresentationShort || heroClient?.artistPresentationShort || ""));
+// Tile text under the name: the profile's own headline (the subheading on its
+// page, read and translated exactly as the profile page does, so the stored
+// translation is shared), without the name it opens with. A profile with no
+// headline gets its short text held to tile length — Office returns the whole
+// biography in the "short" field, which filled both tiles (2026-11-10).
+const heroArtistTagline = taglineWithoutName(
+  await fm(String(heroArtist?.["Artist Presentation Title"] ?? heroArtistDetail?.["Artist Presentation Title"] ?? "")),
+  heroArtistName,
+);
+const heroArtistBlurb =
+  heroArtistTagline || profileTeaser(await fm(String(heroArtist?.artistPresentationShort ?? "")));
+const heroClientTagline = taglineWithoutName(
+  await fm(withoutPlaceholder(heroClient?.clientPresentationTitle)),
+  heroClientName,
+);
+const heroClientBlurb =
+  heroClientTagline ||
+  profileTeaser(await fm(String(heroClient?.clientPresentationShort || heroClient?.artistPresentationShort || "")));
 const featuredNewsHeading = await fm(String(featuredNewsItem?.Title ?? ""), "title");
 
 const viewProfileCta = await t("View profile");
