@@ -3,6 +3,11 @@
 All notable changes to the Ninetone Group site. Versions follow `MAJOR.MINOR.PATCH.MICRO`
 (the number in `VERSION`).
 
+## [0.3.3.11] - 2026-11-10
+
+### Fixed
+- Old artist links without a division (`/artists/harley_huke`, `/artists`) redirect to the Records artist pages instead of returning 404. English Wikipedia's reference for Harley Huke uses that address.
+
 ## [0.3.3.10] - 2026-11-10
 
 ### Fixed
