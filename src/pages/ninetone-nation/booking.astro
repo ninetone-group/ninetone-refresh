@@ -137,7 +137,8 @@ const bookLabel = await t("Book");
                       href={url(`/ninetone-nation/kategori/${slugifyTag(c.tag)}`)}
                       class="transition-opacity hover:opacity-70"
                     >
-                      {c.tag === "Föreläsare" ? "Föreläsare." :
+                      {c.tag === "Humor/Komiker" ? "Humor/Komiker" :
+                       c.tag === "Föreläsare" ? "Föreläsare." :
                        c.tag === "Konferencier" ? "Konferenciers." :
                        c.tag === "Moderator" ? "Moderatorer." :
                        c.tag === "Underhållare" ? "Underhållare." :
