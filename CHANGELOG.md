@@ -3,6 +3,11 @@
 All notable changes to the Ninetone Group site. Versions follow `MAJOR.MINOR.PATCH.MICRO`
 (the number in `VERSION`).
 
+## [0.3.3.16] - 2026-11-17
+
+### Fixed
+- Display the Nation booking category Humor/Komiker without an incorrect plural suffix. Office supplies this category when Comedy is selected for a Booking client.
+
 ## [0.3.3.15] - 2026-11-10
 
 ### Fixed
