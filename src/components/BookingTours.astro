@@ -1,6 +1,6 @@
 ---
 import type { BookingTour, TourStop } from '../lib/booking-tours';
-import { stopDateLabel } from '../lib/booking-tours';
+import { stopDateLabel, stopPlaceDetails } from '../lib/booking-tours';
 type Props = { tours: BookingTour[]; lang?: 'sv' | 'en' };
 const { tours, lang = 'sv' } = Astro.props;
 const label = (sv: string, en: string) => lang === 'sv' ? sv : en;
@@ -18,7 +18,7 @@ const mapUrl = (s: TourStop) => `https://www.google.com/maps/search/?api=1&query
         <div class="stop-place">
           {stop.city && <p class="font-display text-2xl leading-tight">{stop.city}</p>}
           {stop.venue && <p class="mt-1 text-sm">{stop.venue}</p>}
-          {(stop.address || stop.location) && <p class="mt-1 text-xs leading-relaxed text-ninetone-ink/65">{[stop.address,stop.location].filter((v,i,a) => v && a.indexOf(v)===i).join(' · ')}</p>}
+          {stopPlaceDetails(stop) && <p class="mt-1 text-xs leading-relaxed text-ninetone-ink/65">{stopPlaceDetails(stop)}</p>}
         </div>
         {(stop.address || stop.venue) && <a class="stop-map" href={mapUrl(stop)} target="_blank" rel="noopener noreferrer" aria-label={`${label('Hitta till','Directions to')} ${stop.venue || stop.city}`}>{label('Hitta hit','Directions')} <span aria-hidden="true">↗</span></a>}
       </div>)}
@@ -29,7 +29,7 @@ const mapUrl = (s: TourStop) => `https://www.google.com/maps/search/?api=1&query
           <div class="stop-place">
             {stop.city && <p class="font-display text-2xl leading-tight">{stop.city}</p>}
             {stop.venue && <p class="mt-1 text-sm">{stop.venue}</p>}
-            {(stop.address || stop.location) && <p class="mt-1 text-xs leading-relaxed text-ninetone-ink/65">{[stop.address,stop.location].filter((v,i,a) => v && a.indexOf(v)===i).join(' · ')}</p>}
+            {stopPlaceDetails(stop) && <p class="mt-1 text-xs leading-relaxed text-ninetone-ink/65">{stopPlaceDetails(stop)}</p>}
           </div>
         </div>)}
       </details>}

@@ -1,7 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {groupBookingTours,stockholmDay,stopDateLabel} from '../src/lib/booking-tours.ts';
+import {groupBookingTours,stockholmDay,stopDateLabel,stopPlaceDetails} from '../src/lib/booking-tours.ts';
 const row=(id,changes={})=>({SLUG:'test_artist',id,tourId:'one',tourName:'A tour',tourDescription:'Public text',dateStart:'2026-11-21',dateEnd:'',venue:'Venue',location:'Inside',city:'Kosta',address:'Street 96',...changes});
+test('Office composite location preserves extra directions without repeated venues or addresses',()=>{
+ assert.equal(stopPlaceDetails(row('a',{venue:'Kosta Julmarknad',address:'Stora vägen 96',location:'Kosta Julmarknad · Stora vägen 96'})),'Stora vägen 96');
+ assert.equal(stopPlaceDetails(row('b',{address:'Danska vägen 13',location:'I varuhuset · Danska vägen 13'})),'Danska vägen 13 · I varuhuset');
+});
 test('same tour stays together, old stops remain, duplicate tour names stay separate',()=>{
  const tours=groupBookingTours([row('future'),row('past',{dateStart:'2026-11-01'}),row('second',{tourId:'two'})],'2026-11-18');
  assert.equal(tours.length,2);assert.equal(tours[0].past[0].id,'past');assert.equal(tours[0].upcoming[0].id,'future');

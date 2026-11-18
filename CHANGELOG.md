@@ -1,3 +1,7 @@
+# 0.3.3.18 · 2026-11-18
+
+- Turnélistans adress visas en gång även när Office-platsfältet redan innehåller spelplats och adress. Extra platsanvisning bevaras.
+
 # 0.3.3.17 · 2026-11-18
 
 - Nation-profiler visar endast webbmarkerade Office-bokningar, grupperade per turné med publik beskrivning, datum, spelplats, ort och adress.

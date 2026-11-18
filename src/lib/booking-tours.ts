@@ -4,6 +4,14 @@ export type TourStop = {
   dateStart: string; dateEnd: string; venue: string; location: string; city: string; address: string;
 };
 export type BookingTour = { id: string; name: string; description: string; upcoming: TourStop[]; past: TourStop[] };
+export function stopPlaceDetails(stop: TourStop): string {
+  const normalize = (s: string) => s.trim().toLocaleLowerCase('sv-SE');
+  const seen = new Set([normalize(stop.venue)]);
+  return [stop.address, ...stop.location.split('·')].map(s => s.trim()).filter(s => {
+    if (!s || seen.has(normalize(s))) return false;
+    seen.add(normalize(s));return true;
+  }).join(' · ');
+}
 export function stockholmDay(now = new Date()): string {
   return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Stockholm', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
 }
