@@ -11,6 +11,13 @@ import { hasProfileImage } from "./profile-image";
 import { isActiveBookingArtist } from "./booking-status";
 import { newsExcerpt } from "./excerpt";
 import { usesOffice } from "./office.ts";
+import { groupBookingTours, type TourStop } from "./booking-tours.ts";
+
+export async function getBookingTours(slug: string) {
+  if (!usesOffice()) return [];
+  const rows = await fmFind<TourStop>('API_BOOKING_TOURS', { query: [{ SLUG: `==${slug}` }], limit: 1000 });
+  return groupBookingTours(rows);
+}
 
 export type Artist = Record<string, unknown> & {
   SLUG?: string;

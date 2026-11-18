@@ -1,0 +1,52 @@
+---
+import type { BookingTour, TourStop } from '../lib/booking-tours';
+import { stopDateLabel } from '../lib/booking-tours';
+type Props = { tours: BookingTour[]; lang?: 'sv' | 'en' };
+const { tours, lang = 'sv' } = Astro.props;
+const label = (sv: string, en: string) => lang === 'sv' ? sv : en;
+const mapUrl = (s: TourStop) => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent([s.venue,s.address,s.city].filter(Boolean).join(', '))}`;
+---
+{tours.length > 0 && <section class="booking-tours mt-16 border-t border-ninetone-rule pt-10" aria-label={label('Turnéer och spelningar','Tours and appearances')}>
+  <span class="kicker text-ninetone-green-dark">{label('Träffa oss','Meet us')}</span>
+  <h2 class="mt-4 mb-8 font-display text-4xl leading-tight tracking-tight md:text-5xl">{label('På turné.','On tour.')}</h2>
+  {tours.map(tour => <article class="tour" data-tour={tour.id}>
+    <h3 class="font-display text-3xl leading-tight tracking-tight">{tour.name || label('Övriga spelningar','Other appearances')}</h3>
+    {tour.description && <p class="tour-description mt-5 text-base leading-relaxed text-ninetone-ink/75">{tour.description}</p>}
+    <div class="mt-7">
+      {tour.upcoming.map(stop => <div class="tour-stop">
+        <div class="stop-date"><time datetime={stop.dateStart || stop.dateEnd || undefined}>{stopDateLabel(stop,lang)}</time></div>
+        <div class="stop-place">
+          {stop.city && <p class="font-display text-2xl leading-tight">{stop.city}</p>}
+          {stop.venue && <p class="mt-1 text-sm">{stop.venue}</p>}
+          {(stop.address || stop.location) && <p class="mt-1 text-xs leading-relaxed text-ninetone-ink/65">{[stop.address,stop.location].filter((v,i,a) => v && a.indexOf(v)===i).join(' · ')}</p>}
+        </div>
+        {(stop.address || stop.venue) && <a class="stop-map" href={mapUrl(stop)} target="_blank" rel="noopener noreferrer" aria-label={`${label('Hitta till','Directions to')} ${stop.venue || stop.city}`}>{label('Hitta hit','Directions')} <span aria-hidden="true">↗</span></a>}
+      </div>)}
+      {tour.past.length > 0 && <details class="past-stops" open={tour.upcoming.length === 0}>
+        <summary>{label('Tidigare spelningar','Past appearances')} <span>({tour.past.length})</span></summary>
+        {tour.past.map(stop => <div class="tour-stop past-stop">
+          <div class="stop-date"><time datetime={stop.dateStart || stop.dateEnd}>{stopDateLabel(stop,lang)}</time><span class="past-label">{label('Passerat datum','Past date')}</span></div>
+          <div class="stop-place">
+            {stop.city && <p class="font-display text-2xl leading-tight">{stop.city}</p>}
+            {stop.venue && <p class="mt-1 text-sm">{stop.venue}</p>}
+            {(stop.address || stop.location) && <p class="mt-1 text-xs leading-relaxed text-ninetone-ink/65">{[stop.address,stop.location].filter((v,i,a) => v && a.indexOf(v)===i).join(' · ')}</p>}
+          </div>
+        </div>)}
+      </details>}
+    </div>
+  </article>)}
+</section>}
+<style>
+  .tour {border-top:1px solid var(--color-ninetone-green-dark);padding-top:1.5rem;margin-top:2.5rem}
+  .tour-description {white-space:pre-line;overflow-wrap:anywhere}
+  .tour-stop {display:grid;grid-template-columns:minmax(85px,120px) minmax(0,1fr) auto;gap:1.5rem;align-items:center;border-top:1px solid var(--color-ninetone-rule);padding:1.5rem 0}
+  .stop-date {font-family:var(--font-mono);font-size:.75rem;line-height:1.6}
+  .stop-place {overflow-wrap:anywhere}
+  .stop-map {font-family:var(--font-mono);font-size:.68rem;color:var(--color-ninetone-green-dark);display:flex;gap:.5rem;white-space:nowrap;padding:.7rem 0}
+  .stop-map:hover {text-decoration:underline;text-underline-offset:4px}
+  .past-stops {margin-top:1rem}
+  .past-stops summary {padding:1rem 0;font-size:.85rem;color:var(--color-ninetone-ink-soft);cursor:pointer}
+  .past-stop {grid-template-columns:minmax(85px,120px) minmax(0,1fr)}
+  .past-label {display:block;font:400 .65rem/1.6 var(--font-mono);letter-spacing:.04em;color:var(--color-ninetone-ink-soft);margin-top:.4rem;text-transform:uppercase}
+  @media(max-width:520px){.tour-stop{grid-template-columns:82px minmax(0,1fr);gap:1rem}.stop-map{grid-column:2;padding:0;justify-self:start}}
+</style>

@@ -5,7 +5,8 @@ import NewsCard from "../../components/NewsCard.astro";
 import MerchCard from "../../components/MerchCard.astro";
 import RosterStrip from "../../components/RosterStrip.astro";
 import YouTubeFeed from "../../components/YouTubeFeed.astro";
-import { getBookingPageSet, getBookingCategories, getNewsForArtist, pickRelatedArtists } from "../../lib/ninetone";
+import BookingTours from "../../components/BookingTours.astro";
+import { getBookingPageSet, getBookingCategories, getBookingTours, getNewsForArtist, pickRelatedArtists } from "../../lib/ninetone";
 import { resolveChannelId, getYouTubeFeed } from "../../lib/youtube";
 import { getProducts } from "../../lib/shopify";
 import { renderBio } from "../../lib/markdown";
@@ -62,6 +63,7 @@ if (!e || !allRoster) {
 }
 
 const name = String(e["Head Artist"] ?? "");
+const bookingTours = await getBookingTours(String(e.SLUG ?? ''));
 // FM CONTENT (decision 8 / Definition of done). The entity's own name goes
 // into `protect` so it is never "translated" into nonsense, and prose is
 // translated on the `fast` tier — the same tier scripts/translate-warm.mjs
@@ -275,6 +277,8 @@ const officialSuffix = await t("official.");
           </a>
 
           <div class="mt-12 prose lede max-w-none" set:html={bioHtml}></div>
+
+          <BookingTours tours={bookingTours} lang={Astro.locals.lang === 'en' ? 'en' : 'sv'} />
 
           {ytLinks.length > 0 && (
             <div class="mt-16 border-t border-ninetone-rule pt-10">
