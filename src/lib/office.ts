@@ -6,7 +6,7 @@ import type { FmFindBody } from './filemaker.ts';
 
 declare const __OFFICE_STATIC_PREVIEW__: boolean;
 
-const LAYOUTS = new Set(['API_ARTIST','API_ARTIST_DETAIL','API_Management','API_Booking','API_BOOKING_TAG','API_NEWS','API_WEBPOSTS','API_USERS']);
+const LAYOUTS = new Set(['API_ARTIST','API_ARTIST_DETAIL','API_Management','API_Booking','API_BOOKING_TAG','API_NEWS','API_WEBPOSTS','API_USERS','API_BOOKING_TOURS']);
 export function usesOffice(): boolean {
   const source = secretEnv('CONTENT_SOURCE') ?? 'filemaker';
   if (source !== 'office' && source !== 'filemaker') throw new Error('Unknown content source');

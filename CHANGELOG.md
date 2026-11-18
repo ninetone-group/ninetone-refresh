@@ -1,3 +1,8 @@
+# 0.3.3.17 · 2026-11-18
+
+- Nation-profiler visar endast webbmarkerade Office-bokningar, grupperade per turné med publik beskrivning, datum, spelplats, ort och adress.
+- Tidigare spelningar finns kvar under respektive turné med märkningen Passerat datum.
+
 # Changelog
 
 All notable changes to the Ninetone Group site. Versions follow `MAJOR.MINOR.PATCH.MICRO`
