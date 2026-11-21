@@ -9,6 +9,10 @@
 
 # Changelog
 
+## [0.3.3.19] - 2026-11-21
+
+- Records release descriptions now use Office Links → SoMe/Web → Svenska. English pages translate this Swedish source. Empty web text no longer displays the Spotify pitch.
+
 All notable changes to the Ninetone Group site. Versions follow `MAJOR.MINOR.PATCH.MICRO`
 (the number in `VERSION`).
 
