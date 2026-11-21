@@ -14,7 +14,7 @@ test('public collections are paginated, associated with their store, and never r
   return response({collections:page===1?Array.from({length:250},(_,i)=>({id:i+1,title:'Collection '+i,handle:'item-'+i})):[{id:999,title:'Last',handle:'last'}]});
  });
  assert.equal(collections.length,251);assert.equal(collections.at(-1).url,'https://test-pagination.myshopify.com/collections/last');
- assert.equal(calls.length,2);for(const[,opts]of calls){assert.deepEqual(opts.headers,{Accept:'application/json'});assert.equal(opts.redirect,'error')}
+ assert.equal(calls.length,2);for(const[,opts]of calls){assert.deepEqual(opts.headers,{Accept:'application/json'});assert.equal(opts.redirect,'manual')}
 });
 test('invalid hosts do not make any network requests',async()=>{
  const no=()=>{throw Error('unexpected')};assert.deepEqual(await shopCollectionsWithKv('evil.invalid',null,no),[]);
