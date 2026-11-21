@@ -8,7 +8,7 @@ import YouTubeFeed from "../../components/YouTubeFeed.astro";
 import BookingTours from "../../components/BookingTours.astro";
 import { getBookingPageSet, getBookingCategories, getBookingTours, getNewsForArtist, pickRelatedArtists } from "../../lib/ninetone";
 import { resolveChannelId, getYouTubeFeed } from "../../lib/youtube";
-import { getProducts } from "../../lib/shopify";
+import { getArtistMerch } from "../../lib/artist-merch";
 import { renderBio } from "../../lib/markdown";
 import { urlFor } from "../../lib/url";
 import { pageJsonLdOrigin } from "../../lib/site";
@@ -88,7 +88,6 @@ const tags = (e.tagBooking
   : []);
 const ytOne = String(e.yotubeHighlight_one ?? "");
 const ytTwo = String(e.yotubeHighlight_two ?? "");
-const collectionId = String(e.collectionId ?? "").trim();
 
 const socials = {
   spotify: e.url_spotify ? String(e.url_spotify) : undefined,
@@ -103,11 +102,9 @@ const socials = {
   soundcloud: undefined,
 };
 
-let merch: Awaited<ReturnType<typeof getProducts>> = [];
-if (collectionId) {
-  try { merch = await getProducts({ collectionId, limit: 8 }); } catch (err) {
-    console.error("[nation] merch fetch failed:", err);
-  }
+let merch: Awaited<ReturnType<typeof getArtistMerch>> = [];
+try { merch = await getArtistMerch(e); } catch (err) {
+  console.error("[nation] merch fetch failed:", err);
 }
 
 let latestNews: Awaited<ReturnType<typeof getNewsForArtist>> = [];
