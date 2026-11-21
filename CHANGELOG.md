@@ -9,6 +9,10 @@
 
 # Changelog
 
+## [0.3.3.20] - 2026-11-21
+
+- Artist merch follows all Collection IDs selected in Office, combining products without duplicates. Clearing the selection hides merch. Existing single-ID profiles remain supported.
+
 ## [0.3.3.19] - 2026-11-21
 
 - Records release descriptions now use Office Links → SoMe/Web → Svenska. English pages translate this Swedish source. Empty web text no longer displays the Spotify pitch.

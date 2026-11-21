@@ -8,7 +8,7 @@ import Discography from "../../../components/Discography.astro";
 import YouTubeFeed from "../../../components/YouTubeFeed.astro";
 import { getArtists, getArtistDetailWithReleases, getNewsForArtist, pickRelatedArtists, getPreviousArtists } from "../../../lib/ninetone";
 import { resolveChannelId, getYouTubeFeed } from "../../../lib/youtube";
-import { getProducts } from "../../../lib/shopify";
+import { getArtistMerch } from "../../../lib/artist-merch";
 import { renderBio } from "../../../lib/markdown";
 import { urlFor } from "../../../lib/url";
 import { pageJsonLdOrigin } from "../../../lib/site";
@@ -116,7 +116,6 @@ const aandr = String(artist.internalAandR ?? "");
 const aandrEmail = String(artist["Green_internalAandR::userEmail"] ?? "");
 const ytOne = String(artist.yotubeHighlight_one ?? "");
 const ytTwo = String(artist.yotubeHighlight_two ?? "");
-const collectionId = String(artist.collectionId ?? "").trim();
 
 const socials = {
   spotify: artist.url_spotify ? String(artist.url_spotify) : undefined,
@@ -154,13 +153,11 @@ latestNews = await Promise.all(
   console.error(`[artist:${slug}] news strip failed:`, err);
 }
 
-let merch: Awaited<ReturnType<typeof getProducts>> = [];
-if (collectionId) {
-  try {
-    merch = await getProducts({ collectionId, limit: 8 });
-  } catch (err) {
-    console.error(`[artist:${slug}] merch fetch failed:`, err);
-  }
+let merch: Awaited<ReturnType<typeof getArtistMerch>> = [];
+try {
+  merch = await getArtistMerch(artist);
+} catch (err) {
+  console.error(`[artist:${slug}] merch fetch failed:`, err);
 }
 
 // "In good company" — same-genre artists ranked by tag overlap, padded with

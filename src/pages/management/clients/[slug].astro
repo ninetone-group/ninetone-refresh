@@ -10,7 +10,7 @@ import { crossRosterTarget } from "../../../lib/roster-redirect";
 import { crossDivisionRedirect } from "../../../lib/cross-division";
 import { localizedPath } from "../../../lib/i18n";
 import { resolveChannelId, getYouTubeFeed } from "../../../lib/youtube";
-import { getProducts } from "../../../lib/shopify";
+import { getArtistMerch } from "../../../lib/artist-merch";
 import { renderBio } from "../../../lib/markdown";
 import { urlFor } from "../../../lib/url";
 import { pageJsonLdOrigin } from "../../../lib/site";
@@ -103,7 +103,6 @@ const managerEmail = String(
 );
 const ytOne = String(client.yotubeHighlight_one ?? "");
 const ytTwo = String(client.yotubeHighlight_two ?? "");
-const collectionId = String(client.collectionId ?? "").trim();
 
 const socials = {
   spotify: client.url_spotify ? String(client.url_spotify) : undefined,
@@ -120,11 +119,9 @@ const socials = {
 
 // Merch + news strip are optional embellishments — log failures, don't fail
 // the page over them.
-let merch: Awaited<ReturnType<typeof getProducts>> = [];
-if (collectionId) {
-  try { merch = await getProducts({ collectionId, limit: 8 }); } catch (err) {
-    console.error(`[client] merch fetch failed:`, err);
-  }
+let merch: Awaited<ReturnType<typeof getArtistMerch>> = [];
+try { merch = await getArtistMerch(client); } catch (err) {
+  console.error(`[client] merch fetch failed:`, err);
 }
 
 let latestNews: Awaited<ReturnType<typeof getNewsForArtist>> = [];
