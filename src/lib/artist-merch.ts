@@ -20,6 +20,7 @@ export async function getArtistMerch(
   artist: ArtistCollections,
   limit = 8,
   load: (opts: GetProductsOptions) => Promise<ShopifyProduct[]> = getProducts,
+  loadPublic: typeof artistShopProducts = artistShopProducts,
 ): Promise<ShopifyProduct[]> {
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > 50) throw new RangeError('Invalid merch limit');
   const domain = artistStoreDomain(artist.shopifyStoreDomain);
@@ -27,11 +28,12 @@ export async function getArtistMerch(
   const ids = artistCollectionIds(artist);
   if (!ids.length) return [];
   const external = domain && domain !== 'shop.ninetone.com';
-  const available = external ? await getArtistCollections(artist) : [];
-  const read = external ? async ({collectionId,limit}: GetProductsOptions) => {
-    const collection = available.find(c => c.id === collectionId);
-    return collection ? artistShopProducts(domain,collection,limit!) : [];
-  } : load;
+  const available = external || Object.hasOwn(artist,'shopifyCollections') ? await getArtistCollections(artist) : [];
+  const read = async (opts: GetProductsOptions) => {
+    if(!external){const products=await load(opts);if(products.length)return products;}
+    const collection=available.find(c=>c.id===opts.collectionId);
+    return collection?loadPublic(domain||'shop.ninetone.com',collection,opts.limit!):[];
+  };
   const collections: ShopifyProduct[][] = [];
   // Bound concurrent Shopify reads even for a long Office selection.
   for (let offset = 0; offset < ids.length; offset += 4) {

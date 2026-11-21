@@ -61,3 +61,17 @@ test('Office catalog supplies all chosen collections without a Shopify network r
  assert.deepEqual(await getArtistCollections({shopifyStoreDomain:'other.myshopify.com',collectionIds:['123'],shopifyCollections:[c]}),[]);
  assert.deepEqual(await getArtistCollections({collectionIds:[],shopifyCollections:[c]}),[]);
 });
+
+
+test('artist shops use their own public Storefront loader and never the Ninetone Admin token',async()=>{
+ const c={id:'123',handle:'music',title:'Music',url:'https://own-shop.myshopify.com/collections/music'};
+ const calls=[];
+ const products=await getArtistMerch({shopifyStoreDomain:'own-shop.myshopify.com',collectionIds:['123'],shopifyCollections:[c]},8,async()=>{throw Error('Wrong shop Admin read')},async(host,collection,limit)=>{calls.push([host,collection.id,limit]);return [{id:1}]});
+ assert.deepEqual(products,[{id:1}]);assert.deepEqual(calls,[['own-shop.myshopify.com','123',8]]);
+});
+test('an empty legacy result can read the selected public collection without querying the entire store',async()=>{
+ const c={id:'123',handle:'music',title:'Music',url:'https://shop.ninetone.com/collections/music'};
+ let called=0;
+ const products=await getArtistMerch({collectionIds:['123'],shopifyCollections:[c]},8,async()=>[],async(host,collection)=>{called++;assert.equal(host,'shop.ninetone.com');assert.equal(collection.id,'123');return [{id:2}]});
+ assert.deepEqual(products,[{id:2}]);assert.equal(called,1);
+});
