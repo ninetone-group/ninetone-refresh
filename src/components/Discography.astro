@@ -24,11 +24,10 @@ interface Props {
 
 const { releases: releasesRaw, artistName, theme = "records" } = Astro.props;
 
-// FM CONTENT (decision 8). scripts/translate-warm.mjs warms `r.pitch` and
-// `r.social` for every release across all 374 artists — the bulk of the
-// warm run's cost — and nothing read them, so release descriptions stayed
-// Swedish on /en/. The artist's name is protected so a release blurb never
-// "translates" the act it is about.
+// Public release copy comes from Office Links → SoMe/Web → Svenska.
+// The English site translates this Swedish source; Spotify Pitch is separate
+// editorial material and must not be used as a fallback for missing web copy.
+// Protect the artist's name when translating the public description.
 //
 // Resolved here in frontmatter rather than in the template: fm() is async
 // and these render inside .map() loops, which cannot await.
@@ -36,7 +35,6 @@ const fm = fmText(Astro.locals, { protect: artistName ? [artistName] : [] });
 const releases = await Promise.all(
   (releasesRaw ?? []).map(async (r) => ({
     ...r,
-    pitch: r.pitch ? await fm(String(r.pitch)) : r.pitch,
     social: r.social ? await fm(String(r.social)) : r.social,
   })),
 );
@@ -172,9 +170,9 @@ const visibleChips = filterChipsSource
                 {r.album}
               </h3>
 
-              {r.pitch && (
+              {r.social && (
                 <p class="max-w-2xl font-display text-xl italic leading-snug tracking-tight text-ninetone-ink/75 md:text-2xl">
-                  {r.pitch}
+                  {r.social}
                 </p>
               )}
 
