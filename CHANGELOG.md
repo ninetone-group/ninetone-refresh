@@ -1,5 +1,9 @@
 # 0.3.3.18 · 2026-11-18
 
+## 0.3.3.23 — 2026-11-21
+
+- Read selected public collection names, images and storefront links from Office to avoid Shopify blocking Worker catalog reads.
+
 ## 0.3.3.22 — 2026-11-21
 
 - Use the Workers-supported manual redirect mode for public Shopify reads, still rejecting redirects without forwarding credentials.

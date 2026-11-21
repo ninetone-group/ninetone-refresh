@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { artistCollectionIds, getArtistMerch } from '../src/lib/artist-merch.ts';
+import { artistCollectionIds, getArtistMerch, getArtistCollections } from '../src/lib/artist-merch.ts';
 
 test('Office collection list supersedes the imported single ID, including an explicit clear', () => {
   assert.deepEqual(artistCollectionIds({collectionIds:[' 123 ', '456', '123'],collectionId:'789'}),['123','456']);
@@ -52,4 +52,12 @@ test('large selections use at most four simultaneous reads and respect the grid 
 test('a failed collection read follows the existing caller error handling without querying other stores', async () => {
   await assert.rejects(getArtistMerch({collectionIds:['123']},8,async()=>{throw new Error('Shopify unavailable')}),/Shopify unavailable/);
   await assert.rejects(getArtistMerch({collectionIds:['123']},0),RangeError);
+});
+
+
+test('Office catalog supplies all chosen collections without a Shopify network request',async()=>{
+ const c={id:'123',title:'Music',handle:'music',url:'https://artist.myshopify.com/collections/music'};
+ assert.deepEqual(await getArtistCollections({shopifyStoreDomain:'artist.myshopify.com',collectionIds:['123','456'],shopifyCollections:[c,{...c,id:'999'}]}),[c]);
+ assert.deepEqual(await getArtistCollections({shopifyStoreDomain:'other.myshopify.com',collectionIds:['123'],shopifyCollections:[c]}),[]);
+ assert.deepEqual(await getArtistCollections({collectionIds:[],shopifyCollections:[c]}),[]);
 });
