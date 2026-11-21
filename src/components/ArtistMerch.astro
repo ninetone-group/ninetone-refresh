@@ -1,17 +1,29 @@
 ---
 import MerchCard from './MerchCard.astro';
-import {getArtistMerch, getArtistCollections, type ArtistCollections} from '../lib/artist-merch';
+import {artistCollectionIds, getArtistMerch, getArtistCollections, type ArtistCollections} from '../lib/artist-merch';
 import {sectionAccent, type SectionTheme} from '../lib/sections';
 import {sharedT} from '../lib/t';
+import {fmFind} from '../lib/filemaker';
+import {usesOffice} from '../lib/office';
 interface Props { artist: ArtistCollections; name:string; theme:SectionTheme; kicker:string; suffix:string }
 const {artist,name,theme,kicker,suffix}=Astro.props;
 const t=sharedT(Astro.locals);
 const openLabel=await t('Se kollektionen');
 // Collection navigation survives a transient product endpoint failure. Never
 // substitute another store or the entire shop when an ID cannot be resolved.
+let merchArtist=artist;
+// Rosters do not fetch every artist's shop. Load metadata for this one detail
+// profile instead; Records detail already carries it on its existing read.
+if(usesOffice() && !Object.hasOwn(artist,'shopifyCollections') && typeof artist.SLUG==='string' && artistCollectionIds(artist).length){
+ try{
+  const layout=theme==='records'?'API_ARTIST_DETAIL':theme==='management'?'API_Management':'API_Booking';
+  const rows=await fmFind<ArtistCollections>(layout,{query:[{SLUG:artist.SLUG,filterActive:'==*'}],limit:1});
+  merchArtist=rows[0]?.fieldData??artist;
+ }catch(error){console.warn('Artist merch profile unavailable',error.message)}
+}
 const [collections,products]=await Promise.all([
-  getArtistCollections(artist).catch(error=>{console.warn('Artist collections unavailable',error.message);return []}),
-  getArtistMerch(artist).catch(error=>{console.warn('Artist products unavailable',error.message);return []}),
+  getArtistCollections(merchArtist).catch(error=>{console.warn('Artist collections unavailable',error.message);return []}),
+  getArtistMerch(merchArtist).catch(error=>{console.warn('Artist products unavailable',error.message);return []}),
 ]);
 ---
 {(collections.length>0||products.length>0)&&(

@@ -1,7 +1,7 @@
 import { artistStoreDomain, artistShopCollections, artistShopProducts, type ShopCollection } from './artist-shop.ts';
 import { getProducts, type GetProductsOptions, type ShopifyProduct } from './shopify.ts';
 
-export type ArtistCollections = { collectionIds?: unknown; collectionId?: unknown; shopifyStoreDomain?: unknown };
+export type ArtistCollections = { SLUG?: unknown; collectionIds?: unknown; collectionId?: unknown; shopifyCollections?: unknown; shopifyStoreDomain?: unknown };
 const validId = (value: unknown): value is string =>
   typeof value === 'string' && /^[1-9][0-9]{0,19}$/.test(value.trim());
 
@@ -27,7 +27,7 @@ export async function getArtistMerch(
   const ids = artistCollectionIds(artist);
   if (!ids.length) return [];
   const external = domain && domain !== 'shop.ninetone.com';
-  const available = external ? await artistShopCollections(domain) : [];
+  const available = external ? await getArtistCollections(artist) : [];
   const read = external ? async ({collectionId,limit}: GetProductsOptions) => {
     const collection = available.find(c => c.id === collectionId);
     return collection ? artistShopProducts(domain,collection,limit!) : [];
@@ -59,6 +59,14 @@ export async function getArtistCollections(artist: ArtistCollections): Promise<S
   const domain = artistStoreDomain(artist.shopifyStoreDomain);
   const ids = artistCollectionIds(artist);
   if (domain === null || !ids.length) return [];
+  if (Object.hasOwn(artist,'shopifyCollections')) {
+    if (!Array.isArray(artist.shopifyCollections)) return [];
+    const host=domain||'shop.ninetone.com';
+    return artist.shopifyCollections.filter((c: any): c is ShopCollection =>
+      c && ids.includes(c.id) && typeof c.title==='string' && /^[a-z0-9][a-z0-9-]{0,254}$/.test(c.handle)
+      && c.url===`https://${host}/collections/${c.handle}`
+      && (c.image===undefined || typeof c.image==='string' && /^https:\/\/cdn\.shopify\.com\//.test(c.image)));
+  }
   const collections = await artistShopCollections(domain || 'shop.ninetone.com');
   return ids.flatMap(id => collections.filter(c => c.id === id));
 }
