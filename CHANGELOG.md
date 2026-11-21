@@ -1,5 +1,9 @@
 # 0.3.3.18 · 2026-11-18
 
+## 0.3.3.24 — 2026-11-21
+
+- Fetch public artist products using Shopify’s tokenless Storefront API with explicit currency and store-specific links. Public Storefront products also fill empty legacy Admin API results.
+
 ## 0.3.3.23 — 2026-11-21
 
 - Read selected public collection names, images and storefront links from Office to avoid Shopify blocking Worker catalog reads.

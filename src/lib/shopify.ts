@@ -169,7 +169,7 @@ export async function getProducts(opts?: GetProductsOptions): Promise<ShopifyPro
 /** Storefront URL for a product (so users can buy on shop.ninetone.com). */
 export function productUrl(product: ShopifyProduct): string {
   const host = product.storefrontDomain;
-  if (host && !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.myshopify\.com$/.test(host)) return '#';
+  if (host && host !== 'shop.ninetone.com' && !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.myshopify\.com$/.test(host)) return '#';
   return `${host ? 'https://' + host : publicStoreUrl()}/products/${encodeURIComponent(product.handle)}`;
 }
 

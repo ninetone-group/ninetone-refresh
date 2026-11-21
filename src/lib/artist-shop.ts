@@ -46,18 +46,30 @@ export async function shopCollectionsWithKv(host: string, kv: KvLike | null | un
 }
 
 export async function shopProductsWithKv(host: string, collection: ShopCollection, limit: number, kv: KvLike | null | undefined, fetchImpl: typeof fetch = fetch): Promise<ShopifyProduct[]> {
-  if (!artistStoreDomain(host) || !/^[a-z0-9][a-z0-9-]{0,254}$/.test(collection.handle)) return [];
+  if (!artistStoreDomain(host) || !/^[1-9][0-9]{0,19}$/.test(collection.id) || !/^[a-z0-9][a-z0-9-]{0,254}$/.test(collection.handle) || !Number.isSafeInteger(limit) || limit<1 || limit>50) return [];
   return cached('artist-shop-products', {host,id:collection.id,limit}, async () => {
     const load = async () => {
-      const data = await publicJson(host, `/collections/${collection.handle}/products.json?limit=${limit}`, fetchImpl);
-      if (!Array.isArray(data.products) || data.products.length > limit) throw new Error('Invalid products response');
-      // Storefront product JSON uses decimal major units. Currency is explicit,
-      // never assumed to be SEK for another artist's shop.
-      let currency: string | undefined;
-      try { const cart = await publicJson(host, '/cart.js', fetchImpl); if (/^[A-Z]{3}$/.test(cart.currency)) currency = cart.currency; } catch { /* omit uncertain prices */ }
-      return data.products.filter((p: any) => Number.isSafeInteger(p.id) && /^[a-z0-9][a-z0-9-]*$/.test(p.handle) && typeof p.title === 'string' && p.published_at && Array.isArray(p.variants) && Array.isArray(p.images)).map((p: any) => ({...p, image:p.image ?? p.images[0] ?? null, status:'active', storefrontDomain:host, currency}));
+      const query='query ArtistMerch($id: ID!, $limit: Int!){collection(id:$id){products(first:$limit){nodes{id title handle featuredImage{url altText width height} priceRange{minVariantPrice{amount currencyCode}}}}}}';
+      const res=await fetchImpl(`https://${host}/api/2026-10/graphql.json`,{
+        method:'POST',redirect:'manual',signal:AbortSignal.timeout(6000),
+        headers:{'Content-Type':'application/json',Accept:'application/json'},
+        body:JSON.stringify({query,variables:{id:`gid://shopify/Collection/${collection.id}`,limit}}),
+      });
+      if(!res.ok)throw new Error(`Artist Shopify storefront: HTTP ${res.status}`);
+      const body=await res.text();if(body.length>2_000_000)throw new Error('Artist storefront response too large');
+      const data=JSON.parse(body);if(data.errors?.length)throw new Error('Shopify Storefront query failed');
+      const nodes=data.data?.collection?.products?.nodes??[];
+      if(!Array.isArray(nodes)||nodes.length>limit)throw new Error('Invalid Storefront products response');
+      return nodes.flatMap((p:any)=>{
+        const id=Number(/^gid:\/\/shopify\/Product\/([0-9]+)$/.exec(p.id)?.[1]);
+        const price=p.priceRange?.minVariantPrice;
+        if(!Number.isSafeInteger(id)||id<1||typeof p.title!=='string'||!(/^[a-z0-9][a-z0-9-]*$/).test(p.handle)||!price||!(/^[A-Z]{3}$/).test(price.currencyCode)||!Number.isFinite(Number(price.amount)))return [];
+        const f=p.featuredImage;
+        const image=f&&typeof f.url==='string'&&f.url.startsWith('https://cdn.shopify.com/')?{id,src:f.url,alt:f.altText??null,width:f.width??600,height:f.height??600}:null;
+        return [{id,title:p.title,handle:p.handle,body_html:'',product_type:'',status:'active',variants:[{id,title:'',price:price.amount}],images:image?[image]:[],image,storefrontDomain:host,currency:price.currencyCode}];
+      });
     };
-    return kv ? kvCached(kv, `artist-shop:v1:${await readCacheVersion(kv)}:${host}:products:${collection.id}:${limit}`, 3600, load) : load();
+    return kv ? kvCached(kv, `artist-shop:v2:${await readCacheVersion(kv)}:${host}:products:${collection.id}:${limit}`, 3600, load) : load();
   });
 }
 

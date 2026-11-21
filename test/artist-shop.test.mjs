@@ -20,11 +20,13 @@ test('invalid hosts do not make any network requests',async()=>{
  const no=()=>{throw Error('unexpected')};assert.deepEqual(await shopCollectionsWithKv('evil.invalid',null,no),[]);
  assert.deepEqual(await shopProductsWithKv('evil.invalid',{id:'1',handle:'x'},8,null,no),[]);
 });
-test('products retain their shop and explicit currency; unpublished products are excluded',async()=>{
+test('tokenless Storefront products retain their shop and explicit currency',async()=>{
  const host='currency-test.myshopify.com';const collection={id:'123',handle:'music'};const calls=[];
- const product={id:1,title:'Album',handle:'album',published_at:'2026-01-01',variants:[{price:'19.95'}],images:[]};
+ const product={id:'gid://shopify/Product/1',title:'Album',handle:'album',featuredImage:null,priceRange:{minVariantPrice:{amount:'19.95',currencyCode:'EUR'}}};
  const result=await shopProductsWithKv(host,collection,8,null,async(url,opts)=>{
-  calls.push([url,opts]);return response(url.endsWith('/cart.js')?{currency:'EUR'}:{products:[product,{...product,id:2,published_at:null}]});
+  calls.push([url,opts]);assert.equal(opts.method,'POST');assert.match(url,/api\/2026-10\/graphql.json$/);
+  assert.equal(JSON.parse(opts.body).variables.id,'gid://shopify/Collection/123');
+  return response({data:{collection:{products:{nodes:[product]}}}});
  });
  assert.equal(result.length,1);assert.equal(productUrl(result[0]),'https://currency-test.myshopify.com/products/album');
  assert.match(productPrice(result[0]),/19,95/);assert.match(productPrice(result[0]),/€/);
