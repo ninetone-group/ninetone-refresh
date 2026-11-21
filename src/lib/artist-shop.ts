@@ -15,7 +15,7 @@ async function publicJson(host: string, path: string, fetchImpl: typeof fetch): 
   // Host is validated independently of Office. Never send the Ninetone Admin token.
   if (!artistStoreDomain(host)) throw new Error('Invalid artist storefront');
   const res = await fetchImpl(`https://${host}${path}`, {
-    redirect: 'error', signal: AbortSignal.timeout(6000),
+    redirect: 'manual', signal: AbortSignal.timeout(6000),
     headers: { Accept: 'application/json' },
   });
   if (!res.ok) throw new Error(`Artist Shopify storefront: HTTP ${res.status}`);
