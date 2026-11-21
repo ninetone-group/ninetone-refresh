@@ -1,6 +1,7 @@
+import { artistStoreDomain, artistShopCollections, artistShopProducts, type ShopCollection } from './artist-shop.ts';
 import { getProducts, type GetProductsOptions, type ShopifyProduct } from './shopify.ts';
 
-type ArtistCollections = { collectionIds?: unknown; collectionId?: unknown };
+export type ArtistCollections = { collectionIds?: unknown; collectionId?: unknown; shopifyStoreDomain?: unknown };
 const validId = (value: unknown): value is string =>
   typeof value === 'string' && /^[1-9][0-9]{0,19}$/.test(value.trim());
 
@@ -21,12 +22,21 @@ export async function getArtistMerch(
   load: (opts: GetProductsOptions) => Promise<ShopifyProduct[]> = getProducts,
 ): Promise<ShopifyProduct[]> {
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > 50) throw new RangeError('Invalid merch limit');
+  const domain = artistStoreDomain(artist.shopifyStoreDomain);
+  if (domain === null) return [];
   const ids = artistCollectionIds(artist);
+  if (!ids.length) return [];
+  const external = domain && domain !== 'shop.ninetone.com';
+  const available = external ? await artistShopCollections(domain) : [];
+  const read = external ? async ({collectionId,limit}: GetProductsOptions) => {
+    const collection = available.find(c => c.id === collectionId);
+    return collection ? artistShopProducts(domain,collection,limit!) : [];
+  } : load;
   const collections: ShopifyProduct[][] = [];
   // Bound concurrent Shopify reads even for a long Office selection.
   for (let offset = 0; offset < ids.length; offset += 4) {
     collections.push(...await Promise.all(ids.slice(offset, offset + 4).map(
-      collectionId => load({ collectionId, limit }),
+      collectionId => read({ collectionId, limit }),
     )));
   }
   const seen = new Set<number>();
@@ -42,4 +52,13 @@ export async function getArtistMerch(
     }
   }
   return products;
+}
+
+/** Show every selected, publicly resolvable collection, independently of product API availability. */
+export async function getArtistCollections(artist: ArtistCollections): Promise<ShopCollection[]> {
+  const domain = artistStoreDomain(artist.shopifyStoreDomain);
+  const ids = artistCollectionIds(artist);
+  if (domain === null || !ids.length) return [];
+  const collections = await artistShopCollections(domain || 'shop.ninetone.com');
+  return ids.flatMap(id => collections.filter(c => c.id === id));
 }

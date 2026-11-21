@@ -1,5 +1,11 @@
 # 0.3.3.18 · 2026-11-18
 
+## 0.3.3.21 — 2026-11-21
+
+- Artist merch uses the Shopify store saved in Office, including multiple collections and store-specific purchase links.
+- Every selected public collection remains accessible when product reads are temporarily unavailable; legacy Ninetone selections retain their existing behavior.
+
+
 - Turnélistans adress visas en gång även när Office-platsfältet redan innehåller spelplats och adress. Extra platsanvisning bevaras.
 
 # 0.3.3.17 · 2026-11-18

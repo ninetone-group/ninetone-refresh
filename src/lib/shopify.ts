@@ -62,6 +62,9 @@ export interface ShopifyImage {
 export interface ShopifyProduct {
   id: number;
   title: string;
+  /** Only public reads of an explicitly selected artist shop set these. */
+  storefrontDomain?: string;
+  currency?: string;
   handle: string;
   body_html: string;
   product_type: string;
@@ -165,7 +168,9 @@ export async function getProducts(opts?: GetProductsOptions): Promise<ShopifyPro
 
 /** Storefront URL for a product (so users can buy on shop.ninetone.com). */
 export function productUrl(product: ShopifyProduct): string {
-  return `${publicStoreUrl()}/products/${product.handle}`;
+  const host = product.storefrontDomain;
+  if (host && !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.myshopify\.com$/.test(host)) return '#';
+  return `${host ? 'https://' + host : publicStoreUrl()}/products/${encodeURIComponent(product.handle)}`;
 }
 
 /** Lowest variant price as a formatted SEK string. */
@@ -173,5 +178,7 @@ export function productPrice(product: ShopifyProduct): string {
   const prices = product.variants.map((v) => parseFloat(v.price)).filter((n) => !isNaN(n));
   if (prices.length === 0) return "";
   const min = Math.min(...prices);
-  return `${min.toFixed(0)} kr`;
+  if (!product.storefrontDomain) return `${min.toFixed(0)} kr`;
+  if (!product.currency || !/^[A-Z]{3}$/.test(product.currency)) return '';
+  return new Intl.NumberFormat('sv-SE', { style: 'currency', currency: product.currency }).format(min);
 }
