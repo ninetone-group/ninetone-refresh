@@ -1,7 +1,7 @@
 ---
 import Base from "../../../layouts/Base.astro";
 import StreamingRow from "../../../components/StreamingRow.astro";
-import MerchCard from "../../../components/MerchCard.astro";
+import ArtistMerch from "../../../components/ArtistMerch.astro";
 import NewsCard from "../../../components/NewsCard.astro";
 import RosterStrip from "../../../components/RosterStrip.astro";
 import YouTubeFeed from "../../../components/YouTubeFeed.astro";
@@ -10,7 +10,6 @@ import { crossRosterTarget } from "../../../lib/roster-redirect";
 import { crossDivisionRedirect } from "../../../lib/cross-division";
 import { localizedPath } from "../../../lib/i18n";
 import { resolveChannelId, getYouTubeFeed } from "../../../lib/youtube";
-import { getArtistMerch } from "../../../lib/artist-merch";
 import { renderBio } from "../../../lib/markdown";
 import { urlFor } from "../../../lib/url";
 import { pageJsonLdOrigin } from "../../../lib/site";
@@ -119,10 +118,6 @@ const socials = {
 
 // Merch + news strip are optional embellishments — log failures, don't fail
 // the page over them.
-let merch: Awaited<ReturnType<typeof getArtistMerch>> = [];
-try { merch = await getArtistMerch(client); } catch (err) {
-  console.error(`[client] merch fetch failed:`, err);
-}
 
 let latestNews: Awaited<ReturnType<typeof getNewsForArtist>> = [];
 try { latestNews = await getNewsForArtist(name, 4); } catch (err) {
@@ -324,19 +319,7 @@ const officialSuffix = await t("official.");
 
   <YouTubeFeed feed={ytFeed} clientName={name} theme="management" />
 
-  {merch.length > 0 && (
-    <section class="bg-ninetone-paper-warm py-20">
-      <div class="mx-auto max-w-7xl px-6">
-        <div class="mb-10">
-          <span class="kicker text-ninetone-navy">{merchKicker}</span>
-          <h2 class="mt-3 font-display text-4xl leading-[1.05] tracking-tight md:text-5xl">{name} — {officialSuffix}</h2>
-        </div>
-        <div class="grid grid-cols-2 gap-x-6 gap-y-12 md:grid-cols-3 lg:grid-cols-4">
-          {merch.map((p) => <MerchCard product={p} />)}
-        </div>
-      </div>
-    </section>
-  )}
+  <ArtistMerch artist={client} name={name} theme="management" kicker={merchKicker} suffix={officialSuffix} />
 
   {related.length > 0 && (
     <RosterStrip
